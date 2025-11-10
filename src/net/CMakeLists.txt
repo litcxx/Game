@@ -1,11 +1,17 @@
 set(SOURCES
   main.cpp
+  server/server.cpp
+  session/session.cpp
 )
 
 add_executable(server 
   ${SOURCES}
 )
 
+target_include_directories(server PRIVATE
+  ${CMAKE_SOURCE_DIR}/third_party/
+  ${CMAKE_SOURCE_DIR}/src/net/
+)
 target_compile_options(server PRIVATE
   $<$<CONFIG:Debug>:-Wall -Wextra -Wpedantic -g -DDEBUG>
   $<$<CONFIG:Release>:-O2>
