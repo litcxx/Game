@@ -1,3 +1,5 @@
+find_package(OpenSSL REQUIRED)
+
 set(SOURCES
   main.cpp
   server/server.cpp
@@ -16,6 +18,12 @@ target_compile_options(server PRIVATE
   $<$<CONFIG:Debug>:-Wall -Wextra -Wpedantic -g -DDEBUG>
   $<$<CONFIG:Release>:-O2>
 )
+
+target_link_libraries(server PRIVATE
+  OpenSSL::SSL
+  OpenSSL::Crypto
+)
+
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_options(server PRIVATE -fsanitize=address -fsanitize=undefined)

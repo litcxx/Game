@@ -1,5 +1,6 @@
 #include "server.hpp"
 
+#include <boost/asio/ssl/context.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <boost/asio/strand.hpp>
 #include <spdlog/spdlog.h>
@@ -7,8 +8,9 @@
 #include "session/session.hpp"
 #include "utils/asio_aliases.hpp"
 
-Server::Server(boost::asio::io_context& ioc, tcp::endpoint endpoint) :
+Server::Server(boost::asio::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint) :
   ioc_(ioc),
+  ctx_(ctx),
   acceptor_(ioc)
 {
   boost::system::error_code ec;
@@ -49,7 +51,7 @@ void Server::Run()
     [this](const boost::system::error_code& ec, tcp::socket socket)
     {
       if (!ec) {
-        auto session = std::make_shared<Session>(std::move(socket));
+        auto session = std::make_shared<Session>(std::move(socket), ctx_);
         session->Run();
       } else
         spdlog::error("async_accept: {}", ec.what());
