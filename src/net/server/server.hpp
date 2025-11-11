@@ -1,5 +1,4 @@
-#ifndef SERVER_HPP_
-#define SERVER_HPP_
+#pragma once
 
 #include <memory>
 
@@ -9,16 +8,17 @@
 
 #include "utils/asio_aliases.hpp"
 
-class Server : public std::enable_shared_from_this<Server> {
-public:
-  explicit Server(net::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint);
+namespace ep::net
+{
+  class Server : public std::enable_shared_from_this<Server> {
+  public:
+    explicit Server(net::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint);
 
-  void Run();
-private:
+    void Run();
+  private:
 
-  net::io_context& ioc_;
-  ssl::context& ctx_;
-  tcp::acceptor acceptor_;
-};
-
-#endif
+    net::io_context& ioc_;
+    ssl::context& ctx_;
+    tcp::acceptor acceptor_;
+  };
+}

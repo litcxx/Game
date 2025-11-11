@@ -1,4 +1,7 @@
 #pragma once
 
-namespace beast = boost::beast;
-namespace websocket = beast::websocket;
+namespace ep::net
+{
+  namespace beast = boost::beast;
+  namespace websocket = beast::websocket;
+}

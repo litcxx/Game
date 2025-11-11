@@ -11,17 +11,21 @@
 #include "utils/asio_aliases.hpp"
 #include "utils/beast_aliases.hpp"
 
-class Session : public std::enable_shared_from_this<Session> {
-public:
-  explicit Session(tcp::socket&& socket, ssl::context& ctx);
+namespace ep::net
+{
+  class Session : public std::enable_shared_from_this<Session> {
+  public:
+    explicit Session(tcp::socket&& socket, ssl::context& ctx);
 
-  void Run();
+    void Run();
 
-private:
-  void Accept();
-  void ReadRequest();
-  void SendData();
+  private:
+    void Accept();
+    void ReadRequest();
+    void SendData();
 
-  websocket::stream<ssl::stream<tcp::socket>> socket_;
-  beast::flat_buffer buffer_;
-};
+    websocket::stream<ssl::stream<tcp::socket>> socket_;
+    beast::flat_buffer buffer_;
+  };
+}
+

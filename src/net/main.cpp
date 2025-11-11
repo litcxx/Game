@@ -10,6 +10,9 @@
 
 int main(int argc, char* argv[])
 {
+  // Clear project namespaces for readability
+  using namespace ep::net;
+
   // Check command line arguments.
   if (argc != 4) {
     spdlog::error("Usage: {} <address> <port> <threads>", argv[0]);
