@@ -28,10 +28,10 @@ int main(int argc, char* argv[])
   // The SSL context is required, and holds certificates
   ssl::context ctx(ssl::context::tlsv12_server);
   ctx.set_options(
-      ssl::context::default_workarounds |
-      ssl::context::no_sslv2 |
-      ssl::context::no_sslv3 |
-      ssl::context::single_dh_use);
+    ssl::context::default_workarounds |
+    ssl::context::no_sslv2 |
+    ssl::context::no_sslv3 |
+    ssl::context::single_dh_use);
   ctx.use_certificate_chain_file("certs/server.crt");
   ctx.use_private_key_file("certs/server.key", ssl::context::pem);
   ctx.set_verify_mode(ssl::verify_none);
