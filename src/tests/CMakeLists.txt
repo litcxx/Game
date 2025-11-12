@@ -21,6 +21,7 @@ endif()
 set(SOURCES
   main.cpp
   base_packet_tests.cpp
+  ts_queue_tests.cpp
 )
 
 add_executable(unit_tests 
