@@ -8,30 +8,46 @@
 
 namespace ep::net
 {
+  namespace packet_info
+  {
+    inline constexpr std::uint32_t kMaxPayloadSize = 128;
+  }
+
+  template<typename T>
+  concept PodType = std::is_standard_layout_v<T>;
+
+#pragma pack(push, 1)
   struct PacketHead {
     std::uint16_t opcode_;
     std::uint32_t size_;
+    
+    inline bool IsValid() const noexcept;
   };
+#pragma pack(pop)
+
+  bool PacketHead::IsValid() const noexcept
+  {
+    return (opcode_ <= 0xFF && size_ < packet_info::kMaxPayloadSize);
+  }
 
   struct PacketData {
     PacketHead head_{};
     std::vector<std::uint8_t> body_;
 
+    // TODO not convert to htonl/htons
     // Serialize data
-    template<typename T>
+    template<PodType T>
     friend PacketData& operator<<(PacketData& packet, T value);
 
+    // TODO not convert to ntohl/ntohs
     // Deserialize data
-    template<typename T>
+    template<PodType T>
     friend PacketData& operator>>(PacketData& packet, T& value);
   };
 
-  template<typename T>
+  template<PodType T>
   PacketData& operator<<(PacketData& packet, T value)
   {
-    // Check if T is standard layout type
-    static_assert(std::is_standard_layout_v<T>);
-
     // Allocate memmory and copy value into buffer
     std::size_t i = packet.body_.size();
     packet.body_.resize(i + sizeof(T));
@@ -43,12 +59,9 @@ namespace ep::net
     return packet;
   }
 
-  template<typename T>
+  template<PodType T>
   PacketData& operator>>(PacketData& packet, T& value)
   {
-    // Check if T is standard layout type
-    static_assert(std::is_standard_layout_v<T>);
-
     // Copy payload data into value and resize buffer
     std::size_t i = packet.body_.size() - sizeof(T);
     memcpy(&value, packet.body_.data() + i, sizeof(T));

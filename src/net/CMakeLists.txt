@@ -3,7 +3,7 @@ find_package(OpenSSL REQUIRED)
 add_library(net
   server/server.cpp
   session/session.cpp
-  # protocol/base_packet.cpp
+  socket/wss_socket.cpp
 )
 
 target_include_directories(net PRIVATE
