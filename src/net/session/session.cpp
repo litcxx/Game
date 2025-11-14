@@ -10,8 +10,8 @@
 #include <spdlog/spdlog.h>
 
 #include "server/server.hpp"
-#include "utils/asio_aliases.hpp"
-#include "utils/beast_aliases.hpp"
+#include "aliases/asio_aliases.hpp"
+#include "aliases/beast_aliases.hpp"
 
 namespace ep::net
 {

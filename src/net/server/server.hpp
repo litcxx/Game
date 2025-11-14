@@ -9,8 +9,8 @@
 #include <boost/asio/ssl/context.hpp>
 
 #include "protocol/base_packet.hpp"
-#include "utils/asio_aliases.hpp"
-#include "ts_queue.hpp"
+#include "aliases/asio_aliases.hpp"
+#include "utils/ts_queue.hpp"
 
 namespace ep::net
 {
@@ -36,6 +36,6 @@ namespace ep::net
     mutable std::mutex sessions_mutex_;
     std::atomic<std::size_t> new_session_id_;
     std::list<std::shared_ptr<Session>> sessions_;
-    ep::shared::TSQueue<PacketData> incoming_queue_;
+    ep::utils::TSQueue<PacketData> incoming_queue_;
   };
 }

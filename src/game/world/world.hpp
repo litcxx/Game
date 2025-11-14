@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "player/i_player.hpp"
+#include "utils/ts_queue.hpp"
 
 namespace ep::game
 {

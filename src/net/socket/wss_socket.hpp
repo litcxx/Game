@@ -4,8 +4,8 @@
 #include "boost/asio/ssl/stream.hpp"
 #include <boost/beast/websocket/stream.hpp>
 
-#include "utils/asio_aliases.hpp"
-#include "utils/beast_aliases.hpp"
+#include "aliases/asio_aliases.hpp"
+#include "aliases/beast_aliases.hpp"
 #include "socket/i_socket.hpp"
 
 namespace ep::net

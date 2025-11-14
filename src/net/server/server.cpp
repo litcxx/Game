@@ -10,7 +10,7 @@
 #include "protocol/base_packet.hpp"
 #include "session/session.hpp"
 #include "socket/wss_socket.hpp"
-#include "utils/asio_aliases.hpp"
+#include "aliases/asio_aliases.hpp"
 
 namespace ep::net
 {

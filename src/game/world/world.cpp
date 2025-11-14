@@ -14,7 +14,6 @@ namespace ep::game
 
   void World::Tick()
   {
-    // TODO tick
   }
   
   void World::AddPlayer()
