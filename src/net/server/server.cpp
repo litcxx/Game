@@ -7,6 +7,7 @@
 #include <boost/asio/strand.hpp>
 #include <spdlog/spdlog.h>
 
+#include "protocol/base_packet.hpp"
 #include "session/session.hpp"
 #include "socket/wss_socket.hpp"
 #include "utils/asio_aliases.hpp"
@@ -75,6 +76,11 @@ namespace ep::net
     sessions_.push_back(session);
   }
   
+  void Server::PushPacket(PacketData packet)
+  {
+    incoming_queue_.Push(std::move(packet));
+  }
+
   void Server::CloseSession(std::shared_ptr<Session> session)
   {
     std::lock_guard lock(sessions_mutex_);

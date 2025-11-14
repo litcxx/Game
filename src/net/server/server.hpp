@@ -8,6 +8,7 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl/context.hpp>
 
+#include "protocol/base_packet.hpp"
 #include "utils/asio_aliases.hpp"
 #include "utils/ts_queue.hpp"
 
@@ -21,6 +22,7 @@ namespace ep::net
     ~Server() = default;
 
     void Run();
+    void PushPacket(PacketData packet);
     void CloseSession(std::shared_ptr<Session> session);
   private:
     void AddSession(std::shared_ptr<Session> session) noexcept;
@@ -30,5 +32,6 @@ namespace ep::net
     tcp::acceptor acceptor_;
     mutable std::mutex sessions_mutex_;
     std::list<std::shared_ptr<Session>> sessions_;
+    TSQueue<PacketData> incoming_queue_;
   };
 }
