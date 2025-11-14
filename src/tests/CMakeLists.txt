@@ -11,7 +11,7 @@ if (NOT GTest_FOUND)
   )
 
   set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-  set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+  set(BUILD_GMOCK ON CACHE BOOL "" FORCE)
 
   FetchContent_MakeAvailable(googletest)
 else()
@@ -20,8 +20,8 @@ endif()
 
 set(SOURCES
   main.cpp
-  base_packet_tests.cpp
-  ts_queue_tests.cpp
+  net/base_packet_tests.cpp
+  net/ts_queue_tests.cpp
 )
 
 add_executable(unit_tests 
@@ -31,6 +31,7 @@ add_executable(unit_tests
 target_link_libraries(unit_tests PRIVATE
   GTest::gtest
   GTest::gtest_main
+  GTest::gmock
 )
 
 target_include_directories(unit_tests PRIVATE
