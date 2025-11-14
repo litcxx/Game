@@ -12,7 +12,7 @@ namespace ep::net
 
   class Session : public std::enable_shared_from_this<Session> {
   public:
-    explicit Session(std::shared_ptr<Server> server, std::unique_ptr<ISocket> socket);
+    explicit Session(std::shared_ptr<Server> server, std::unique_ptr<ISocket> socket, std::size_t id);
     ~Session() = default;
 
     Session(const Session&) = delete;
@@ -20,6 +20,7 @@ namespace ep::net
 
     // Initialie ssl handshake and websocket accept connection
     void Run();
+    std::size_t GetID() const { return id_; }
 
   private:
     // WebSocket accept connection
@@ -36,6 +37,7 @@ namespace ep::net
 
     std::shared_ptr<Server> server_;
     std::unique_ptr<ISocket> socket_;
+    std::size_t id_;
     std::size_t head_bytes_read_;
     std::size_t body_bytes_read_;
     PacketData packet_;

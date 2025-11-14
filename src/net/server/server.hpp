@@ -21,8 +21,11 @@ namespace ep::net
     explicit Server(net::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint);
     ~Server() = default;
 
+    // Async accept new client.
     void Run();
+
     void PushPacket(PacketData packet);
+
     void CloseSession(std::shared_ptr<Session> session);
   private:
     void AddSession(std::shared_ptr<Session> session) noexcept;
@@ -31,6 +34,7 @@ namespace ep::net
     ssl::context& ctx_;
     tcp::acceptor acceptor_;
     mutable std::mutex sessions_mutex_;
+    std::atomic<std::size_t> new_session_id_;
     std::list<std::shared_ptr<Session>> sessions_;
     TSQueue<PacketData> incoming_queue_;
   };

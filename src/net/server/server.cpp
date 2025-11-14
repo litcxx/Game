@@ -17,32 +17,33 @@ namespace ep::net
   Server::Server(boost::asio::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint) :
     ioc_{ioc},
     ctx_{ctx},
-    acceptor_{ioc}
+    acceptor_{ioc},
+    new_session_id_{0}
 {
     boost::system::error_code ec;
 
-    // Open the acceptor
+    // Open the acceptor.
     acceptor_.open(endpoint.protocol(), ec);
     if (ec) {
       spdlog::error("open: {}", ec.what());
       return;
     }
 
-    // Allow address reuse
+    // Allow address reuse.
     acceptor_.set_option(boost::asio::socket_base::reuse_address(true), ec);
     if (ec) {
       spdlog::error("set_option: {}", ec.what());
       return;
     }
 
-    // Bind to the server address
+    // Bind to the server address.
     acceptor_.bind(endpoint, ec);
     if (ec) {
       spdlog::error("bind: {}", ec.what());
       return;
     }
 
-    // Start listening for connections
+    // Start listening for connections.
     acceptor_.listen(boost::asio::socket_base::max_listen_connections, ec);
     if (ec) {
       spdlog::error("listen: {}", ec.what());
@@ -58,7 +59,8 @@ namespace ep::net
       {
         if (!ec) {
           auto wsssocket = std::make_unique<WSSSocket>(std::move(socket), ctx_);
-          auto session = std::make_shared<Session>(shared_from_this(), std::move(wsssocket));
+          std::size_t id = new_session_id_.fetch_add(1);
+          auto session = std::make_shared<Session>(shared_from_this(), std::move(wsssocket), id);
           AddSession(session);
           session->Run();
         } else {
@@ -74,6 +76,7 @@ namespace ep::net
   {
     std::lock_guard lock(sessions_mutex_);
     sessions_.push_back(session);
+    new_session_id_++;
   }
   
   void Server::PushPacket(PacketData packet)

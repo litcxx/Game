@@ -15,9 +15,10 @@
 
 namespace ep::net
 {
-  Session::Session(std::shared_ptr<Server> server, std::unique_ptr<ISocket> socket) :
+  Session::Session(std::shared_ptr<Server> server, std::unique_ptr<ISocket> socket, std::size_t id) :
     server_{server},
     socket_{std::move(socket)},
+    id_(id),
     head_bytes_read_{0},
     body_bytes_read_{0}
   {}
