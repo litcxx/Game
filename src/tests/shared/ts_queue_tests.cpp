@@ -1,4 +1,5 @@
 #include <thread>
+#include <utility>
 #include <functional>
 
 #include <gtest/gtest.h>
@@ -97,4 +98,20 @@ TEST(TSQueue, WaitAndPopValueTest)
   data.Push(1);
   t.join();
   EXPECT_EQ(data.Size(), 0);
+}
+
+TEST(TSQueue, MoveOperator)
+{
+  TSQueue<int>data;
+
+  for (int i = 0; i < 5; i++)
+    data.Push(1);
+
+  EXPECT_EQ(data.Size(), 5);
+
+  TSQueue<int> tmp;
+  tmp = std::move(data);
+
+  EXPECT_EQ(data.Size(), 0);
+  EXPECT_EQ(tmp.Size(), 5);
 }

@@ -13,6 +13,8 @@ namespace ep::utils
     TSQueue(const TSQueue&) = delete;
     TSQueue& operator=(const TSQueue&) = delete;
 
+    TSQueue& operator=(TSQueue&& other);
+
     std::shared_ptr<T> TryPop() noexcept;
     bool TryPop(T& value);
 
@@ -30,6 +32,13 @@ namespace ep::utils
     std::queue<std::shared_ptr<T>> data_;
   };
 
+  template<typename T>
+  TSQueue<T>& TSQueue<T>::operator=(TSQueue&& other)
+  {
+    std::scoped_lock lock(data_mutex_, other.data_mutex_);
+    std::swap(data_, other.data_);
+    return *this;
+  }
   template<typename T>
   std::shared_ptr<T> TSQueue<T>::TryPop() noexcept
   {
