@@ -5,6 +5,7 @@ add_executable(server
 target_include_directories(server PRIVATE
   ${CMAKE_SOURCE_DIR}/third_party
   ${CMAKE_SOURCE_DIR}/src/net
+  ${CMAKE_SOURCE_DIR}/src/game
 )
 
 target_compile_options(server PRIVATE
@@ -14,6 +15,7 @@ target_compile_options(server PRIVATE
 
 target_link_libraries(server PRIVATE
   net
+  game
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
