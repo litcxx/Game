@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <memory>
 
 #include "protocol/base_packet.hpp"
@@ -26,10 +27,12 @@ namespace ep::net
 
     // Read bytes untill read the full packet header
     void ReadPacketHead();
+    void OnReadPacketHead(std::size_t size);
 
     // Read bytes untill read the full payload data
     // and push to incoming queue
     void ReadPacketBody();
+    void OnReadPacketBody(std::size_t size);
 
     std::shared_ptr<Server> server_;
     std::unique_ptr<ISocket> socket_;

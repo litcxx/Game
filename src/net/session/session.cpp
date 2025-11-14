@@ -73,40 +73,45 @@ namespace ep::net
         if (ec)
           return spdlog::error("read: {}", ec.what());
 
-        spdlog::info("read: {} bytes from clients to header", size);
-
-        // Update already read packet header data
-        self->head_bytes_read_ += size;
-
-        // The full packet header was read
-        if (self->head_bytes_read_ == sizeof(PacketHead)) {
-          spdlog::info("The full packet header was read");
-          spdlog::info("opcode: {}", self->packet_.head_.opcode_);
-          spdlog::info("size: {}", self->packet_.head_.size_);
-              
-          // Verify the validity of the header
-          if (!self->packet_.head_.IsValid()) {
-            spdlog::warn("recv invalid header from ip: {}",
-                         self->socket_->string_address());
-            self->head_bytes_read_ = 0;
-            return self->server_->CloseSession(self);
-          }
-
-          if (self->packet_.head_.size_ > 0) {
-            // Resize body buffer to fit payload as indicated by header
-            self->packet_.body_.resize(self->packet_.head_.size_);
-
-            self->ReadPacketBody();
-          } else {
-            self->head_bytes_read_ = 0;
-            self->ReadPacketHead();
-          }
-
-        } else {
-          self->ReadPacketHead();
-        }
+        self->OnReadPacketHead(size);
       }
     );
+  }
+
+  void Session::OnReadPacketHead(std::size_t size)
+  {
+    spdlog::info("read: {} bytes from clients to header", size);
+
+    // Update already read packet header data.
+    head_bytes_read_ += size;
+
+    // Continue reading the header, untill the complete PacketHead is recived.
+    if (head_bytes_read_ < sizeof(PacketHead))
+      return ReadPacketHead();
+
+    // The full packet header was read.
+    spdlog::info("The full packet header was read");
+    spdlog::info("opcode: {}", packet_.head_.opcode_);
+    spdlog::info("size: {}", packet_.head_.size_);
+        
+    // Verify the validity of the header.
+    if (!packet_.head_.IsValid()) {
+      spdlog::warn("recv invalid header from ip: {}",
+                   socket_->string_address());
+      head_bytes_read_ = 0;
+      return server_->CloseSession(shared_from_this());
+    }
+
+    // If payload exists, resize buffer and read body.
+    // Otherwise, push the packet to incoming queue and start reading the next header.
+    if (packet_.head_.size_ > 0) {
+      packet_.body_.resize(packet_.head_.size_);
+      ReadPacketBody();
+    } else {
+      server_->PushPacket(std::move(packet_));
+      head_bytes_read_ = 0;
+      ReadPacketHead();
+    }
   }
 
   void Session::ReadPacketBody()
@@ -118,33 +123,38 @@ namespace ep::net
       packet_.body_.size() - body_bytes_read_,
       [self](const beast::error_code& ec, std::size_t size)
       {
-        // client close connection
+        // Client close connection.
         if (ec == websocket::error::closed)
           return spdlog::info("session was closed");
-        // an error occured
+        // An error occured.
         if (ec)
           return spdlog::error("read: {}", ec.what());
 
-        spdlog::info("read: {} bytes from clients", size);
-
-        // Update already read payload data
-        self->body_bytes_read_ += size;
-
-        // The full payload data was read
-        if (self->body_bytes_read_ == self->packet_.body_.size()) {
-          spdlog::info("The full payload data was read");
-          // TODO push to incoming queue
-
-          // Reset packet info
-          self->head_bytes_read_ = 0;
-          self->body_bytes_read_ = 0;
-          self->packet_.body_.clear();
-
-          self->ReadPacketHead();
-        } else {
-          self->ReadPacketBody();
-        }
+        self->OnReadPacketBody(size);
       }
     );
+  }
+
+  void Session::OnReadPacketBody(std::size_t size)
+  {
+    spdlog::info("read: {} bytes from clients", size);
+
+    // Update already read payload data.
+    body_bytes_read_ += size;
+
+    // Continue reading payload data untill all payload data has been received.
+    if (body_bytes_read_ < packet_.body_.size())
+      return ReadPacketBody();
+
+    // All payload data has been received.
+    // Push packet to incoming queue and start reading the next header.
+    spdlog::info("The full payload data was read");
+    server_->PushPacket(std::move(packet_));
+
+    // Reset packet info
+    head_bytes_read_ = 0;
+    body_bytes_read_ = 0;
+
+    ReadPacketHead();
   }
 }
