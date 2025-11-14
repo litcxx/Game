@@ -3,8 +3,9 @@
 
 #include <gtest/gtest.h>
 
-#include "utils/ts_queue.hpp"
-using namespace ep::net;
+#include "ts_queue.hpp"
+
+using namespace ep::shared;
 
 TEST(TSQueue, EmptyTest)
 {

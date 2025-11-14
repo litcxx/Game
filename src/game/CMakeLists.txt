@@ -5,4 +5,5 @@ add_library(game
 
 target_include_directories(game PRIVATE
   ${CMAKE_SOURCE_DIR}/src/game
+  ${CMAKE_SOURCE_DIR}/src/shared
 )

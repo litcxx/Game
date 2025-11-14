@@ -6,6 +6,7 @@ target_include_directories(server PRIVATE
   ${CMAKE_SOURCE_DIR}/third_party
   ${CMAKE_SOURCE_DIR}/src/net
   ${CMAKE_SOURCE_DIR}/src/game
+  ${CMAKE_SOURCE_DIR}/src/shared
 )
 
 target_compile_options(server PRIVATE

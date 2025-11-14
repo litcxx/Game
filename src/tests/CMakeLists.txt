@@ -21,7 +21,7 @@ endif()
 set(SOURCES
   main.cpp
   net/base_packet_tests.cpp
-  net/ts_queue_tests.cpp
+  shared/ts_queue_tests.cpp
 )
 
 add_executable(unit_tests 
@@ -36,6 +36,8 @@ target_link_libraries(unit_tests PRIVATE
 
 target_include_directories(unit_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src/net
+  ${CMAKE_SOURCE_DIR}/src/game
+  ${CMAKE_SOURCE_DIR}/src/shared
 )
 
 include(GoogleTest)

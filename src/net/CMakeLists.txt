@@ -9,6 +9,7 @@ add_library(net
 target_include_directories(net PRIVATE
   ${CMAKE_SOURCE_DIR}/third_party
   ${CMAKE_SOURCE_DIR}/src/net
+  ${CMAKE_SOURCE_DIR}/src/shared
 )
 
 target_link_libraries(net PRIVATE
