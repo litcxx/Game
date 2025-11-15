@@ -20,7 +20,8 @@ endif()
 
 set(SOURCES
   main.cpp
-  net/base_packet_tests.cpp
+  net/protocol/base_packet_tests.cpp
+  net/session/packet_handler_tests.cpp
   shared/ts_queue_tests.cpp
 )
 
@@ -32,6 +33,8 @@ target_link_libraries(unit_tests PRIVATE
   GTest::gtest
   GTest::gtest_main
   GTest::gmock
+  net
+  game
 )
 
 target_include_directories(unit_tests PRIVATE

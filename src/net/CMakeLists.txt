@@ -3,6 +3,7 @@ find_package(OpenSSL REQUIRED)
 add_library(net
   server/server.cpp
   session/session.cpp
+  session/packet_handler.cpp
   socket/wss_socket.cpp
 )
 

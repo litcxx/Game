@@ -2,7 +2,7 @@
 
 #include "protocol/base_packet.hpp"
 
-TEST(BasePacketTest, Foo)
+TEST(BasePacketTest, OperatorInOut)
 {
   ep::net::PacketData packet;
   EXPECT_EQ(packet.body_.size(), 0);

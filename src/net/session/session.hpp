@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <memory>
 
-#include "protocol/base_packet.hpp"
+#include "packet_handler.hpp"
 #include "socket/i_socket.hpp"
 
 namespace ep::net
@@ -38,8 +38,6 @@ namespace ep::net
     std::shared_ptr<Server> server_;
     std::unique_ptr<ISocket> socket_;
     std::size_t id_;
-    std::size_t head_bytes_read_;
-    std::size_t body_bytes_read_;
-    PacketData packet_;
+    PacketHandler packet_handler_;
   };
 }
