@@ -1,15 +1,16 @@
 #include "world.hpp"
+#include "utils/ts_queue.hpp"
 
 #include <chrono>
+#include <system_error>
 #include <thread>
 
 #include <spdlog/spdlog.h>
 
-#include "protocol/base_packet.hpp"
-
 namespace ep::game
 {
-  World::World()
+  World::World(std::shared_ptr<net::NetworkSubsystem> net_subsystem) :
+    net_subsystem_(net_subsystem)
   {
     // TODO initialzie world
   }
@@ -41,7 +42,7 @@ namespace ep::game
   void World::Tick(float dt)
   {
     // spdlog::info("World::Tick");
-    game_queue_ = std::move(net_in_queue_);
+    utils::TSSwap(game_queue_, net_subsystem_->net_in_queue_);
     net::PacketData packet;
     while (game_queue_.TryPop(packet)) {
       // TODO handle packet

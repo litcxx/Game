@@ -5,20 +5,20 @@
 #include <boost/asio/ssl/context.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <boost/asio/strand.hpp>
+#include <memory>
 #include <spdlog/spdlog.h>
 
-#include "protocol/base_packet.hpp"
 #include "session/session.hpp"
 #include "socket/wss_socket.hpp"
-#include "aliases/asio_aliases.hpp"
 
 namespace ep::net
 {
-  Server::Server(boost::asio::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint) :
+  Server::Server(boost::asio::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint, std::shared_ptr<NetworkSubsystem> net_susbsystem) :
     ioc_{ioc},
     ctx_{ctx},
     acceptor_{ioc},
-    new_session_id_{0}
+    new_session_id_{0},
+    net_susbsystem_(net_susbsystem)
 {
     boost::system::error_code ec;
 
@@ -81,7 +81,7 @@ namespace ep::net
   
   void Server::PushPacket(PacketData packet)
   {
-    incoming_queue_.Push(std::move(packet));
+    net_susbsystem_->net_in_queue_.Push(std::move(packet));
   }
 
   void Server::CloseSession(std::shared_ptr<Session> session)

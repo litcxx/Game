@@ -8,9 +8,9 @@
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/ssl/context.hpp>
 
-#include "protocol/base_packet.hpp"
 #include "aliases/asio_aliases.hpp"
-#include "utils/ts_queue.hpp"
+#include "protocol/base_packet.hpp"
+#include "protocol/network_subsystem.hpp"
 
 namespace ep::net
 {
@@ -18,7 +18,7 @@ namespace ep::net
 
   class Server : public std::enable_shared_from_this<Server> {
   public:
-    explicit Server(net::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint);
+    explicit Server(net::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint, std::shared_ptr<NetworkSubsystem> net_susbsystem);
     ~Server() = default;
 
     // Async accept new client.
@@ -36,6 +36,6 @@ namespace ep::net
     mutable std::mutex sessions_mutex_;
     std::atomic<std::size_t> new_session_id_;
     std::list<std::shared_ptr<Session>> sessions_;
-    ep::utils::TSQueue<PacketData> incoming_queue_;
+    std::shared_ptr<NetworkSubsystem> net_susbsystem_;
   };
 }

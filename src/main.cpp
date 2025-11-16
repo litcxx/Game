@@ -8,6 +8,7 @@
 
 #include "server/server.hpp"
 #include "world/world.hpp"
+#include "protocol/network_subsystem.hpp"
 
 int main(int argc, char* argv[])
 {
@@ -21,8 +22,11 @@ int main(int argc, char* argv[])
     return EXIT_FAILURE;
   }
 
+  // Initialize network subsystem
+  auto net_subsystem = std::make_shared<NetworkSubsystem>();
+
   // Initialize the world and run game loop.
-  auto world = std::make_shared<World>();
+  auto world = std::make_shared<World>(net_subsystem);
   std::thread t(
     [&world]
     {
@@ -49,7 +53,7 @@ int main(int argc, char* argv[])
   ctx.set_verify_mode(ssl::verify_none);
 
   // Create and launch a listening port.
-  auto server = std::make_shared<Server>(ioc, ctx, tcp::endpoint{address, port});
+  auto server = std::make_shared<Server>(ioc, ctx, tcp::endpoint{address, port}, net_subsystem);
   server->Run();
 
   // Run the I/O service on the requested number of threads.
@@ -66,7 +70,8 @@ int main(int argc, char* argv[])
   for (auto& t : v)
     if (t.joinable())
         t.join();
-  t.join();
+  if (t.joinable())
+    t.join();
 
   return EXIT_SUCCESS;
 }
