@@ -9,16 +9,21 @@ namespace ep::game
 {
   class Player : IPlayer {
   public:
-    explicit Player(float x, float y, float z, std::size_t id);
+    explicit Player(double x, double y, double z, std::size_t id);
     ~Player() = default;
 
-    void Move(float dx, float dy, float dz) override;
+    void Move(double dx, double dy, double dz) override;
+
+    double GetX() const noexcept override { return x_; }
+    double GetY() const noexcept override { return y_; }
+    double GetZ() const noexcept override { return z_; }
+    std::size_t GetID() const noexcept override { return id_; }
 
   private:
     // Player's position in the world
-    float x_;
-    float y_;
-    float z_;
+    double x_;
+    double y_;
+    double z_;
 
     std::size_t id_;
   };

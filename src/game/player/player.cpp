@@ -2,14 +2,14 @@
 
 namespace ep::game
 {
-  Player::Player(float x, float y, float z, std::size_t id) :
+  Player::Player(double x, double y, double z, std::size_t id) :
     x_(x),
     y_(y),
     z_(z),
     id_(id)
   {}
 
-  void Player::Move(float dx, float dy, float dz)
+  void Player::Move(double dx, double dy, double dz)
   {
     // TODO check collision
     x_ += dx;
