@@ -1,11 +1,11 @@
 #include "world.hpp"
-#include "utils/ts_queue.hpp"
 
 #include <chrono>
-#include <system_error>
 #include <thread>
 
 #include <spdlog/spdlog.h>
+
+#include "protocol/opcodes.cpp"
 
 namespace ep::game
 {
@@ -39,20 +39,39 @@ namespace ep::game
     }
   }
 
-  void World::Tick(float dt)
+  void World::Tick(double dt)
   {
     // spdlog::info("World::Tick");
-    utils::TSSwap(game_queue_, net_subsystem_->net_in_queue_);
+    utils::TSSwap(game_in_queue_, net_subsystem_->net_in_queue_);
     net::PacketData packet;
-    while (game_queue_.TryPop(packet)) {
-      // TODO handle packet
+    while (game_in_queue_.TryPop(packet)) {
       spdlog::info("World::Tick: handle packet");
+      ProcessInput(std::move(packet));
     }
   }
-  
+
+  void World::ProcessInput(net::PacketData packet)
+  {
+    using ep::protocol::Opcodes;
+
+    switch (static_cast<Opcodes>(packet.head_.opcode_)) {
+    case Opcodes::MoveForward: 
+      break;
+    case Opcodes::MoveRight:
+      break;
+    case Opcodes::MoveBackward:
+      break;
+    case Opcodes::MoveLeft:
+      break;
+    default:
+      ;
+    }
+  }
+
   void World::AddPlayer()
   {
-    // TODO add player
+    std::lock_guard lock(players_mutex_);
+    // players_.push(std::make_shared<Player>(0, 0, 0, 1, ?));
   }
 
   void World::RemovePlayer()
