@@ -103,7 +103,7 @@ namespace ep::net
         else {
           // All payload data has been received.
           // Push packet to incoming queue and start reading the next header.
-          self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()));
+          self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
           self->ReadPacketHead();
         }
       }

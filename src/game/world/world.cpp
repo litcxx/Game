@@ -43,18 +43,18 @@ namespace ep::game
   {
     // spdlog::info("World::Tick");
     utils::TSSwap(game_in_queue_, net_subsystem_->net_in_queue_);
-    net::PacketData packet;
-    while (game_in_queue_.TryPop(packet)) {
+    while (!game_in_queue_.Empty()) {
       spdlog::info("World::Tick: handle packet");
-      ProcessInput(std::move(packet));
+      auto packet = game_in_queue_.TryPop();
+      ProcessInput(std::move(*packet));
     }
   }
 
-  void World::ProcessInput(net::PacketData packet)
+  void World::ProcessInput(net::GamePacket packet)
   {
     using ep::protocol::Opcodes;
 
-    switch (static_cast<Opcodes>(packet.head_.opcode_)) {
+    switch (static_cast<Opcodes>(packet.GetOpcode())) {
     case Opcodes::MoveForward: 
       break;
     case Opcodes::MoveRight:

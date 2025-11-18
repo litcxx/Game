@@ -21,7 +21,7 @@ namespace ep::game
     void GameLoop();
   private:
     void Tick(double dt);
-    void ProcessInput(net::PacketData packet);
+    void ProcessInput(net::GamePacket packet);
 
     void AddPlayer();
     void RemovePlayer();
@@ -30,6 +30,6 @@ namespace ep::game
     std::shared_ptr<net::NetworkSubsystem> net_subsystem_;
     mutable std::mutex players_mutex_;
     std::vector<std::shared_ptr<IPlayer>> players_;
-    ep::utils::TSQueue<net::PacketData> game_in_queue_;
+    ep::utils::TSQueue<net::GamePacket> game_in_queue_;
   };
 }

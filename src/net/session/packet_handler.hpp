@@ -28,7 +28,7 @@ namespace ep::net
     std::size_t BodySize() const noexcept;
 
     // Extract packet by moving data
-    PacketData ExtractPacket() noexcept;
+    NetPacket ExtractPacket() noexcept;
 
     // Return true if all header data was read.
     bool ReadHeader(std::size_t size);
@@ -42,6 +42,6 @@ namespace ep::net
   private:
     std::size_t header_read_;
     std::size_t body_read_;
-    PacketData packet_;
+    NetPacket packet_;
   };
 }

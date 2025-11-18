@@ -24,7 +24,7 @@ namespace ep::net
     // Async accept new client.
     void Run();
 
-    void PushPacket(PacketData packet);
+    void PushPacket(NetPacket packet, std::size_t id);
 
     void CloseSession(std::shared_ptr<Session> session);
   private:

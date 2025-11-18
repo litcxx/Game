@@ -29,7 +29,7 @@ namespace ep::net
     return packet_.body_.size() - body_read_;
   }
 
-  PacketData PacketHandler::ExtractPacket() noexcept
+  NetPacket PacketHandler::ExtractPacket() noexcept
   {
     header_read_ = 0;
     body_read_ = 0;

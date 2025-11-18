@@ -30,23 +30,23 @@ namespace ep::net
     return (opcode_ <= 0xFF && size_ < packet_info::kMaxPayloadSize);
   }
 
-  struct PacketData {
+  struct NetPacket {
     PacketHead head_{};
     std::vector<std::uint8_t> body_;
 
     // TODO not convert to htonl/htons
     // Serialize data
     template<PodType T>
-    friend PacketData& operator<<(PacketData& packet, T value);
+    friend NetPacket& operator<<(NetPacket& packet, T value);
 
     // TODO not convert to ntohl/ntohs
     // Deserialize data
     template<PodType T>
-    friend PacketData& operator>>(PacketData& packet, T& value);
+    friend NetPacket& operator>>(NetPacket& packet, T& value);
   };
 
   template<PodType T>
-  PacketData& operator<<(PacketData& packet, T value)
+  NetPacket& operator<<(NetPacket& packet, T value)
   {
     // Allocate memmory and copy value into buffer
     std::size_t i = packet.body_.size();
@@ -60,7 +60,7 @@ namespace ep::net
   }
 
   template<PodType T>
-  PacketData& operator>>(PacketData& packet, T& value)
+  NetPacket& operator>>(NetPacket& packet, T& value)
   {
     // Copy payload data into value and resize buffer
     std::size_t i = packet.body_.size() - sizeof(T);
@@ -73,4 +73,15 @@ namespace ep::net
     return packet;
   }
 
+  struct GamePacket {
+    NetPacket packet_;
+    std::size_t id_;
+
+    explicit GamePacket(NetPacket packet, std::size_t id) :
+      packet_(std::move(packet)),
+      id_(id)
+   {}
+
+    uint16_t GetOpcode() const noexcept { return packet_.head_.opcode_; }
+  };
 }

@@ -5,9 +5,11 @@
 #include <boost/asio/ssl/context.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <boost/asio/strand.hpp>
+#include <cstddef>
 #include <memory>
 #include <spdlog/spdlog.h>
 
+#include "protocol/base_packet.hpp"
 #include "session/session.hpp"
 #include "socket/wss_socket.hpp"
 
@@ -79,9 +81,9 @@ namespace ep::net
     new_session_id_++;
   }
   
-  void Server::PushPacket(PacketData packet)
+  void Server::PushPacket(NetPacket packet, std::size_t id)
   {
-    net_susbsystem_->net_in_queue_.Push(std::move(packet));
+    net_susbsystem_->net_in_queue_.Push(GamePacket(std::move(packet), id));
   }
 
   void Server::CloseSession(std::shared_ptr<Session> session)
