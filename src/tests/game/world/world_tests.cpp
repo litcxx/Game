@@ -1,0 +1,52 @@
+#include <memory>
+
+#include <gtest/gtest.h>
+
+#include "protocol/network_subsystem.hpp"
+#include "world/world.hpp"
+#include "game/player/mock_player.hpp"
+
+TEST(World, AddPlayersTest)
+{
+  auto net_subsystem = std::make_shared<ep::net::NetworkSubsystem>();
+  ep::game::World world(net_subsystem);
+
+  EXPECT_EQ(world.PlayerNumbers(), 0);
+
+  for (auto i = 0; i < 5; i++) {
+    auto player = std::make_shared<ep::tests::MockPlayer>();
+
+    EXPECT_CALL(*player, GetID())
+      .Times(1)
+      .WillOnce(testing::Return(i));
+
+    world.AddPlayer(player);
+  }
+
+  EXPECT_EQ(world.PlayerNumbers(), 5);
+}
+
+TEST(World, RemovePlayersTest)
+{
+  auto net_subsystem = std::make_shared<ep::net::NetworkSubsystem>();
+  ep::game::World world(net_subsystem);
+
+  EXPECT_EQ(world.PlayerNumbers(), 0);
+
+  for (auto i = 0; i < 5; i++) {
+    auto player = std::make_shared<ep::tests::MockPlayer>();
+
+    EXPECT_CALL(*player, GetID())
+      .Times(1)
+      .WillOnce(testing::Return(i));
+
+    world.AddPlayer(player);
+  }
+
+  EXPECT_EQ(world.PlayerNumbers(), 5);
+
+  for (auto i = 0; i < 5; i++)
+    world.RemovePlayer(i);
+
+  EXPECT_EQ(world.PlayerNumbers(), 0);
+}

@@ -83,5 +83,6 @@ namespace ep::net
    {}
 
     uint16_t GetOpcode() const noexcept { return packet_.head_.opcode_; }
+    std::size_t GetID() const noexcept { return id_; }
   };
 }

@@ -1,10 +1,12 @@
 #include "world.hpp"
 
 #include <chrono>
+#include <mutex>
 #include <thread>
 
 #include <spdlog/spdlog.h>
 
+#include "player/i_player.hpp"
 #include "protocol/opcodes.cpp"
 
 namespace ep::game
@@ -56,32 +58,41 @@ namespace ep::game
 
     switch (static_cast<Opcodes>(packet.GetOpcode())) {
     case Opcodes::MoveForward: 
+      players_[packet.GetID()]->Move(0, 1, 0);
+      // TODO push packet to out
       break;
     case Opcodes::MoveRight:
+      players_[packet.GetID()]->Move(1, 0, 0);
+      // TODO push packet to out
       break;
     case Opcodes::MoveBackward:
+      players_[packet.GetID()]->Move(0, -1, 0);
+      // TODO push packet to out
       break;
     case Opcodes::MoveLeft:
+      players_[packet.GetID()]->Move(-1, 0, 0);
+      // TODO push packet to out
       break;
     default:
+      // TODO push packet to out
       ;
     }
   }
 
-  void World::AddPlayer()
+  void World::AddPlayer(std::shared_ptr<IPlayer> player)
   {
     std::lock_guard lock(players_mutex_);
-    // players_.push(std::make_shared<Player>(0, 0, 0, 1, ?));
+    players_[player->GetID()] = player;
   }
 
-  void World::RemovePlayer()
+  void World::RemovePlayer(std::size_t id)
   {
-    // TODO remove player
+    std::lock_guard lock(players_mutex_);
+    players_.erase(id);
   }
-
-  void World::Broadcast()
+  std::size_t World::PlayerNumbers() const
   {
-    // TODO broadcast
+    std::lock_guard lock(players_mutex_);
+    return players_.size(); 
   }
-
 }

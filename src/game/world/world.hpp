@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vector>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 
@@ -19,17 +19,16 @@ namespace ep::game
     ~World() = default;
 
     void GameLoop();
+    void AddPlayer(std::shared_ptr<IPlayer> player);
+    void RemovePlayer(std::size_t id);
+    std::size_t PlayerNumbers() const;
   private:
     void Tick(double dt);
     void ProcessInput(net::GamePacket packet);
 
-    void AddPlayer();
-    void RemovePlayer();
-    void Broadcast();
-
     std::shared_ptr<net::NetworkSubsystem> net_subsystem_;
     mutable std::mutex players_mutex_;
-    std::vector<std::shared_ptr<IPlayer>> players_;
+    std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
     ep::utils::TSQueue<net::GamePacket> game_in_queue_;
   };
 }

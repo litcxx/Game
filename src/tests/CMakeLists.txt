@@ -24,6 +24,7 @@ set(SOURCES
   net/session/packet_handler_tests.cpp
   shared/ts_queue_tests.cpp
   game/player/player_tests.cpp
+  game/world/world_tests.cpp
 )
 
 add_executable(unit_tests 
@@ -42,6 +43,7 @@ target_include_directories(unit_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src/net
   ${CMAKE_SOURCE_DIR}/src/game
   ${CMAKE_SOURCE_DIR}/src/shared
+  ${CMAKE_SOURCE_DIR}/src/tests
 )
 
 include(GoogleTest)
