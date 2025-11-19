@@ -1,0 +1,10 @@
+{
+  "server": {
+    "ip": "0.0.0.0",
+    "port": 8080,
+    "io_threads": 4
+  },
+  "game": {
+    "tick_rate": 60
+  }
+}

@@ -17,6 +17,7 @@ target_compile_options(server PRIVATE
 target_link_libraries(server PRIVATE
   net
   game
+  shared 
 )
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")

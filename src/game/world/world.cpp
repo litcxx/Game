@@ -1,6 +1,7 @@
 #include "world.hpp"
 
 #include <chrono>
+#include <cstdint>
 #include <mutex>
 #include <thread>
 
@@ -11,18 +12,16 @@
 
 namespace ep::game
 {
-  World::World(std::shared_ptr<net::NetworkSubsystem> net_subsystem) :
-    net_subsystem_(net_subsystem)
+  World::World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, uint8_t tick_rate) :
+    net_subsystem_(net_subsystem),
+    tick_rate_(tick_rate)
   {
     // TODO initialzie world
   }
 
   void World::GameLoop()
   {
-    constexpr double tick_rate = 60.0;
-    spdlog::info("tick rate: {} Hz", tick_rate);
-    
-    constexpr double tick_seconds = 1.0 / tick_rate;
+    const double tick_seconds = 1.0 / tick_rate_;
     auto tick_duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
       std::chrono::duration<double>(tick_seconds));
 

@@ -16,4 +16,5 @@ target_include_directories(net PRIVATE
 target_link_libraries(net PRIVATE
   OpenSSL::SSL
   OpenSSL::Crypto
+  shared
 )

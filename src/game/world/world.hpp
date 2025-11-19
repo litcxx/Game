@@ -13,7 +13,7 @@ namespace ep::game
 {
   class World {
   public:
-    World(std::shared_ptr<net::NetworkSubsystem> net_subsystem);
+    World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, uint8_t tick_rate);
     World(const World&) = delete;
     World& operator=(const World&) = delete;
     ~World() = default;
@@ -27,6 +27,7 @@ namespace ep::game
     void ProcessInput(net::GamePacket packet);
 
     std::shared_ptr<net::NetworkSubsystem> net_subsystem_;
+    uint8_t tick_rate_;
     mutable std::mutex players_mutex_;
     std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
     ep::utils::TSQueue<net::GamePacket> game_in_queue_;

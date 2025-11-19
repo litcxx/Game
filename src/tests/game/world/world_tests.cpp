@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <memory>
 
 #include <gtest/gtest.h>
@@ -6,10 +7,12 @@
 #include "world/world.hpp"
 #include "game/player/mock_player.hpp"
 
+static constexpr uint8_t tick_rate = 60;
+
 TEST(World, AddPlayersTest)
 {
   auto net_subsystem = std::make_shared<ep::net::NetworkSubsystem>();
-  ep::game::World world(net_subsystem);
+  ep::game::World world(net_subsystem, tick_rate);
 
   EXPECT_EQ(world.PlayerNumbers(), 0);
 
@@ -29,7 +32,7 @@ TEST(World, AddPlayersTest)
 TEST(World, RemovePlayersTest)
 {
   auto net_subsystem = std::make_shared<ep::net::NetworkSubsystem>();
-  ep::game::World world(net_subsystem);
+  ep::game::World world(net_subsystem, tick_rate);
 
   EXPECT_EQ(world.PlayerNumbers(), 0);
 
