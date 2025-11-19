@@ -7,7 +7,7 @@
 #include <spdlog/spdlog.h>
 
 #include "player/i_player.hpp"
-#include "protocol/opcodes.cpp"
+#include "protocol/opcodes.hpp"
 
 namespace ep::game
 {
