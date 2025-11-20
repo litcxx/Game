@@ -12,7 +12,7 @@ namespace ep::net
     NetworkSubsystem(const NetworkSubsystem&) = delete;
     NetworkSubsystem& operator=(const NetworkSubsystem&) = delete;
 
-    utils::TSQueue<GamePacket> net_in_queue_;
-    utils::TSQueue<GamePacket> net_out_queue_;
+    ep::TSQueue<GamePacket> in_queue_;
+    ep::TSQueue<NetPacket> out_queue_;
   };
 }
