@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include "packet_handler.hpp"
@@ -20,6 +21,7 @@ namespace ep::net
 
     // Initialie ssl handshake and websocket accept connection
     void Run();
+    void Send(std::shared_ptr<std::vector<uint8_t>> buf);
     std::size_t GetID() const { return id_; }
 
   private:

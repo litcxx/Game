@@ -5,6 +5,7 @@
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/websocket/ssl.hpp>
 #include <boost/beast/websocket/error.hpp>
+#include <cstdint>
 #include <spdlog/spdlog.h>
 
 #include "server/server.hpp"
@@ -49,6 +50,8 @@ namespace ep::net
         // an error occured
         if (ec)
           return spdlog::error("accept: {}", ec.what());
+
+        // Push Add player to world packet
         ReadPacketHead();
       }
     );
@@ -74,8 +77,14 @@ namespace ep::net
         if (!self->packet_handler_.ReadHeader(size))
           return self->ReadPacketHead();
         else {
-          // All header has been received.
-          self->ReadPacketBody();
+          // All header has been received. If payload size == 0 push to queue 
+          // and continue read next header. Otherwise read the body.
+          if (self->packet_handler_.GetBodySize() != 0)
+            self->ReadPacketBody();
+          else {
+            self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
+            self->ReadPacketHead();
+          }
         }
       }
     );
@@ -106,6 +115,23 @@ namespace ep::net
           self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
           self->ReadPacketHead();
         }
+      }
+    );
+  }
+
+  void Session::Send(std::shared_ptr<std::vector<uint8_t>> buf)
+  {
+    spdlog::info("Session::Send");
+    auto self = shared_from_this();
+    socket_->async_write(
+      buf->data(), 
+      buf->size(),
+      [self, buf](const beast::error_code& ec, std::size_t size)
+      {
+        // An error occured.
+        if (ec)
+          return spdlog::error("write: {}", ec.what());
+        spdlog::info("write {} bytes to client", size);
       }
     );
   }
