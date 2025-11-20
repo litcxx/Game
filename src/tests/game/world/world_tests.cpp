@@ -9,7 +9,7 @@
 
 static constexpr uint8_t tick_rate = 60;
 
-TEST(World, AddPlayersTest)
+TEST(WorldTests, AddPlayers)
 {
   auto net_subsystem = std::make_shared<ep::net::NetworkSubsystem>();
   ep::game::World world(net_subsystem, tick_rate);
@@ -29,7 +29,7 @@ TEST(World, AddPlayersTest)
   EXPECT_EQ(world.PlayerNumbers(), 5);
 }
 
-TEST(World, RemovePlayersTest)
+TEST(WorldTests, RemovePlayers)
 {
   auto net_subsystem = std::make_shared<ep::net::NetworkSubsystem>();
   ep::game::World world(net_subsystem, tick_rate);
