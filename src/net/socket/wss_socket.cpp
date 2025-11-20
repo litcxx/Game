@@ -6,6 +6,7 @@
 #include <boost/beast/websocket/rfc6455.hpp>
 #include <boost/beast/websocket/ssl.hpp>
 
+#include <cstdint>
 #include <spdlog/spdlog.h>
 
 namespace ep::net
@@ -29,6 +30,11 @@ namespace ep::net
   void WSSSocket::async_read_some(uint8_t* buffer, std::size_t limit, ReadHandler handler)
   {
     socket_.async_read_some(net::buffer(buffer, limit), std::move(handler));
+  }
+
+  void WSSSocket::async_write(const uint8_t* buffer, std::size_t limit, ReadHandler handler)
+  {
+    socket_.async_write(net::buffer(buffer, limit), handler);
   }
 
   void WSSSocket::async_accept(CompletionHandler handler)
