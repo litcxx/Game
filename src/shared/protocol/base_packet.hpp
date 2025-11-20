@@ -5,9 +5,18 @@
 #include <vector>
 #include <cstring>
 #include <type_traits>
+#include <algorithm>
 
 namespace ep::net
 {
+  template<typename T>
+  static T swap_endian(T value)
+  {
+    uint8_t* ptr = reinterpret_cast<uint8_t*>(&value);
+    std::reverse(ptr, ptr + sizeof(T));
+    return *reinterpret_cast<T*>(ptr);
+  }
+  
   namespace packet_info
   {
     inline constexpr std::uint32_t kMaxPayloadSize = 128;
@@ -34,12 +43,13 @@ namespace ep::net
     PacketHead head_{};
     std::vector<std::uint8_t> body_;
 
-    // TODO not convert to htonl/htons
+    uint16_t GetOpcode() const noexcept { return head_.opcode_; }
+    uint32_t GetSize() const noexcept { return head_.size_; }
+
     // Serialize data
     template<PodType T>
     friend NetPacket& operator<<(NetPacket& packet, T value);
 
-    // TODO not convert to ntohl/ntohs
     // Deserialize data
     template<PodType T>
     friend NetPacket& operator>>(NetPacket& packet, T& value);
@@ -48,10 +58,13 @@ namespace ep::net
   template<PodType T>
   NetPacket& operator<<(NetPacket& packet, T value)
   {
+    // Convert from host byte order to network byte order.
+    value = swap_endian(value);
+
     // Allocate memmory and copy value into buffer
-    std::size_t i = packet.body_.size();
-    packet.body_.resize(i + sizeof(T));
-    std::memcpy(packet.body_.data() + i, &value, sizeof(T));
+    std::size_t offset = packet.body_.size();
+    packet.body_.resize(offset + sizeof(T));
+    std::memcpy(packet.body_.data() + offset, &value, sizeof(T));
 
     // Update size
     packet.head_.size_= packet.body_.size();
@@ -62,10 +75,14 @@ namespace ep::net
   template<PodType T>
   NetPacket& operator>>(NetPacket& packet, T& value)
   {
-    // Copy payload data into value and resize buffer
-    std::size_t i = packet.body_.size() - sizeof(T);
-    memcpy(&value, packet.body_.data() + i, sizeof(T));
-    packet.body_.resize(i);
+    // Copy payload data into value and resize buffer.
+    std::size_t offset = packet.body_.size() - sizeof(T);
+    memcpy(&value, packet.body_.data() + offset, sizeof(T));
+  
+    // Convert from netwrok byte order to host byte order.
+    value = swap_endian(value);
+
+    packet.body_.resize(offset);
 
     // Update size
     packet.head_.size_ = packet.body_.size();
