@@ -84,7 +84,6 @@ namespace ep::net
   {
     std::lock_guard lock(sessions_mutex_);
     sessions_.push_back(session);
-    new_session_id_++;
   }
  
   void Server::Broadcast()
