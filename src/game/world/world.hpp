@@ -26,10 +26,13 @@ namespace ep::game
     void Tick(double dt);
     void ProcessInput(net::GamePacket packet);
 
+    void OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player);
+
     std::shared_ptr<net::NetworkSubsystem> net_subsystem_;
     uint8_t tick_rate_;
     mutable std::mutex players_mutex_;
     std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
-    ep::utils::TSQueue<net::GamePacket> game_in_queue_;
+    ep::TSQueue<net::GamePacket> in_queue_;
+    ep::TSQueue<net::NetPacket> out_queue_;
   };
 }

@@ -8,6 +8,7 @@
 #include <spdlog/spdlog.h>
 
 #include "player/i_player.hpp"
+#include "protocol/base_packet.hpp"
 #include "protocol/opcodes.hpp"
 
 namespace ep::game
@@ -43,44 +44,63 @@ namespace ep::game
   void World::Tick(double dt)
   {
     // spdlog::info("World::Tick");
-    utils::TSSwap(game_in_queue_, net_subsystem_->net_in_queue_);
-    while (!game_in_queue_.Empty()) {
+    ep::TSSwap(in_queue_, net_subsystem_->in_queue_);
+    while (!in_queue_.Empty()) {
       spdlog::info("World::Tick: handle packet");
-      auto packet = game_in_queue_.TryPop();
+      auto packet = in_queue_.TryPop();
       ProcessInput(std::move(*packet));
+    }
+    // push all packets to network queue
+    while (!out_queue_.Empty()) {
+      auto packet = out_queue_.TryPop();
+      net_subsystem_->out_queue_.Push(std::move(packet));
     }
   }
 
   void World::ProcessInput(net::GamePacket packet)
   {
-    using ep::protocol::Opcodes;
+    net::NetPacket new_packet;
+    // TODO check is this player exists
+    auto player = players_[packet.GetID()];
 
+    // TODO Collision
+    // TODO Phisics 
     switch (static_cast<Opcodes>(packet.GetOpcode())) {
     case Opcodes::MoveForward: 
-      players_[packet.GetID()]->Move(0, 1, 0);
-      // TODO push packet to out
+      spdlog::info("recv MoveForward packet");
+      // player->Move(0, 1, 0);
+      // OpcodeMovePlayer(new_packet, player);
       break;
     case Opcodes::MoveRight:
-      players_[packet.GetID()]->Move(1, 0, 0);
-      // TODO push packet to out
+      player->Move(1, 0, 0);
+      OpcodeMovePlayer(new_packet, player);
       break;
     case Opcodes::MoveBackward:
-      players_[packet.GetID()]->Move(0, -1, 0);
-      // TODO push packet to out
+      player->Move(0, -1, 0);
+      OpcodeMovePlayer(new_packet, player);
       break;
     case Opcodes::MoveLeft:
-      players_[packet.GetID()]->Move(-1, 0, 0);
-      // TODO push packet to out
+      player->Move(-1, 0, 0);
+      OpcodeMovePlayer(new_packet, player);
       break;
     default:
-      // TODO push packet to out
       ;
     }
+    
+    // out_queue_.Push(std::move(new_packet));
+  }
+
+  void World::OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player)
+  {
+    packet.head_.opcode_ = ep::to_uint16(ep::Opcodes::MovePlayer);
+    packet << player->GetID() << player->GetX() << player->GetY();
+    packet.head_.size_ = sizeof(packet.body_);
   }
 
   void World::AddPlayer(std::shared_ptr<IPlayer> player)
   {
     std::lock_guard lock(players_mutex_);
+    spdlog::info("add new player");
     players_[player->GetID()] = player;
   }
 
