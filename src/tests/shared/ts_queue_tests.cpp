@@ -5,23 +5,21 @@
 
 #include "utils/ts_queue.hpp"
 
-using namespace ep::utils;
-
-TEST(TSQueue, EmptyTest)
+TEST(TSQueueTest, Empty)
 {
-  TSQueue<int> data;
+  ep::TSQueue<int> data;
   EXPECT_EQ(data.Empty(), true);
 }
 
-TEST(TSQueue, ZeroSizeTest)
+TEST(TSQueueTest, ZeroSize)
 {
-  TSQueue<int> data;
+  ep::TSQueue<int> data;
   EXPECT_EQ(data.Size(), 0);
 }
 
-TEST(TSQueue, PushValTest)
+TEST(TSQueueTest, PushVal)
 {
-  TSQueue<int> data;
+  ep::TSQueue<int> data;
   std::thread t([&data]{
     data.Push(1);
     data.Push(1);
@@ -33,9 +31,9 @@ TEST(TSQueue, PushValTest)
   EXPECT_EQ(data.Empty(), false);
 }
 
-TEST(TSQueue, PushPtrTest)
+TEST(TSQueueTest, PushPtr)
 {
-  TSQueue<int> data;
+  ep::TSQueue<int> data;
   std::thread t([&data]{
     std::shared_ptr<int> a(new int(1));
     data.Push(std::move(a));
@@ -46,9 +44,9 @@ TEST(TSQueue, PushPtrTest)
   EXPECT_EQ(data.Empty(), false);
 }
 
-TEST(TSQueue, TryPopPtrTest)
+TEST(TSQueueTest, TryPopPtr)
 {
-  TSQueue<int> data;
+  ep::TSQueue<int> data;
   std::shared_ptr<int> value = data.TryPop();
   EXPECT_EQ(value, std::shared_ptr<int>());
 
@@ -60,9 +58,9 @@ TEST(TSQueue, TryPopPtrTest)
   EXPECT_EQ(*value, 1);
 }
 
-TEST(TSQueue, TryPopValueTest)
+TEST(TSQueueTest, TryPopValue)
 {
-  TSQueue<int> data;
+  ep::TSQueue<int> data;
   int value;
   EXPECT_EQ(data.TryPop(value), false);
 
@@ -74,9 +72,9 @@ TEST(TSQueue, TryPopValueTest)
   EXPECT_EQ(value, 1);
 }
 
-TEST(TSQueue, WaitAndPopPtrTest)
+TEST(TSQueueTest, WaitAndPopPtr)
 {
-  TSQueue<int> data;
+  ep::TSQueue<int> data;
   std::thread t([&data]{
     std::shared_ptr<int> value = data.WaitAndPop();
     EXPECT_EQ(*value, 1);
@@ -86,9 +84,9 @@ TEST(TSQueue, WaitAndPopPtrTest)
   EXPECT_EQ(data.Size(), 0);
 }
 
-TEST(TSQueue, WaitAndPopValueTest)
+TEST(TSQueueTest, WaitAndPopValue)
 {
-  TSQueue<int> data;
+  ep::TSQueue<int> data;
   std::thread t([&data]{
     int value;
     data.WaitAndPop(value);
@@ -99,15 +97,15 @@ TEST(TSQueue, WaitAndPopValueTest)
   EXPECT_EQ(data.Size(), 0);
 }
 
-TEST(TSQueue, Swap)
+TEST(TSQueueTest, Swap)
 {
-  TSQueue<int>data;
+  ep::TSQueue<int>data;
 
   for (int i = 0; i < 5; i++)
     data.Push(1);
   EXPECT_EQ(data.Size(), 5);
 
-  TSQueue<int> tmp;
+  ep::TSQueue<int> tmp;
   EXPECT_EQ(tmp.Size(), 0);
 
   TSSwap(tmp, data);

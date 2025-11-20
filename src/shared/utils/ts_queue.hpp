@@ -4,7 +4,7 @@
 #include <mutex>
 #include <condition_variable>
 
-namespace ep::utils
+namespace ep
 {
   template<typename T>
   class TSQueue {
