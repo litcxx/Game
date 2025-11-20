@@ -13,8 +13,9 @@
 
 namespace ep::game
 {
-  World::World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, uint8_t tick_rate) :
+  World::World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, std::shared_ptr<game::GameSubsystem> game_subsystem, uint8_t tick_rate) :
     net_subsystem_(net_subsystem),
+    game_subsystem_(game_subsystem),
     tick_rate_(tick_rate)
   {
     // TODO initialzie world
@@ -44,15 +45,15 @@ namespace ep::game
   void World::Tick(double dt)
   {
     // spdlog::info("World::Tick");
-    ep::TSSwap(in_queue_, net_subsystem_->in_queue_);
-    while (!in_queue_.Empty()) {
+    ep::TSSwap(game_subsystem_->in_queue_, net_subsystem_->in_queue_);
+    while (!game_subsystem_->in_queue_.Empty()) {
       spdlog::info("World::Tick: handle packet");
-      auto packet = in_queue_.TryPop();
+      auto packet = game_subsystem_->in_queue_.TryPop();
       ProcessInput(std::move(*packet));
     }
     // push all packets to network queue
-    while (!out_queue_.Empty()) {
-      auto packet = out_queue_.TryPop();
+    while (!game_subsystem_->out_queue_.Empty()) {
+      auto packet = game_subsystem_->out_queue_.TryPop();
       net_subsystem_->out_queue_.Push(std::move(packet));
     }
   }

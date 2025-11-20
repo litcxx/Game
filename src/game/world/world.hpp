@@ -4,16 +4,15 @@
 #include <memory>
 #include <mutex>
 
-#include "player/i_player.hpp"
-#include "utils/ts_queue.hpp"
-#include "protocol/base_packet.hpp"
 #include "protocol/network_subsystem.hpp"
+#include "protocol/game_subsystem.hpp"
+#include "player/i_player.hpp"
 
 namespace ep::game
 {
   class World {
   public:
-    World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, uint8_t tick_rate);
+    explicit World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, std::shared_ptr<game::GameSubsystem> game_subsystem, uint8_t tick_rate);
     World(const World&) = delete;
     World& operator=(const World&) = delete;
     ~World() = default;
@@ -29,10 +28,9 @@ namespace ep::game
     void OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player);
 
     std::shared_ptr<net::NetworkSubsystem> net_subsystem_;
+    std::shared_ptr<game::GameSubsystem> game_subsystem_;
     uint8_t tick_rate_;
     mutable std::mutex players_mutex_;
     std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
-    ep::TSQueue<net::GamePacket> in_queue_;
-    ep::TSQueue<net::NetPacket> out_queue_;
   };
 }

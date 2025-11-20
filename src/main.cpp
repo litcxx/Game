@@ -10,6 +10,7 @@
 #include "server/server.hpp"
 #include "world/world.hpp"
 #include "protocol/network_subsystem.hpp"
+#include "protocol/game_subsystem.hpp"
 #include "config/config.hpp"
 
 int main(int argc, char* argv[])
@@ -30,8 +31,13 @@ int main(int argc, char* argv[])
   // Initialize network subsystem.
   auto net_subsystem = std::make_shared<NetworkSubsystem>();
 
+  // Initialize game subsystem.
+  auto game_subsystem = std::make_shared<GameSubsystem>();
+
   // Initialize the world and run game loop.
-  auto world = std::make_shared<World>(net_subsystem, config->GetTickRate());
+  auto world = std::make_shared<World>(net_subsystem, 
+                                       game_subsystem,
+                                       config->GetTickRate());
   std::thread t(
     [&world]
     {
@@ -61,7 +67,8 @@ int main(int argc, char* argv[])
   auto server = std::make_shared<Server>(ioc, 
                                          ctx, 
                                          tcp::endpoint{address, port},
-                                         net_subsystem);
+                                         net_subsystem,
+                                         game_subsystem);
   server->Run();
 
   // Run the I/O service on the requested number of threads.

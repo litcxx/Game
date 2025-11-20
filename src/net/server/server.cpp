@@ -16,12 +16,17 @@
 
 namespace ep::net
 {
-  Server::Server(boost::asio::io_context& ioc, ssl::context& ctx, tcp::endpoint endpoint, std::shared_ptr<NetworkSubsystem> net_susbsystem) :
+  Server::Server(boost::asio::io_context& ioc, 
+                 ssl::context& ctx, 
+                 tcp::endpoint endpoint, 
+                 std::shared_ptr<NetworkSubsystem> net_susbsystem, 
+                 std::shared_ptr<game::GameSubsystem> game_subsystem) :
     ioc_{ioc},
     ctx_{ctx},
     acceptor_{ioc},
     new_session_id_{0},
-    net_susbsystem_(net_susbsystem)
+    net_susbsystem_(net_susbsystem),
+    game_susbsystem_(game_subsystem)
 {
     boost::system::error_code ec;
 
