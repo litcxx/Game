@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include "protocol/base_packet.hpp"
 #include "session/packet_handler.hpp"
 
 TEST(PacketHandlerTest, Init)
@@ -53,8 +54,8 @@ TEST(PacketHandlerTest, ReadHalfBody)
 {
   ep::net::PacketHandler handler;
 
-  uint16_t opcode = 5;
-  uint32_t size = 6;
+  uint16_t opcode = ep::net::swap_endian(5);
+  uint32_t size = ep::net::swap_endian(6);
   
   memcpy(handler.HeaderData(), &opcode, sizeof(opcode));
   EXPECT_EQ(handler.ReadHeader(sizeof(opcode)), false);
@@ -69,8 +70,8 @@ TEST(PacketHandlerTest, ReadFullBody)
 {
   ep::net::PacketHandler handler;
 
-  uint16_t opcode = 5;
-  uint32_t size = 6;
+  uint16_t opcode = ep::net::swap_endian(5);
+  uint32_t size = ep::net::swap_endian(6);
   
   memcpy(handler.HeaderData(), &opcode, sizeof(opcode));
   EXPECT_EQ(handler.ReadHeader(sizeof(opcode)), false);

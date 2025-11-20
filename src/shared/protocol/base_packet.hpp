@@ -19,6 +19,7 @@ namespace ep::net
   
   namespace packet_info
   {
+    inline constexpr std::uint16_t kMaxOpcode = 0x0FFF;
     inline constexpr std::uint32_t kMaxPayloadSize = 128;
   }
 
@@ -30,21 +31,17 @@ namespace ep::net
     std::uint16_t opcode_;
     std::uint32_t size_;
     
-    inline bool IsValid() const noexcept;
   };
 #pragma pack(pop)
-
-  bool PacketHead::IsValid() const noexcept
-  {
-    return (opcode_ <= 0xFF && size_ < packet_info::kMaxPayloadSize);
-  }
 
   struct NetPacket {
     PacketHead head_{};
     std::vector<std::uint8_t> body_;
 
-    uint16_t GetOpcode() const noexcept { return head_.opcode_; }
-    uint32_t GetSize() const noexcept { return head_.size_; }
+    uint16_t GetOpcode() const noexcept { return swap_endian(head_.opcode_); }
+    uint32_t GetSize() const noexcept { return swap_endian(head_.size_); }
+    bool IsValidHeader() const noexcept;
+    void Resize() { body_.resize(GetSize()); }
 
     // Serialize data
     template<PodType T>
@@ -54,6 +51,12 @@ namespace ep::net
     template<PodType T>
     friend NetPacket& operator>>(NetPacket& packet, T& value);
   };
+
+  inline bool NetPacket::IsValidHeader() const noexcept
+  { 
+    return swap_endian(head_.opcode_) < packet_info::kMaxOpcode && 
+           swap_endian(head_.size_) < packet_info::kMaxPayloadSize;
+  }
 
   template<PodType T>
   NetPacket& operator<<(NetPacket& packet, T value)

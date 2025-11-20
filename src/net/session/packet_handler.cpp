@@ -1,5 +1,7 @@
 #include "packet_handler.hpp"
 
+#include <cstdint>
+#include <netinet/in.h>
 #include <spdlog/spdlog.h>
 
 namespace ep::net
@@ -48,21 +50,17 @@ namespace ep::net
       return false;
 
     spdlog::info("The full packet header was read");
-    spdlog::info("opcode: {}", packet_.head_.opcode_);
-    spdlog::info("size: {}", packet_.head_.size_);
+    spdlog::info("opcode: {}", packet_.GetOpcode());
+    spdlog::info("size: {}", packet_.GetSize());
 
     // Checking the validaty of the packet header.
-    if (!packet_.head_.IsValid()) {
+    if (!packet_.IsValidHeader()) {
       spdlog::warn("recv invalid header");
-      // spdlog::warn("recv invalid header from ip: {}",
-      //              socket_->string_address());
-      // head_bytes_read_ = 0;
-      // return server_->CloseSession(shared_from_this());
       header_read_ = 0;
       return false;
     }
 
-    packet_.body_.resize(packet_.head_.size_);
+    packet_.Resize();
     return true;
   }
 
@@ -74,7 +72,7 @@ namespace ep::net
     spdlog::info("recv: {} bytes", size);
 
     // Not all payload data has been read.
-    if (body_read_ < packet_.head_.size_)
+    if (body_read_ < packet_.GetSize())
       return false;
 
     spdlog::info("All payload data has been read");

@@ -38,6 +38,8 @@ namespace ep::net
 
     std::size_t GetHeadRead() const noexcept { return header_read_; }
     std::size_t GetBodyRead() const noexcept { return body_read_; }
+    // Return the size of payload data from header.
+    std::size_t GetBodySize() const noexcept { return packet_.GetSize(); }
 
   private:
     std::size_t header_read_;
