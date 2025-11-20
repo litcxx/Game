@@ -29,6 +29,7 @@ namespace ep::net
     void CloseSession(std::shared_ptr<Session> session);
   private:
     void AddSession(std::shared_ptr<Session> session) noexcept;
+    void Broadcast();
 
     net::io_context& ioc_;
     ssl::context& ctx_;

@@ -6,6 +6,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <boost/asio/strand.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <spdlog/spdlog.h>
 
@@ -80,10 +81,26 @@ namespace ep::net
     sessions_.push_back(session);
     new_session_id_++;
   }
-  
+ 
+  void Server::Broadcast()
+  {
+    spdlog::info("Server::Broadcast");
+    while (!net_susbsystem_->out_queue_.Empty()) {
+      auto packet = net_susbsystem_->out_queue_.TryPop();
+      // copy packet to buffer
+      auto buf = std::make_shared<std::vector<uint8_t>>(packet->GetSize());
+      memcpy(buf->data(), &packet->head_, sizeof(PacketHead));
+      memcpy(buf->data() + sizeof(PacketHead), packet->body_.data(), packet->body_.size());
+
+      for (const auto& session : sessions_) {
+        session->Send(buf);
+      }
+    }
+  }
+
   void Server::PushPacket(NetPacket packet, std::size_t id)
   {
-    net_susbsystem_->net_in_queue_.Push(GamePacket(std::move(packet), id));
+    net_susbsystem_->in_queue_.Push(GamePacket(std::move(packet), id));
   }
 
   void Server::CloseSession(std::shared_ptr<Session> session)
