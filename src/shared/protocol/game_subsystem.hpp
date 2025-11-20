@@ -10,6 +10,6 @@ namespace ep::game
   public:
     ep::TSQueue<net::GamePacket> in_queue_;
     ep::TSQueue<net::NetPacket> out_queue_;
-    ep::TSQueue<Event> game_event_queue_;
+    ep::TSQueue<Event> event_queue_;
   };
 }

@@ -9,7 +9,9 @@
 
 #include "player/i_player.hpp"
 #include "protocol/base_packet.hpp"
+#include "protocol/events.hpp"
 #include "protocol/opcodes.hpp"
+#include "utils/ts_queue.hpp"
 
 namespace ep::game
 {
@@ -44,14 +46,37 @@ namespace ep::game
 
   void World::Tick(double dt)
   {
-    // spdlog::info("World::Tick");
+    // Double buffering event queue.
+    ep::TSSwap(game_subsystem_->event_queue_, net_subsystem_->event_queue_);
+
+    // Double buffering incoming queue.
     ep::TSSwap(game_subsystem_->in_queue_, net_subsystem_->in_queue_);
+
+    // Handle events.
+    while (!game_subsystem_->event_queue_.Empty()) {
+      auto event = game_subsystem_->event_queue_.TryPop();
+      switch (event->code_) {
+      case ep::EventCode::AddNewPlayer:
+        // TODO add new plyaer
+        spdlog::info("game event: add new player");
+        break;
+      case ep::EventCode::RemovePlayer:
+        // TODO remove plyaer
+        spdlog::info("game event: remove player");
+        break;
+      default:
+        spdlog::info("game event: unknown event");
+      }
+    }
+
+    // Pop packet from queue and process it.
     while (!game_subsystem_->in_queue_.Empty()) {
       spdlog::info("World::Tick: handle packet");
       auto packet = game_subsystem_->in_queue_.TryPop();
       ProcessInput(std::move(*packet));
     }
-    // push all packets to network queue
+
+    // Push all packets to network queue for broadcast.
     while (!game_subsystem_->out_queue_.Empty()) {
       auto packet = game_subsystem_->out_queue_.TryPop();
       net_subsystem_->out_queue_.Push(std::move(packet));
@@ -88,7 +113,7 @@ namespace ep::game
       ;
     }
     
-    // out_queue_.Push(std::move(new_packet));
+    // TODO push new packet.
   }
 
   void World::OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player)

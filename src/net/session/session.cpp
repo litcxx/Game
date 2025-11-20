@@ -67,11 +67,15 @@ namespace ep::net
       [self](const beast::error_code& ec, std::size_t size)
       {
         // client close connection
-        if (ec == websocket::error::closed)
+        if (ec == websocket::error::closed) {
+          // TODO remove session/player
           return spdlog::info("session was closed");
+        }
         // an error occured
-        if (ec)
+        if (ec) {
+          // TODO remove session/player
           return spdlog::error("read: {}", ec.what());
+        }
 
         // Continue reading the header, untill the complete PacketHead is recived.
         if (!self->packet_handler_.ReadHeader(size))

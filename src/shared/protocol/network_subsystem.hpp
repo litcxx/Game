@@ -2,6 +2,7 @@
 
 #include "utils/ts_queue.hpp"
 #include "protocol/base_packet.hpp"
+#include "protocol/events.hpp"
 
 namespace ep::net
 {
@@ -14,5 +15,6 @@ namespace ep::net
 
     ep::TSQueue<GamePacket> in_queue_;
     ep::TSQueue<NetPacket> out_queue_;
+    ep::TSQueue<Event> event_queue_;
   };
 }

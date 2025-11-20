@@ -11,6 +11,7 @@
 #include <spdlog/spdlog.h>
 
 #include "protocol/base_packet.hpp"
+#include "protocol/events.hpp"
 #include "session/session.hpp"
 #include "socket/wss_socket.hpp"
 
@@ -84,6 +85,7 @@ namespace ep::net
   {
     std::lock_guard lock(sessions_mutex_);
     sessions_.push_back(session);
+    game_susbsystem_->event_queue_.Push(Event(ep::EventCode::AddNewPlayer, session->GetID()));
   }
  
   void Server::Broadcast()
