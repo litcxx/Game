@@ -31,7 +31,7 @@ namespace ep::net
 
     void PushPacket(NetPacket packet, std::size_t id);
 
-    void CloseSession(std::shared_ptr<Session> session);
+    void CloseSession(std::size_t id);
   private:
     void AddSession(std::shared_ptr<Session> session) noexcept;
     void Broadcast();

@@ -109,13 +109,14 @@ namespace ep::net
     net_susbsystem_->in_queue_.Push(GamePacket(std::move(packet), id));
   }
 
-  void Server::CloseSession(std::shared_ptr<Session> session)
+  void Server::CloseSession(std::size_t id)
   {
     std::lock_guard lock(sessions_mutex_);
-    auto it = std::find(sessions_.begin(), sessions_.end(), session);
+    auto it = std::find_if(sessions_.begin(), sessions_.end(), [id](std::shared_ptr<Session> sess) { return sess->GetID() == id; });
     if (it != sessions_.end())
       sessions_.erase(it);
     else
       spdlog::error("can't find session in sessions buffer");
+    game_susbsystem_->event_queue_.Push(Event(ep::EventCode::RemovePlayer, id));
   }
 }

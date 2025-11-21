@@ -68,12 +68,12 @@ namespace ep::net
       {
         // client close connection
         if (ec == websocket::error::closed) {
-          // TODO remove session/player
+          self->server_->CloseSession(self->id_);
           return spdlog::info("session was closed");
         }
         // an error occured
         if (ec) {
-          // TODO remove session/player
+          self->server_->CloseSession(self->id_);
           return spdlog::error("read: {}", ec.what());
         }
 
@@ -104,11 +104,15 @@ namespace ep::net
       [self](const beast::error_code& ec, std::size_t size)
       {
         // Client close connection.
-        if (ec == websocket::error::closed)
+        if (ec == websocket::error::closed) {
+          self->server_->CloseSession(self->id_);
           return spdlog::info("session was closed");
+        }
         // An error occured.
-        if (ec)
+        if (ec) {
+          self->server_->CloseSession(self->id_);
           return spdlog::error("read: {}", ec.what());
+        }
 
         // Continue reading payload data untill all payload data has been received.
         if (!self->packet_handler_.ReadBody(size))

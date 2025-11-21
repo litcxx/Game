@@ -12,6 +12,7 @@
 #include "protocol/events.hpp"
 #include "protocol/opcodes.hpp"
 #include "utils/ts_queue.hpp"
+#include "player/player.hpp"
 
 namespace ep::game
 {
@@ -55,15 +56,18 @@ namespace ep::game
     // Handle events.
     while (!game_subsystem_->event_queue_.Empty()) {
       auto event = game_subsystem_->event_queue_.TryPop();
-      switch (event->code_) {
-      case ep::EventCode::AddNewPlayer:
-        // TODO add new plyaer
+      switch (event->GetEvent()) {
+      case ep::EventCode::AddNewPlayer: {
         spdlog::info("game event: add new player");
+        auto player  = std::make_shared<Player>(0, 0, 0, event->GetID());
+        AddPlayer(player);
         break;
-      case ep::EventCode::RemovePlayer:
-        // TODO remove plyaer
+      }
+      case ep::EventCode::RemovePlayer: {
         spdlog::info("game event: remove player");
+        RemovePlayer(event->GetID());
         break;
+      }
       default:
         spdlog::info("game event: unknown event");
       }
@@ -125,14 +129,17 @@ namespace ep::game
 
   void World::AddPlayer(std::shared_ptr<IPlayer> player)
   {
+    spdlog::info("World::AddPlayer");
     std::lock_guard lock(players_mutex_);
-    spdlog::info("add new player");
+    // TODO check if this id already not used
     players_[player->GetID()] = player;
   }
 
   void World::RemovePlayer(std::size_t id)
   {
+    spdlog::info("World::RemovePlayer");
     std::lock_guard lock(players_mutex_);
+    // TODO check if this id is exists
     players_.erase(id);
   }
   std::size_t World::PlayerNumbers() const
