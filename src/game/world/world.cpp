@@ -58,8 +58,8 @@ namespace ep::game
       auto event = game_subsystem_->event_queue_.TryPop();
       switch (event->GetEvent()) {
       case ep::EventCode::AddNewPlayer: {
-        spdlog::info("game event: add new player");
-        auto player  = std::make_shared<Player>(0, 0, 0, event->GetID());
+        spdlog::info("game event: AddNewPlayer id: {}", event->GetID());
+        auto player  = std::make_shared<Player>(0, 0, event->GetID());
         AddPlayer(player);
         break;
       }
@@ -100,7 +100,7 @@ namespace ep::game
     switch (to_opcode(opcode)) {
     case Opcodes::MoveForward: 
       spdlog::info("Opcode::MoveForward");
-      player->Move(0, 1, 0);
+      player->Move(0, 1);
       OpcodeMovePlayer(new_packet, player);
       break;
     case Opcodes::MoveRight:
@@ -128,6 +128,7 @@ namespace ep::game
   void World::OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player)
   {
     packet.SetHeadOpcode(to_uint16(ep::Opcodes::MovePlayer));
+    spdlog::info("id: {} x: {} y: {}", player->GetID(), player->GetX(), player->GetY());
     packet << player->GetID() << player->GetX() << player->GetY();
     spdlog::info("head size: {}", packet.GetHeadSize());
     spdlog::info("payload size: {}", packet.GetBodySize());
