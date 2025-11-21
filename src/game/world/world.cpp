@@ -92,29 +92,33 @@ namespace ep::game
     net::NetPacket new_packet;
     // TODO check is this player exists
     auto player = players_[packet.GetID()];
+    uint16_t opcode = packet.GetOpcode();
 
     // TODO Collision
     // TODO Phisics 
-    switch (static_cast<Opcodes>(packet.GetOpcode())) {
+    switch (to_opcode(opcode)) {
     case Opcodes::MoveForward: 
-      spdlog::info("recv MoveForward packet");
+      spdlog::info("Opcode::MoveForward");
       // player->Move(0, 1, 0);
       // OpcodeMovePlayer(new_packet, player);
       break;
     case Opcodes::MoveRight:
-      player->Move(1, 0, 0);
-      OpcodeMovePlayer(new_packet, player);
+      spdlog::info("Opcodes::MoveRight");
+      // player->Move(1, 0, 0);
+      // OpcodeMovePlayer(new_packet, player);
       break;
     case Opcodes::MoveBackward:
-      player->Move(0, -1, 0);
-      OpcodeMovePlayer(new_packet, player);
+      spdlog::info("Opcodes::MoveBackward");
+      // player->Move(0, -1, 0);
+      // OpcodeMovePlayer(new_packet, player);
       break;
     case Opcodes::MoveLeft:
-      player->Move(-1, 0, 0);
-      OpcodeMovePlayer(new_packet, player);
+      spdlog::info("Opcodes::MoveLeft");
+      // player->Move(-1, 0, 0);
+      // OpcodeMovePlayer(new_packet, player);
       break;
     default:
-      ;
+      spdlog::warn("unknown opcode: {}", opcode);
     }
     
     // TODO push new packet.

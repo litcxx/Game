@@ -16,4 +16,9 @@ namespace ep
   {
     return static_cast<uint16_t>(opcode);
   }
+
+  constexpr Opcodes to_opcode(uint16_t opcode)
+  {
+    return static_cast<Opcodes>(opcode);
+  }
 }
