@@ -18,5 +18,8 @@ namespace ep
       code_(code),
       id_(id)
     {}
+
+    EventCode GetEvent() const noexcept { return code_; }
+    std::size_t GetID() const noexcept { return id_; }
   };
 }
