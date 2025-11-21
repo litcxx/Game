@@ -7,7 +7,7 @@
 
 namespace ep::game
 {
-  class Player : IPlayer {
+  class Player : public IPlayer {
   public:
     explicit Player(double x, double y, double z, std::size_t id);
     ~Player() = default;
