@@ -5,7 +5,7 @@
 
 namespace ep
 {
-  enum class EventCode : uint8_t {
+  enum class EventCode : std::uint8_t {
     AddNewPlayer        = 0x00,
     RemovePlayer        = 0x01,
   };

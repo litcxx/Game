@@ -8,7 +8,7 @@ namespace ep::game
 {
   class GameSubsystem {
   public:
-    ep::TSQueue<net::GamePacket> in_queue_;
+    ep::TSQueue<net::NetPacket> in_queue_;
     ep::TSQueue<net::NetPacket> out_queue_;
     ep::TSQueue<Event> event_queue_;
   };

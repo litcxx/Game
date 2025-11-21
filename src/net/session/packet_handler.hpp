@@ -9,41 +9,40 @@ namespace ep::net
 {
   class PacketHandler {
   public:
-    PacketHandler();
+    PacketHandler() = default;
+    ~PacketHandler() = default;
     PacketHandler(const PacketHandler&) = delete;
     PacketHandler& operator=(const PacketHandler&) = delete;
-    ~PacketHandler() = default;
+
+    // Get packet handler data.
+    std::size_t HeadAlreadyRead() const noexcept { return head_already_read_; }
+    std::size_t BodyAlreadyRead() const noexcept { return body_already_read_; }
 
     // Return pointer to current position in header buffer.
-    uint8_t* HeaderData() noexcept;
+    std::uint8_t* HeadCurrentData() noexcept { return packet_.GetHeadData() + head_already_read_; }
 
     // Return pointer to current position in body buffer.
     // Returns nullptr until the header is successfully read with payload size > 0
-    uint8_t* BodyData() noexcept;
+    std::uint8_t* BodyCurrentData() noexcept { return packet_.GetBodyData() ? packet_.GetBodyData() + body_already_read_ : nullptr; }
 
     // Returns how much header data is left to read.
-    std::size_t HeaderSize() const noexcept;
+    std::size_t HeadSizeLeft() const noexcept { return sizeof(PacketHead) - head_already_read_; }
 
     // Returns how much payload data is left to read.
-    std::size_t BodySize() const noexcept;
+    std::size_t BodySizeLeft() const noexcept { return packet_.GetBodySize() - body_already_read_; }
 
     // Extract packet by moving data
     NetPacket ExtractPacket() noexcept;
 
     // Return true if all header data was read.
-    bool ReadHeader(std::size_t size);
+    bool UpdateHeadSize(std::size_t size);
 
     // Return true if all payload data was read.
-    bool ReadBody(std::size_t size);
-
-    std::size_t GetHeadRead() const noexcept { return header_read_; }
-    std::size_t GetBodyRead() const noexcept { return body_read_; }
-    // Return the size of payload data from header.
-    std::size_t GetBodySize() const noexcept { return packet_.GetSize(); }
+    bool UpdateBodySize(std::size_t size);
 
   private:
-    std::size_t header_read_;
-    std::size_t body_read_;
+    std::size_t head_already_read_{};
+    std::size_t body_already_read_{};
     NetPacket packet_;
   };
 }

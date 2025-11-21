@@ -8,7 +8,7 @@
 #include "world/world.hpp"
 #include "game/player/mock_player.hpp"
 
-static constexpr uint8_t tick_rate = 60;
+static constexpr std::uint8_t tick_rate = 60;
 
 TEST(WorldTests, AddPlayers)
 {

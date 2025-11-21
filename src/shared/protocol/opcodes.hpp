@@ -4,7 +4,7 @@
 
 namespace ep
 {
-  enum class Opcodes : uint16_t {
+  enum class Opcodes : std::uint16_t {
     MoveForward             = 0x0011,
     MoveLeft                = 0x0012,
     MoveBackward            = 0x0013,
@@ -12,12 +12,12 @@ namespace ep
     MovePlayer              = 0x0015,
   };
 
-  constexpr uint16_t to_uint16(ep::Opcodes opcode)
+  constexpr std::uint16_t to_uint16(ep::Opcodes opcode)
   {
-    return static_cast<uint16_t>(opcode);
+    return static_cast<std::uint16_t>(opcode);
   }
 
-  constexpr Opcodes to_opcode(uint16_t opcode)
+  constexpr Opcodes to_opcode(std::uint16_t opcode)
   {
     return static_cast<Opcodes>(opcode);
   }

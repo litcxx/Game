@@ -30,11 +30,10 @@ namespace ep::net
     void Run();
 
     void PushPacket(NetPacket packet, std::size_t id);
-
     void CloseSession(std::size_t id);
+    void Broadcast();
   private:
     void AddSession(std::shared_ptr<Session> session) noexcept;
-    void Broadcast();
 
     net::io_context& ioc_;
     ssl::context& ctx_;

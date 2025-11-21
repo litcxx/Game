@@ -38,7 +38,8 @@ int main(int argc, char* argv[])
   auto world = std::make_shared<World>(net_subsystem, 
                                        game_subsystem,
                                        config->GetTickRate());
-  std::thread t(
+  // Game main loop.
+  std::jthread game_thread(
     [&world]
     {
       world->GameLoop();
@@ -69,10 +70,14 @@ int main(int argc, char* argv[])
                                          tcp::endpoint{address, port},
                                          net_subsystem,
                                          game_subsystem);
+  // Server main loop.
   server->Run();
 
+  // Server boradcast all general packets.
+  std::jthread broadcast_tread([server]{ server->Broadcast(); });
+
   // Run the I/O service on the requested number of threads.
-  std::vector<std::thread> v;
+  std::vector<std::jthread> v;
   v.reserve(threads - 1);
   for(auto i = threads - 1; i > 0; --i)
     v.emplace_back(
@@ -81,12 +86,6 @@ int main(int argc, char* argv[])
         ioc.run();
     });
   ioc.run();
-
-  for (auto& t : v)
-    if (t.joinable())
-        t.join();
-  if (t.joinable())
-    t.join();
 
   return EXIT_SUCCESS;
 }

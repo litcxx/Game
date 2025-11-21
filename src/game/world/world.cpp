@@ -16,7 +16,7 @@
 
 namespace ep::game
 {
-  World::World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, std::shared_ptr<game::GameSubsystem> game_subsystem, uint8_t tick_rate) :
+  World::World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, std::shared_ptr<game::GameSubsystem> game_subsystem, std::uint8_t tick_rate) :
     net_subsystem_(net_subsystem),
     game_subsystem_(game_subsystem),
     tick_rate_(tick_rate)
@@ -83,24 +83,25 @@ namespace ep::game
     // Push all packets to network queue for broadcast.
     while (!game_subsystem_->out_queue_.Empty()) {
       auto packet = game_subsystem_->out_queue_.TryPop();
+      spdlog::info("game_subsystem_->out_queue_.TryPop");
       net_subsystem_->out_queue_.Push(std::move(packet));
     }
   }
 
-  void World::ProcessInput(net::GamePacket packet)
+  void World::ProcessInput(net::NetPacket packet)
   {
     net::NetPacket new_packet;
     // TODO check is this player exists
     auto player = players_[packet.GetID()];
-    uint16_t opcode = packet.GetOpcode();
+    std::uint16_t opcode = packet.GetHeadOpcode();
 
     // TODO Collision
     // TODO Phisics 
     switch (to_opcode(opcode)) {
     case Opcodes::MoveForward: 
       spdlog::info("Opcode::MoveForward");
-      // player->Move(0, 1, 0);
-      // OpcodeMovePlayer(new_packet, player);
+      player->Move(0, 1, 0);
+      OpcodeMovePlayer(new_packet, player);
       break;
     case Opcodes::MoveRight:
       spdlog::info("Opcodes::MoveRight");
@@ -121,14 +122,15 @@ namespace ep::game
       spdlog::warn("unknown opcode: {}", opcode);
     }
     
-    // TODO push new packet.
+    game_subsystem_->out_queue_.Push(std::move(new_packet));
   }
 
   void World::OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player)
   {
-    packet.head_.opcode_ = ep::to_uint16(ep::Opcodes::MovePlayer);
+    packet.SetHeadOpcode(to_uint16(ep::Opcodes::MovePlayer));
     packet << player->GetID() << player->GetX() << player->GetY();
-    packet.head_.size_ = sizeof(packet.body_);
+    spdlog::info("head size: {}", packet.GetHeadSize());
+    spdlog::info("payload size: {}", packet.GetBodySize());
   }
 
   void World::AddPlayer(std::shared_ptr<IPlayer> player)

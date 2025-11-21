@@ -17,8 +17,8 @@ namespace ep::net
     WSSSocket& operator=(WSSSocket&) = delete;
     ~WSSSocket();
 
-    void async_read_some(uint8_t* buffer, std::size_t limit, ReadHandler handler) override;
-    void async_write(const uint8_t* buffer, std::size_t limit, ReadHandler handler) override;
+    void async_read_some(std::uint8_t* buffer, std::size_t limit, ReadHandler handler) override;
+    void async_write(const std::uint8_t* buffer, std::size_t limit, ReadHandler handler) override;
     void async_accept(CompletionHandler handler) override;
     void async_handshake(CompletionHandler handler) override;
     std::string string_address() override;

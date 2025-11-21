@@ -1,7 +1,7 @@
 #pragma once
 
-#include <memory>
 #include <cstddef>
+#include <cstdint>
 
 #include "i_player.hpp"
 

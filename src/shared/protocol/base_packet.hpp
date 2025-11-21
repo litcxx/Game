@@ -12,7 +12,7 @@ namespace ep::net
   template<typename T>
   static T swap_endian(T value)
   {
-    uint8_t* ptr = reinterpret_cast<uint8_t*>(&value);
+    std::uint8_t* ptr = reinterpret_cast<std::uint8_t*>(&value);
     std::reverse(ptr, ptr + sizeof(T));
     return *reinterpret_cast<T*>(ptr);
   }
@@ -30,32 +30,60 @@ namespace ep::net
   struct PacketHead {
     std::uint16_t opcode_;
     std::uint32_t size_;
-    
   };
 #pragma pack(pop)
 
-  struct NetPacket {
-    PacketHead head_{};
-    std::vector<std::uint8_t> body_;
-
-    uint16_t GetOpcode() const noexcept { return swap_endian(head_.opcode_); }
-    uint32_t GetSize() const noexcept { return swap_endian(head_.size_); }
-    bool IsValidHeader() const noexcept;
-    void Resize() { body_.resize(GetSize()); }
-
-    // Serialize data
+  class NetPacket {
+    // Serialize data.
     template<PodType T>
     friend NetPacket& operator<<(NetPacket& packet, T value);
 
-    // Deserialize data
+    // Deserialize data.
     template<PodType T>
     friend NetPacket& operator>>(NetPacket& packet, T& value);
+  public:
+    NetPacket() = default;
+    ~NetPacket() = default;
+
+    // Get header data.
+    std::uint16_t GetHeadOpcode() const noexcept { return swap_endian(head_.opcode_); }
+    std::uint32_t GetHeadSize() const noexcept { return swap_endian(head_.size_); }
+    std::uint8_t* GetHeadData() noexcept { return reinterpret_cast<std::uint8_t*>(&head_); }
+    
+    // Set header data.
+    void SetHeadOpcode(std::uint16_t opcode) noexcept { head_.opcode_ = swap_endian(opcode); }
+    void SetHeadSize(std::uint32_t size) noexcept { head_.size_ = swap_endian(size); }
+
+    // Get body data.
+    std::size_t GetBodySize() const noexcept { return body_.size(); }
+    std::uint8_t* GetBodyData() noexcept { return body_.data(); }
+
+    std::size_t GetID() const noexcept { return id_; }
+    void SetID(std::size_t id) noexcept { id_ = id; }
+
+    bool IsValidHeader() const noexcept;
+    void ResizeBody(std::size_t size) { body_.resize(size); }
+    std::vector<std::uint8_t> MakeBuffer();
+
+  private:
+    PacketHead head_{};
+    std::size_t id_{};
+    std::vector<std::uint8_t> body_;
   };
 
   inline bool NetPacket::IsValidHeader() const noexcept
   { 
     return swap_endian(head_.opcode_) < packet_info::kMaxOpcode && 
            swap_endian(head_.size_) < packet_info::kMaxPayloadSize;
+  }
+
+  inline std::vector<std::uint8_t> NetPacket::MakeBuffer()
+  {
+    std::vector<std::uint8_t> res(body_.size() + sizeof(PacketHead));
+    memcpy(res.data(), &head_, sizeof(PacketHead));
+    memcpy(res.data() + sizeof(PacketHead), body_.data(), body_.size());
+    
+    return res;
   }
 
   template<PodType T>
@@ -65,12 +93,12 @@ namespace ep::net
     value = swap_endian(value);
 
     // Allocate memmory and copy value into buffer
-    std::size_t offset = packet.body_.size();
-    packet.body_.resize(offset + sizeof(T));
-    std::memcpy(packet.body_.data() + offset, &value, sizeof(T));
+    std::size_t offset = packet.GetBodySize();
+    packet.ResizeBody(offset + sizeof(T));
+    std::memcpy(packet.GetBodyData() + offset, &value, sizeof(T));
 
     // Update size
-    packet.head_.size_= packet.body_.size();
+    packet.SetHeadSize(packet.GetBodySize());
 
     return packet;
   }
@@ -79,30 +107,16 @@ namespace ep::net
   NetPacket& operator>>(NetPacket& packet, T& value)
   {
     // Copy payload data into value and resize buffer.
-    std::size_t offset = packet.body_.size() - sizeof(T);
-    memcpy(&value, packet.body_.data() + offset, sizeof(T));
+    std::size_t offset = packet.GetBodySize() - sizeof(T);
+    memcpy(&value, packet.GetBodyData() + offset, sizeof(T));
   
     // Convert from netwrok byte order to host byte order.
     value = swap_endian(value);
 
-    packet.body_.resize(offset);
-
     // Update size
-    packet.head_.size_ = packet.body_.size();
+    packet.ResizeBody(offset);
+    packet.SetHeadSize(offset);
 
     return packet;
   }
-
-  struct GamePacket {
-    NetPacket packet_;
-    std::size_t id_;
-
-    explicit GamePacket(NetPacket packet, std::size_t id) :
-      packet_(std::move(packet)),
-      id_(id)
-   {}
-
-    uint16_t GetOpcode() const noexcept { return packet_.GetOpcode(); }
-    std::size_t GetID() const noexcept { return id_; }
-  };
 }

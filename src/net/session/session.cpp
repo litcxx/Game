@@ -62,8 +62,8 @@ namespace ep::net
     spdlog::info("Session::ReadPacketHead");
     auto self = shared_from_this();
     socket_->async_read_some(
-      packet_handler_.HeaderData(),
-      packet_handler_.HeaderSize(),
+      packet_handler_.HeadCurrentData(),
+      packet_handler_.HeadSizeLeft(),
       [self](const beast::error_code& ec, std::size_t size)
       {
         // client close connection
@@ -78,12 +78,12 @@ namespace ep::net
         }
 
         // Continue reading the header, untill the complete PacketHead is recived.
-        if (!self->packet_handler_.ReadHeader(size))
+        if (!self->packet_handler_.UpdateHeadSize(size))
           return self->ReadPacketHead();
         else {
           // All header has been received. If payload size == 0 push to queue 
           // and continue read next header. Otherwise read the body.
-          if (self->packet_handler_.GetBodySize() != 0)
+          if (self->packet_handler_.BodySizeLeft())
             self->ReadPacketBody();
           else {
             self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
@@ -99,8 +99,8 @@ namespace ep::net
     spdlog::info("Session::ReadPacketBody");
     auto self = shared_from_this();
     socket_->async_read_some(
-      packet_handler_.BodyData(),
-      packet_handler_.BodySize(),
+      packet_handler_.BodyCurrentData(),
+      packet_handler_.BodySizeLeft(),
       [self](const beast::error_code& ec, std::size_t size)
       {
         // Client close connection.
@@ -115,7 +115,7 @@ namespace ep::net
         }
 
         // Continue reading payload data untill all payload data has been received.
-        if (!self->packet_handler_.ReadBody(size))
+        if (!self->packet_handler_.UpdateBodySize(size))
           self->ReadPacketBody();
         else {
           // All payload data has been received.

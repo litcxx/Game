@@ -91,13 +91,15 @@ namespace ep::net
   void Server::Broadcast()
   {
     spdlog::info("Server::Broadcast");
-    while (!net_susbsystem_->out_queue_.Empty()) {
-      auto packet = net_susbsystem_->out_queue_.TryPop();
-      // copy packet to buffer
-      auto buf = std::make_shared<std::vector<uint8_t>>(packet->GetSize());
-      memcpy(buf->data(), &packet->head_, sizeof(PacketHead));
-      memcpy(buf->data() + sizeof(PacketHead), packet->body_.data(), packet->body_.size());
+    for (;;) {
+      auto packet = net_susbsystem_->out_queue_.WaitAndPop();
+      spdlog::info("net_susbsystem_->out_queue_.WaitAndPop");
 
+      // Make flat buffer from packet.
+      auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(packet->MakeBuffer()));
+      spdlog::info("buffer length: {}", buf->size());
+
+      spdlog::info("send packet to all sessions");
       for (const auto& session : sessions_) {
         session->Send(buf);
       }
@@ -106,7 +108,8 @@ namespace ep::net
 
   void Server::PushPacket(NetPacket packet, std::size_t id)
   {
-    net_susbsystem_->in_queue_.Push(GamePacket(std::move(packet), id));
+    packet.SetID(id);
+    net_susbsystem_->in_queue_.Push(std::move(packet));
   }
 
   void Server::CloseSession(std::size_t id)
