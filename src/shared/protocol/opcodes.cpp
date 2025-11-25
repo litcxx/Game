@@ -23,6 +23,16 @@ namespace ep
     return std::move(packet);
   }
 
+  net::NetPacket RmvPlayerPacket(std::size_t id)
+  {
+    net::NetPacket packet;
+    packet.SetID(id);
+    packet.SetPacketType(net::PacketType::RpcOthers);
+    packet.SetHeadOpcode(to_uint16(ep::Opcodes::RmvPlayer));
+    packet << id;
+    return std::move(packet);
+  }
+
   net::NetPacket MovePlayerPacket(std::size_t id, double x, double y)
   {
     net::NetPacket packet;

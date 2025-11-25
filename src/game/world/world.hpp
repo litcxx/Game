@@ -7,6 +7,7 @@
 #include "protocol/network_subsystem.hpp"
 #include "protocol/game_subsystem.hpp"
 #include "player/i_player.hpp"
+#include "protocol/events.hpp"
 
 namespace ep::game
 {
@@ -23,6 +24,7 @@ namespace ep::game
     std::size_t PlayerNumbers() const;
   private:
     void Tick(double dt);
+    void ProcessEvent(const Event& event);
     void ProcessInput(net::NetPacket packet);
 
     void OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player);

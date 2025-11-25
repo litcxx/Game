@@ -56,26 +56,11 @@ namespace ep::game
     // Handle events.
     while (!game_subsystem_->event_queue_.Empty()) {
       auto event = game_subsystem_->event_queue_.TryPop();
-      switch (event->GetEvent()) {
-      case ep::EventCode::AddNewPlayer: {
-        spdlog::info("game event: AddNewPlayer id: {}", event->GetID());
-        auto player  = std::make_shared<Player>(0, 0, event->GetID());
-        AddPlayer(player);
-        break;
-      }
-      case ep::EventCode::RemovePlayer: {
-        spdlog::info("game event: remove player");
-        RemovePlayer(event->GetID());
-        break;
-      }
-      default:
-        spdlog::info("game event: unknown event");
-      }
+      ProcessEvent(*event);
     }
 
     // Pop packet from queue and process it.
     while (!game_subsystem_->in_queue_.Empty()) {
-      spdlog::info("World::Tick: handle packet");
       auto packet = game_subsystem_->in_queue_.TryPop();
       ProcessInput(std::move(*packet));
     }
@@ -83,46 +68,64 @@ namespace ep::game
     // Push all packets to network queue for broadcast.
     while (!game_subsystem_->out_queue_.Empty()) {
       auto packet = game_subsystem_->out_queue_.TryPop();
-      spdlog::info("game_subsystem_->out_queue_.TryPop");
       net_subsystem_->out_queue_.Push(std::move(packet));
+    }
+  }
+
+  void World::ProcessEvent(const Event& event)
+  {
+    switch (event.GetEvent()) {
+      case ep::EventCode::AddNewPlayer: {
+        spdlog::info("game event: AddNewPlayer id: {}", event.GetID());
+        auto player  = std::make_shared<Player>(0, 0, event.GetID());
+        AddPlayer(player);
+        break;
+      }
+      case ep::EventCode::RemovePlayer: {
+        spdlog::info("game event: remove player");
+        RemovePlayer(event.GetID());
+        break;
+      }
+      default:
+        spdlog::info("game event: unknown event");
     }
   }
 
   void World::ProcessInput(net::NetPacket packet)
   {
-    net::NetPacket new_packet;
+    net::NetPacket send_packet;
+    send_packet.SetPacketType(net::PacketType::Broadcast);
     // TODO check is this player exists
     auto player = players_[packet.GetID()];
     std::uint16_t opcode = packet.GetHeadOpcode();
+    constexpr int speed = 5;
 
-    // TODO Collision
-    // TODO Phisics 
     switch (to_opcode(opcode)) {
-    case Opcodes::MoveForward: 
-      spdlog::info("Opcode::MoveForward");
-      player->Move(0, 1);
-      OpcodeMovePlayer(new_packet, player);
-      break;
-    case Opcodes::MoveRight:
-      spdlog::info("Opcodes::MoveRight");
-      // player->Move(1, 0, 0);
-      // OpcodeMovePlayer(new_packet, player);
-      break;
-    case Opcodes::MoveBackward:
-      spdlog::info("Opcodes::MoveBackward");
-      // player->Move(0, -1, 0);
-      // OpcodeMovePlayer(new_packet, player);
-      break;
-    case Opcodes::MoveLeft:
-      spdlog::info("Opcodes::MoveLeft");
-      // player->Move(-1, 0, 0);
-      // OpcodeMovePlayer(new_packet, player);
-      break;
-    default:
-      spdlog::warn("unknown opcode: {}", opcode);
+      case Opcodes::MoveForward: 
+        spdlog::info("Opcode::MoveForward");
+        player->Move(0, -speed);
+        OpcodeMovePlayer(send_packet, player);
+        break;
+      case Opcodes::MoveLeft:
+        spdlog::info("Opcodes::MoveLeft");
+        player->Move(-speed, 0);
+        OpcodeMovePlayer(send_packet, player);
+        break;
+      case Opcodes::MoveBackward:
+        spdlog::info("Opcodes::MoveBackward");
+        player->Move(0, speed);
+        OpcodeMovePlayer(send_packet, player);
+        break;
+      case Opcodes::MoveRight:
+        spdlog::info("Opcodes::MoveRight");
+        player->Move(speed, 0);
+        OpcodeMovePlayer(send_packet, player);
+        break;
+      default:
+        spdlog::warn("unknown opcode: {}", opcode);
     }
     
-    game_subsystem_->out_queue_.Push(std::move(new_packet));
+    game_subsystem_->out_queue_.Push(std::move(send_packet));
   }
 
   void World::OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player)
@@ -137,9 +140,37 @@ namespace ep::game
   void World::AddPlayer(std::shared_ptr<IPlayer> player)
   {
     spdlog::info("World::AddPlayer");
-    std::lock_guard lock(players_mutex_);
-    // TODO check if this id already not used
-    players_[player->GetID()] = player;
+    {
+      std::lock_guard lock(players_mutex_);
+      // TODO check if this id already exists
+      // Otherwise it overwrite previous player
+      players_[player->GetID()] = player;
+
+      // Create player on client side
+      net::NetPacket packet0 = CreatePlayerPacket(player->GetID(), player->GetX(), player->GetY());
+      // TODO make it instance send
+      game_subsystem_->out_queue_.Push(std::move(packet0));
+
+      // Send all players to new player
+      net::NetPacket packet1;
+      packet1.SetID(player->GetID());
+      packet1.SetPacketType(net::PacketType::Rpc);
+      packet1.SetHeadOpcode(to_uint16(Opcodes::SpawnPlayers));
+      packet1 << players_.size() - 1;
+      for (const auto& elem : players_) {
+        if (elem.first != player->GetID()) {
+          spdlog::info("make packet1 id: {} x: {} y: {}", elem.second->GetID(), elem.second->GetX(), elem.second->GetY());
+          packet1 << elem.second->GetID() 
+                  << elem.second->GetX() 
+                  << elem.second->GetY();
+        }
+      }
+      game_subsystem_->out_queue_.Push(std::move(packet1));
+    }
+    
+    // Notify others
+    net::NetPacket packet2 = AddPlayerPacket(player->GetID(), player->GetX(), player->GetY());
+    game_subsystem_->out_queue_.Push(std::move(packet2));
   }
 
   void World::RemovePlayer(std::size_t id)
@@ -148,7 +179,10 @@ namespace ep::game
     std::lock_guard lock(players_mutex_);
     // TODO check if this id is exists
     players_.erase(id);
+    net::NetPacket packet = RmvPlayerPacket(id);
+    game_subsystem_->out_queue_.Push(std::move(packet));
   }
+
   std::size_t World::PlayerNumbers() const
   {
     std::lock_guard lock(players_mutex_);
