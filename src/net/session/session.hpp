@@ -7,6 +7,7 @@
 
 #include "packet_handler.hpp"
 #include "socket/i_socket.hpp"
+#include "utils/ts_queue.hpp"
 
 namespace ep::net
 {
@@ -14,6 +15,8 @@ namespace ep::net
 
   class Session : public std::enable_shared_from_this<Session> {
   public:
+    using SendBuffer = std::shared_ptr<std::vector<std::uint8_t>>;
+
     explicit Session(std::shared_ptr<Server> server, std::unique_ptr<ISocket> socket, std::size_t id);
     ~Session() = default;
 
@@ -22,7 +25,7 @@ namespace ep::net
 
     // Initialie ssl handshake and websocket accept connection
     void Run();
-    void Send(std::shared_ptr<std::vector<uint8_t>> buf);
+    void Send();
     std::size_t GetID() const { return id_; }
 
     // Session state
@@ -30,6 +33,12 @@ namespace ep::net
     void SetDisconneted() const noexcept { state_.clear(); }
     // true - connected, false - disconnected
     [[nodiscard]] bool GetState() const noexcept { return state_.test(); }
+
+    // true - sending, false - not sending
+    [[maybe_unused]] bool StartSending() const noexcept { return sending_.test_and_set(); }
+    void StopSending() const noexcept { return sending_.clear(); }
+
+    void PushToSend(SendBuffer packet);
 
   private:
     // WebSocket accept connection
@@ -49,5 +58,7 @@ namespace ep::net
     std::size_t id_;
     mutable std::atomic_flag state_;
     PacketHandler packet_handler_;
+    mutable std::atomic_flag sending_;
+    ep::TSQueue<std::vector<uint8_t>> out_queue_;
   };
 }

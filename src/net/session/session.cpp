@@ -1,5 +1,6 @@
 #include "session.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <sys/types.h>
 
@@ -20,7 +21,8 @@ namespace ep::net
     server_{server},
     socket_{std::move(socket)},
     id_{id},
-    state_{ATOMIC_FLAG_INIT}
+    state_{ATOMIC_FLAG_INIT},
+    sending_{ATOMIC_FLAG_INIT}
   {}
 
   void Session::Run()
@@ -145,12 +147,20 @@ namespace ep::net
     );
   }
 
-  void Session::Send(std::shared_ptr<std::vector<uint8_t>> buf)
+  void Session::Send()
   {
     spdlog::info("Session::Send");
     if (!GetState())
       return spdlog::info("Close send operation to disconneted client");
-    
+
+    if (out_queue_.Empty())
+      return spdlog::info("Return from send, out queue is empty");
+
+    if (StartSending())
+      return spdlog::info("Close send operation, previous send is not finished");
+
+    auto buf = out_queue_.TryPop();
+
     auto self = shared_from_this();
     socket_->async_write(
       buf->data(), 
@@ -171,7 +181,19 @@ namespace ep::net
           return;
         }
         spdlog::info("write {} bytes to client", size);
+
+        self->sending_.clear();
+        // If out queue is not empty send again
+        if (!self->out_queue_.Empty())
+          self->Send();
       }
     );
+  }
+
+
+  void Session::PushToSend(SendBuffer packet)
+  {
+    out_queue_.Push(packet); 
+    Send();
   }
 }

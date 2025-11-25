@@ -104,18 +104,19 @@ namespace ep::net
 
       switch (packet->GetPacketType()) {
         case PacketType::Rpc:
-          sessions_[packet->GetID()]->Send(buf);
+          sessions_[packet->GetID()]->PushToSend(buf);
           break;
         case PacketType::Broadcast:
           spdlog::info("send packet to all sessions");
           for (const auto& elem: sessions_) {
-            elem.second->Send(buf);
+            elem.second->PushToSend(buf);
           }
           break;
         case PacketType::RpcOthers:
           for (const auto& elem: sessions_) {
-            if (elem.first != packet->GetID())
-              elem.second->Send(buf);
+            if (elem.first != packet->GetID()) {
+              elem.second->PushToSend(buf);
+            }
           }
           break;
         default:
