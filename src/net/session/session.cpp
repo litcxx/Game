@@ -157,9 +157,19 @@ namespace ep::net
       buf->size(),
       [self, buf](const beast::error_code& ec, std::size_t size)
       {
-        // An error occured.
-        if (ec)
-          return spdlog::error("write: {}", ec.what());
+        // an error occured
+        if (ec) {
+          // client close connection
+          if (ec == websocket::error::closed)
+            spdlog::info("session was closed");
+          else
+            spdlog::warn("read : {}", ec.what());
+
+          // Close session process
+          self->SetDisconneted();
+          self->server_->CloseSession(self->id_);
+          return;
+        }
         spdlog::info("write {} bytes to client", size);
       }
     );
