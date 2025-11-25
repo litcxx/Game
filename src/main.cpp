@@ -74,7 +74,7 @@ int main(int argc, char* argv[])
   server->Run();
 
   // Server boradcast all general packets.
-  std::jthread broadcast_tread([server]{ server->Broadcast(); });
+  std::jthread sender_tread([server]{ server->Sender(); });
 
   // Run the I/O service on the requested number of threads.
   std::vector<std::jthread> v;
