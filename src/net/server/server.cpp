@@ -12,6 +12,7 @@
 
 #include "protocol/base_packet.hpp"
 #include "protocol/events.hpp"
+#include "protocol/opcodes.hpp"
 #include "session/session.hpp"
 #include "socket/wss_socket.hpp"
 
@@ -70,7 +71,6 @@ namespace ep::net
           auto wsssocket = std::make_unique<WSSSocket>(std::move(socket), ctx_);
           std::size_t id = new_session_id_.fetch_add(1);
           auto session = std::make_shared<Session>(shared_from_this(), std::move(wsssocket), id);
-          AddSession(session);
           session->Run();
         } else {
           spdlog::error("async_accept: {}", ec.what());
@@ -83,25 +83,43 @@ namespace ep::net
 
   void Server::AddSession(std::shared_ptr<Session> session) noexcept
   {
-    std::lock_guard lock(sessions_mutex_);
-    sessions_.push_back(session);
+    spdlog::info("Server::AddSession");
+    {
+      std::lock_guard lock(sessions_mutex_);
+      sessions_[session->GetID()] = session;
+    }
     game_susbsystem_->event_queue_.Push(Event(ep::EventCode::AddNewPlayer, session->GetID()));
   }
  
-  void Server::Broadcast()
+  void Server::Sender()
   {
-    spdlog::info("Server::Broadcast");
+    spdlog::info("Server::Sender");
     for (;;) {
       auto packet = net_susbsystem_->out_queue_.WaitAndPop();
-      spdlog::info("net_susbsystem_->out_queue_.WaitAndPop");
-
       // Make flat buffer from packet.
       auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(packet->MakeBuffer()));
-      spdlog::info("buffer length: {}", buf->size());
 
-      spdlog::info("send packet to all sessions");
-      for (const auto& session : sessions_) {
-        session->Send(buf);
+      spdlog::info("number of sessions: {}", sessions_.size());
+      spdlog::info("packet id: {}", packet->GetID());
+
+      switch (packet->GetPacketType()) {
+        case PacketType::Rpc:
+          sessions_[packet->GetID()]->Send(buf);
+          break;
+        case PacketType::Broadcast:
+          spdlog::info("send packet to all sessions");
+          for (const auto& elem: sessions_) {
+            elem.second->Send(buf);
+          }
+          break;
+        case PacketType::RpcOthers:
+          for (const auto& elem: sessions_) {
+            if (elem.first != packet->GetID())
+              elem.second->Send(buf);
+          }
+          break;
+        default:
+          spdlog::error("unknown packet type");
       }
     }
   }
@@ -115,11 +133,8 @@ namespace ep::net
   void Server::CloseSession(std::size_t id)
   {
     std::lock_guard lock(sessions_mutex_);
-    auto it = std::find_if(sessions_.begin(), sessions_.end(), [id](std::shared_ptr<Session> sess) { return sess->GetID() == id; });
-    if (it != sessions_.end())
-      sessions_.erase(it);
-    else
-      spdlog::error("can't find session in sessions buffer");
+    // TODO check element
+    sessions_.erase(id);
     game_susbsystem_->event_queue_.Push(Event(ep::EventCode::RemovePlayer, id));
   }
 }
