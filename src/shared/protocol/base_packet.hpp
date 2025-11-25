@@ -23,6 +23,12 @@ namespace ep::net
     inline constexpr std::uint32_t kMaxPayloadSize = 128;
   }
 
+  enum class PacketType : uint8_t {
+    Broadcast,
+    Rpc,
+    RpcOthers,
+  };
+
   template<typename T>
   concept PodType = std::is_standard_layout_v<T>;
 
@@ -64,10 +70,13 @@ namespace ep::net
     bool IsValidHeader() const noexcept;
     void ResizeBody(std::size_t size) { body_.resize(size); }
     std::vector<std::uint8_t> MakeBuffer();
+    void SetPacketType(PacketType type) noexcept { type_ = type; }
+    PacketType GetPacketType() const noexcept { return type_; }
 
   private:
     PacketHead head_{};
     std::size_t id_{};
+    enum PacketType type_{PacketType::Broadcast};
     std::vector<std::uint8_t> body_;
   };
 
