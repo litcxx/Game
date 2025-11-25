@@ -1,11 +1,13 @@
 #include "session.hpp"
 
+#include <cstdint>
+#include <sys/types.h>
+
 #include <boost/asio/ssl/stream_base.hpp>
 #include <boost/asio/buffer.hpp>
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/websocket/ssl.hpp>
 #include <boost/beast/websocket/error.hpp>
-#include <cstdint>
 #include <spdlog/spdlog.h>
 
 #include "server/server.hpp"
@@ -17,19 +19,20 @@ namespace ep::net
   Session::Session(std::shared_ptr<Server> server, std::unique_ptr<ISocket> socket, std::size_t id) :
     server_{server},
     socket_{std::move(socket)},
-    id_(id)
+    id_{id},
+    state_{ATOMIC_FLAG_INIT}
   {}
 
   void Session::Run()
   {
     spdlog::info("Session::Run");
-
+    auto self = shared_from_this();
     socket_->async_handshake(
-      [this](const beast::error_code& ec)
+      [self](const beast::error_code& ec)
       {
         if (ec)
           return spdlog::error("handshake: {}", ec.what());
-        Accept();
+        self->Accept();
       }
     );
   }
@@ -41,18 +44,27 @@ namespace ep::net
     // TODO set timeout
     // TODO set decorator
 
+    auto self = shared_from_this();
     socket_->async_accept(
-      [this](const beast::error_code &ec)
+      [self](const beast::error_code &ec)
       {
-        // client close connection
-        if (ec == websocket::error::closed)
-          return spdlog::info("session was closed");
         // an error occured
-        if (ec)
-          return spdlog::error("accept: {}", ec.what());
+        if (ec) {
+          // client close connection
+          if (ec == websocket::error::closed)
+            return spdlog::info("session was closed");
+          else
+            return spdlog::warn("accept: {}", ec.what());
+        }
 
-        // Push Add player to world packet
-        ReadPacketHead();
+        // Finally connected
+        self->SetConnected();
+
+        // Add client to server and game
+        self->server_->AddSession(self);
+
+        // Start reading client inputs
+        self->ReadPacketHead();
       }
     );
   }
@@ -66,15 +78,18 @@ namespace ep::net
       packet_handler_.HeadSizeLeft(),
       [self](const beast::error_code& ec, std::size_t size)
       {
-        // client close connection
-        if (ec == websocket::error::closed) {
-          self->server_->CloseSession(self->id_);
-          return spdlog::info("session was closed");
-        }
         // an error occured
         if (ec) {
+          // client close connection
+          if (ec == websocket::error::closed)
+            spdlog::info("session was closed");
+          else
+            spdlog::warn("read : {}", ec.what());
+
+          // Close session process
+          self->SetDisconneted();
           self->server_->CloseSession(self->id_);
-          return spdlog::error("read: {}", ec.what());
+          return;
         }
 
         // Continue reading the header, untill the complete PacketHead is recived.
@@ -103,18 +118,21 @@ namespace ep::net
       packet_handler_.BodySizeLeft(),
       [self](const beast::error_code& ec, std::size_t size)
       {
-        // Client close connection.
-        if (ec == websocket::error::closed) {
-          self->server_->CloseSession(self->id_);
-          return spdlog::info("session was closed");
-        }
-        // An error occured.
+        // an error occured
         if (ec) {
+          // client close connection
+          if (ec == websocket::error::closed)
+            spdlog::info("session was closed");
+          else
+            spdlog::warn("read : {}", ec.what());
+
+          // Close session process
+          self->SetDisconneted();
           self->server_->CloseSession(self->id_);
-          return spdlog::error("read: {}", ec.what());
+          return;
         }
 
-        // Continue reading payload data untill all payload data has been received.
+        // Continue reading payload data untill all data has been received.
         if (!self->packet_handler_.UpdateBodySize(size))
           self->ReadPacketBody();
         else {
@@ -130,6 +148,9 @@ namespace ep::net
   void Session::Send(std::shared_ptr<std::vector<uint8_t>> buf)
   {
     spdlog::info("Session::Send");
+    if (!GetState())
+      return spdlog::info("Close send operation to disconneted client");
+    
     auto self = shared_from_this();
     socket_->async_write(
       buf->data(), 

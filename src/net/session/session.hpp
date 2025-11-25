@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <atomic>
 
 #include "packet_handler.hpp"
 #include "socket/i_socket.hpp"
@@ -24,6 +25,12 @@ namespace ep::net
     void Send(std::shared_ptr<std::vector<uint8_t>> buf);
     std::size_t GetID() const { return id_; }
 
+    // Session state
+    [[maybe_unused]] bool SetConnected() const noexcept { return state_.test_and_set(); }
+    void SetDisconneted() const noexcept { state_.clear(); }
+    // true - connected, false - disconnected
+    [[nodiscard]] bool GetState() const noexcept { return state_.test(); }
+
   private:
     // WebSocket accept connection
     void Accept();
@@ -40,6 +47,7 @@ namespace ep::net
     std::shared_ptr<Server> server_;
     std::unique_ptr<ISocket> socket_;
     std::size_t id_;
+    mutable std::atomic_flag state_;
     PacketHandler packet_handler_;
   };
 }
