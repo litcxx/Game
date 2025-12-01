@@ -11,10 +11,20 @@ namespace ep
     // Filename is only used on the first call.
     static std::shared_ptr<Config> GetInstance(std::string filename = "null");
 
+    // Network getters.
     const std::string& GetServerIP() const noexcept { return ip_; }
     std::uint16_t GetServerPort() const noexcept { return port_; }
     std::uint16_t GetIOThreads() const noexcept { return io_threads_; }
+
+    // Game getters.
     std::uint8_t GetTickRate() const noexcept { return tick_rate_; }
+    std::uint16_t GetGridX() const noexcept { return grid_x_; }
+    std::uint16_t GetGridY() const noexcept { return grid_y_; }
+    std::uint8_t GetTile() const noexcept { return tile_; }
+    std::uint16_t GetPlayerStartX() const noexcept { return player_start_x_; }
+    std::uint16_t GetPlayerStartY() const noexcept { return player_start_y_; }
+    std::uint16_t GetPlayerOffset() const noexcept { return player_offset_; }
+    const std::vector<std::uint8_t>& GetMap() const noexcept { return map_; }
   private:
     explicit Config(std::string filename);  
 
