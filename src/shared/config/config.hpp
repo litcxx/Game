@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace ep
 {
@@ -24,5 +25,12 @@ namespace ep
 
     // Game.
     std::uint8_t tick_rate_;
+    std::uint16_t grid_x_;
+    std::uint16_t grid_y_;
+    std::uint8_t tile_;
+    std::uint16_t player_start_x_;
+    std::uint16_t player_start_y_;
+    std::uint16_t player_offset_;
+    std::vector<std::uint8_t> map_;
   };
 }
