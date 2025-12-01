@@ -16,7 +16,9 @@
 
 namespace ep::game
 {
-  World::World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, std::shared_ptr<game::GameSubsystem> game_subsystem, std::uint8_t tick_rate) :
+  World::World(std::shared_ptr<ep::NetworkSubsystem> net_subsystem, 
+               std::shared_ptr<ep::GameSubsystem> game_subsystem, 
+               std::uint8_t tick_rate) :
     net_subsystem_(net_subsystem),
     game_subsystem_(game_subsystem),
     tick_rate_(tick_rate)
@@ -91,10 +93,10 @@ namespace ep::game
     }
   }
 
-  void World::ProcessInput(net::NetPacket packet)
+  void World::ProcessInput(ep::NetPacket packet)
   {
-    net::NetPacket send_packet;
-    send_packet.SetPacketType(net::PacketType::Broadcast);
+    ep::NetPacket send_packet;
+    send_packet.SetPacketType(ep::PacketType::Broadcast);
     // TODO check is this player exists
     auto player = players_[packet.GetID()];
     std::uint16_t opcode = packet.GetHeadOpcode();
@@ -128,7 +130,7 @@ namespace ep::game
     game_subsystem_->out_queue_.Push(std::move(send_packet));
   }
 
-  void World::OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player)
+  void World::OpcodeMovePlayer(ep::NetPacket& packet, std::shared_ptr<IPlayer> player)
   {
     packet.SetHeadOpcode(to_uint16(ep::Opcodes::MovePlayer));
     spdlog::info("id: {} x: {} y: {}", player->GetID(), player->GetX(), player->GetY());
@@ -147,14 +149,14 @@ namespace ep::game
       players_[player->GetID()] = player;
 
       // Create player on client side
-      net::NetPacket packet0 = CreatePlayerPacket(player->GetID(), player->GetX(), player->GetY());
+      ep::NetPacket packet0 = CreatePlayerPacket(player->GetID(), player->GetX(), player->GetY());
       // TODO make it instance send
       game_subsystem_->out_queue_.Push(std::move(packet0));
 
       // Send all players to new player
-      net::NetPacket packet1;
+      ep::NetPacket packet1;
       packet1.SetID(player->GetID());
-      packet1.SetPacketType(net::PacketType::Rpc);
+      packet1.SetPacketType(ep::PacketType::Rpc);
       packet1.SetHeadOpcode(to_uint16(Opcodes::SpawnPlayers));
       packet1 << players_.size() - 1;
       for (const auto& elem : players_) {
@@ -169,7 +171,7 @@ namespace ep::game
     }
     
     // Notify others
-    net::NetPacket packet2 = AddPlayerPacket(player->GetID(), player->GetX(), player->GetY());
+    ep::NetPacket packet2 = AddPlayerPacket(player->GetID(), player->GetX(), player->GetY());
     game_subsystem_->out_queue_.Push(std::move(packet2));
   }
 
@@ -179,7 +181,7 @@ namespace ep::game
     std::lock_guard lock(players_mutex_);
     // TODO check if this id is exists
     players_.erase(id);
-    net::NetPacket packet = RmvPlayerPacket(id);
+    ep::NetPacket packet = RmvPlayerPacket(id);
     game_subsystem_->out_queue_.Push(std::move(packet));
   }
 

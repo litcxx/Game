@@ -20,7 +20,7 @@ namespace ep
     RmvPlayer               = 0x0017,
   };
 
-  constexpr std::uint16_t to_uint16(ep::Opcodes opcode)
+  constexpr std::uint16_t to_uint16(Opcodes opcode)
   {
     return static_cast<std::uint16_t>(opcode);
   }
@@ -30,9 +30,9 @@ namespace ep
     return static_cast<Opcodes>(opcode);
   }
 
-  net::NetPacket CreatePlayerPacket(std::size_t id, double x, double y);
-  net::NetPacket AddPlayerPacket(std::size_t id, double x, double y);
-  net::NetPacket RmvPlayerPacket(std::size_t id);
-  net::NetPacket MovePlayerPacket(std::size_t id, double x, double y);
-  std::shared_ptr<std::uint8_t[]> PacketBuffer(net::NetPacket packet);
+  NetPacket CreatePlayerPacket(std::size_t id, double x, double y);
+  NetPacket AddPlayerPacket(std::size_t id, double x, double y);
+  NetPacket RmvPlayerPacket(std::size_t id);
+  NetPacket MovePlayerPacket(std::size_t id, double x, double y);
+  std::shared_ptr<std::uint8_t[]> PacketBuffer(NetPacket packet);
 }

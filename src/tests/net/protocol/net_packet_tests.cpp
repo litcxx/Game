@@ -4,7 +4,7 @@
 
 TEST(NetPacketTest, OperatorInOut)
 {
-  ep::net::NetPacket packet;
+  ep::NetPacket packet;
   EXPECT_EQ(packet.GetHeadSize(), 0);
   EXPECT_EQ(packet.GetBodySize(), 0);
 

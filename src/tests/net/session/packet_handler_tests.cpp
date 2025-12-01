@@ -10,7 +10,7 @@ TEST(PacketHandlerTest, Init)
 {
   ep::net::PacketHandler handler;
 
-  EXPECT_EQ(handler.HeadSizeLeft(), sizeof(ep::net::PacketHead));
+  EXPECT_EQ(handler.HeadSizeLeft(), sizeof(ep::PacketHead));
   EXPECT_EQ(handler.BodySizeLeft(), 0);
 }
 
@@ -32,8 +32,8 @@ TEST(PacketHandlerTest, UpdateHeadSize)
 {
   ep::net::PacketHandler handler;
   
-  std::uint16_t opcode = ep::net::swap_endian(5);
-  std::uint32_t size = ep::net::swap_endian(6);
+  std::uint16_t opcode = ep::swap_endian(5);
+  std::uint32_t size = ep::swap_endian(6);
   
   memcpy(handler.HeadCurrentData(), &opcode, sizeof(opcode));
   EXPECT_EQ(handler.UpdateHeadSize(sizeof(opcode)), false);
@@ -45,12 +45,12 @@ TEST(PacketHandlerTest, UpdateHeadSize)
 TEST(PacketHandlerTest, UpdateBodySize)
 {
   ep::net::PacketHandler handler;
-  ep::net::PacketHead head;
-  head.opcode_ = ep::net::swap_endian(1);
-  head.size_ = ep::net::swap_endian(3);
+  ep::PacketHead head;
+  head.opcode_ = ep::swap_endian(1);
+  head.size_ = ep::swap_endian(3);
 
-  memcpy(handler.HeadCurrentData(), &head, sizeof(ep::net::PacketHead));
-  handler.UpdateHeadSize(sizeof(ep::net::PacketHead));
+  memcpy(handler.HeadCurrentData(), &head, sizeof(ep::PacketHead));
+  handler.UpdateHeadSize(sizeof(ep::PacketHead));
 
   EXPECT_EQ(handler.BodySizeLeft(), 3);
   EXPECT_EQ(handler.UpdateBodySize(2), false);

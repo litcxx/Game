@@ -29,10 +29,10 @@ int main(int argc, char* argv[])
   auto config = ep::Config::GetInstance(argv[1]);
 
   // Initialize network subsystem.
-  auto net_subsystem = std::make_shared<NetworkSubsystem>();
+  auto net_subsystem = std::make_shared<ep::NetworkSubsystem>();
 
   // Initialize game subsystem.
-  auto game_subsystem = std::make_shared<GameSubsystem>();
+  auto game_subsystem = std::make_shared<ep::GameSubsystem>();
 
   // Initialize the world and run game loop.
   auto world = std::make_shared<World>(net_subsystem, 

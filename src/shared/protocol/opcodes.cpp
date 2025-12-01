@@ -3,42 +3,42 @@
 
 namespace ep
 {
-  net::NetPacket CreatePlayerPacket(std::size_t id, double x, double y)
+  NetPacket CreatePlayerPacket(std::size_t id, double x, double y)
   {
-    net::NetPacket packet;
+    NetPacket packet;
     packet.SetID(id);
-    packet.SetPacketType(net::PacketType::Rpc);
-    packet.SetHeadOpcode(to_uint16(ep::Opcodes::CreatePlayer));
+    packet.SetPacketType(PacketType::Rpc);
+    packet.SetHeadOpcode(to_uint16(Opcodes::CreatePlayer));
     packet << id << x << y;
     return std::move(packet);
   }
 
-  net::NetPacket AddPlayerPacket(std::size_t id, double x, double y)
+  NetPacket AddPlayerPacket(std::size_t id, double x, double y)
   {
-    net::NetPacket packet;
+    NetPacket packet;
     packet.SetID(id);
-    packet.SetPacketType(net::PacketType::RpcOthers);
-    packet.SetHeadOpcode(to_uint16(ep::Opcodes::AddPlayer));
+    packet.SetPacketType(PacketType::RpcOthers);
+    packet.SetHeadOpcode(to_uint16(Opcodes::AddPlayer));
     packet << id << x << y;
     return std::move(packet);
   }
 
-  net::NetPacket RmvPlayerPacket(std::size_t id)
+  NetPacket RmvPlayerPacket(std::size_t id)
   {
-    net::NetPacket packet;
+    NetPacket packet;
     packet.SetID(id);
-    packet.SetPacketType(net::PacketType::RpcOthers);
-    packet.SetHeadOpcode(to_uint16(ep::Opcodes::RmvPlayer));
+    packet.SetPacketType(PacketType::RpcOthers);
+    packet.SetHeadOpcode(to_uint16(Opcodes::RmvPlayer));
     packet << id;
     return std::move(packet);
   }
 
-  net::NetPacket MovePlayerPacket(std::size_t id, double x, double y)
+  NetPacket MovePlayerPacket(std::size_t id, double x, double y)
   {
-    net::NetPacket packet;
+    NetPacket packet;
     packet.SetID(id);
-    packet.SetPacketType(net::PacketType::Broadcast);
-    packet.SetHeadOpcode(to_uint16(ep::Opcodes::MovePlayer));
+    packet.SetPacketType(PacketType::Broadcast);
+    packet.SetHeadOpcode(to_uint16(Opcodes::MovePlayer));
     packet << id << x << y;
     return std::move(packet);
   }

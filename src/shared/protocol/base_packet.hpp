@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <algorithm>
 
-namespace ep::net
+namespace ep
 {
   template<typename T>
   static T swap_endian(T value)

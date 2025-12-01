@@ -21,8 +21,8 @@ namespace ep::net
   Server::Server(boost::asio::io_context& ioc, 
                  ssl::context& ctx, 
                  tcp::endpoint endpoint, 
-                 std::shared_ptr<NetworkSubsystem> net_susbsystem, 
-                 std::shared_ptr<game::GameSubsystem> game_subsystem) :
+                 std::shared_ptr<ep::NetworkSubsystem> net_susbsystem, 
+                 std::shared_ptr<ep::GameSubsystem> game_subsystem) :
     ioc_{ioc},
     ctx_{ctx},
     acceptor_{ioc},

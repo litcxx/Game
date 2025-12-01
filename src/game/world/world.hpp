@@ -13,7 +13,9 @@ namespace ep::game
 {
   class World {
   public:
-    explicit World(std::shared_ptr<net::NetworkSubsystem> net_subsystem, std::shared_ptr<game::GameSubsystem> game_subsystem, std::uint8_t tick_rate);
+    explicit World(std::shared_ptr<ep::NetworkSubsystem> net_subsystem, 
+                   std::shared_ptr<ep::GameSubsystem> game_subsystem, 
+                   std::uint8_t tick_rate);
     World(const World&) = delete;
     World& operator=(const World&) = delete;
     ~World() = default;
@@ -25,12 +27,12 @@ namespace ep::game
   private:
     void Tick(double dt);
     void ProcessEvent(const Event& event);
-    void ProcessInput(net::NetPacket packet);
+    void ProcessInput(ep::NetPacket packet);
 
-    void OpcodeMovePlayer(net::NetPacket& packet, std::shared_ptr<IPlayer> player);
+    void OpcodeMovePlayer(ep::NetPacket& packet, std::shared_ptr<IPlayer> player);
 
-    std::shared_ptr<net::NetworkSubsystem> net_subsystem_;
-    std::shared_ptr<game::GameSubsystem> game_subsystem_;
+    std::shared_ptr<ep::NetworkSubsystem> net_subsystem_;
+    std::shared_ptr<ep::GameSubsystem> game_subsystem_;
     std::uint8_t tick_rate_;
     mutable std::mutex players_mutex_;
     std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
