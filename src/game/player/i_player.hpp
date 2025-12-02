@@ -1,17 +1,14 @@
 #pragma once
 
-#include <cstdint>
+#include "i_box.hpp"
 
 namespace ep::game
 {
-  class IPlayer {
+  class IPlayer : public IBox{
   public:
     virtual ~IPlayer() = default;
 
-    virtual void Move(double dx, double dy) = 0;
-
-    virtual double GetX() const noexcept = 0;
-    virtual double GetY() const noexcept = 0;
     virtual std::size_t GetID() const noexcept = 0;
+    virtual void Move(double x, double y) = 0;
   };
 }

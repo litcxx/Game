@@ -80,7 +80,11 @@ namespace ep::game
     switch (event.GetEvent()) {
       case ep::EventCode::AddNewPlayer: {
         spdlog::info("game event: AddNewPlayer id: {}", event.GetID());
-        auto player  = std::make_shared<Player>(0, 0, event.GetID());
+        auto player  = std::make_shared<Player>(event.GetID(), 
+                                                config_.player_start_x_ * config_.tile_ - config_.player_offset_, 
+                                                config_.player_start_y_ * config_.tile_ - config_.player_offset_, 
+                                                config_.tile_ - config_.player_offset_ * 2,
+                                                config_.tile_ - config_.player_offset_ * 2);
         AddPlayer(player);
         break;
       }
