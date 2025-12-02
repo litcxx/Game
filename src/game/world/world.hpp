@@ -4,6 +4,7 @@
 #include <memory>
 #include <mutex>
 
+#include "config/config.hpp"
 #include "subsystems/network_subsystem.hpp"
 #include "subsystems/game_subsystem.hpp"
 #include "player/i_player.hpp"
@@ -15,7 +16,7 @@ namespace ep::game
   public:
     explicit World(std::shared_ptr<ep::NetworkSubsystem> net_subsystem, 
                    std::shared_ptr<ep::GameSubsystem> game_subsystem, 
-                   std::uint8_t tick_rate);
+                   const GameConfig& config);
     World(const World&) = delete;
     World& operator=(const World&) = delete;
     ~World() = default;
@@ -33,7 +34,7 @@ namespace ep::game
 
     std::shared_ptr<ep::NetworkSubsystem> net_subsystem_;
     std::shared_ptr<ep::GameSubsystem> game_subsystem_;
-    std::uint8_t tick_rate_;
+    const GameConfig& config_;
     mutable std::mutex players_mutex_;
     std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
   };

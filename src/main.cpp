@@ -37,7 +37,7 @@ int main(int argc, char* argv[])
   // Initialize the world and run game loop.
   auto world = std::make_shared<World>(net_subsystem, 
                                        game_subsystem,
-                                       config->GetTickRate());
+                                       config->game_config_);
   // Game main loop.
   std::jthread game_thread(
     [&world]
@@ -46,9 +46,9 @@ int main(int argc, char* argv[])
     }
   );
 
-  const auto address = net::ip::make_address(config->GetServerIP());
-  const auto port = config->GetServerPort();
-  const auto threads = std::max<int>(1, config->GetIOThreads());
+  const auto address = net::ip::make_address(config->net_config_.ip_);
+  const auto port = config->net_config_.port_;
+  const auto threads = std::max<int>(1, config->net_config_.io_threads_);
 
   // The io_context is required for all I/O.
   net::io_context ioc{threads};

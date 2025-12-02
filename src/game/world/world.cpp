@@ -7,6 +7,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include "config/config.hpp"
 #include "player/i_player.hpp"
 #include "protocol/base_packet.hpp"
 #include "protocol/events.hpp"
@@ -18,17 +19,17 @@ namespace ep::game
 {
   World::World(std::shared_ptr<ep::NetworkSubsystem> net_subsystem, 
                std::shared_ptr<ep::GameSubsystem> game_subsystem, 
-               std::uint8_t tick_rate) :
+               const GameConfig& config) :
     net_subsystem_(net_subsystem),
     game_subsystem_(game_subsystem),
-    tick_rate_(tick_rate)
+    config_(config)
   {
     // TODO initialzie world
   }
 
   void World::GameLoop()
   {
-    const double tick_seconds = 1.0 / tick_rate_;
+    const double tick_seconds = 1.0 / config_.tick_rate_;
     auto tick_duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
       std::chrono::duration<double>(tick_seconds));
 

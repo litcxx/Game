@@ -8,6 +8,11 @@ namespace ep
 {
   class GameSubsystem {
   public:
+    GameSubsystem() = default;
+    ~GameSubsystem() = default;
+    GameSubsystem(const GameSubsystem&) = delete;
+    GameSubsystem& operator=(const GameSubsystem&) = delete;
+
     TSQueue<NetPacket> in_queue_;
     TSQueue<NetPacket> out_queue_;
     TSQueue<Event> event_queue_;
