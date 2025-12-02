@@ -1,6 +1,6 @@
 #pragma once
 
-#include "i_box.hpp"
+#include "tile/i_box.hpp"
 
 namespace ep::game
 {
