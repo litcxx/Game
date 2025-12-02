@@ -8,6 +8,7 @@
 #include "subsystems/network_subsystem.hpp"
 #include "subsystems/game_subsystem.hpp"
 #include "player/i_player.hpp"
+#include "tile/tile.hpp"
 #include "protocol/events.hpp"
 
 namespace ep::game
@@ -37,5 +38,6 @@ namespace ep::game
     const GameConfig& config_;
     mutable std::mutex players_mutex_;
     std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
+    std::vector<std::unique_ptr<Tile>> map_;
   };
 }

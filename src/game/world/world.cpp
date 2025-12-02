@@ -24,7 +24,21 @@ namespace ep::game
     game_subsystem_(game_subsystem),
     config_(config)
   {
-    // TODO initialzie world
+    // Initialzie map
+    map_.resize(config_.grid_x_ * config_.grid_y_);
+    for (auto y = 0; y < config_.grid_y_; y++) {
+      for (auto x = 0; x < config_.grid_x_; x++) {
+        std::size_t index = y * config_.grid_x_ + x;
+        // Create tile
+        if (config_.map_[index] != 0) {
+          map_[index] = std::make_unique<Tile>(x * config_.tile_, 
+                                               y * config_.tile_, 
+                                               config_.tile_, 
+                                               config_.tile_);
+
+        }
+      }
+    }
   }
 
   void World::GameLoop()
