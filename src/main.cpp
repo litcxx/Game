@@ -9,8 +9,8 @@
 
 #include "server/server.hpp"
 #include "world/world.hpp"
-#include "protocol/network_subsystem.hpp"
-#include "protocol/game_subsystem.hpp"
+#include "subsystems/network_subsystem.hpp"
+#include "subsystems/game_subsystem.hpp"
 #include "config/config.hpp"
 
 int main(int argc, char* argv[])

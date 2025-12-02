@@ -10,8 +10,8 @@
 
 #include "aliases/asio_aliases.hpp"
 #include "protocol/base_packet.hpp"
-#include "protocol/game_subsystem.hpp"
-#include "protocol/network_subsystem.hpp"
+#include "subsystems/game_subsystem.hpp"
+#include "subsystems/network_subsystem.hpp"
 
 namespace ep::net
 {

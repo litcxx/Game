@@ -4,8 +4,8 @@
 #include <memory>
 #include <mutex>
 
-#include "protocol/network_subsystem.hpp"
-#include "protocol/game_subsystem.hpp"
+#include "subsystems/network_subsystem.hpp"
+#include "subsystems/game_subsystem.hpp"
 #include "player/i_player.hpp"
 #include "protocol/events.hpp"
 

@@ -3,8 +3,8 @@
 
 #include <gtest/gtest.h>
 
-#include "protocol/network_subsystem.hpp"
-#include "protocol/game_subsystem.hpp"
+#include "subsystems/network_subsystem.hpp"
+#include "subsystems/game_subsystem.hpp"
 #include "world/world.hpp"
 #include "game/player/mock_player.hpp"
 
