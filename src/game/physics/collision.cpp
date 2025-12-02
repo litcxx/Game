@@ -8,9 +8,8 @@ namespace ep::game
 {
   SweptData Collision::SweptAABB(const IBox& box1, const IBox& box2, double vel_x, double vel_y)
   {
-    if (vel_x == 0 && vel_y == 0) {
-      return {0, 0, 1.0};
-    }
+    if (vel_x == 0 && vel_y == 0)
+      return {1.0, 0, 0};
 
     double x_inv_entry, x_inv_exit;
     double y_inv_entry, y_inv_exit;
@@ -23,6 +22,12 @@ namespace ep::game
       x_inv_entry = (box2.GetX() + box2.GetWidth()) - box1.GetX();
       x_inv_exit = box2.GetX() - (box1.GetX() + box1.GetWidth());
     } else {
+      // vel_x == 0
+      // If box1 does not overlap with box 2 along X axis
+      // then there is no collision
+      if ((box1.GetX() + box1.GetWidth()) <= box2.GetX() || (box2.GetX() + box2.GetWidth()) <= box1.GetX())
+        return {1.0, 0, 0};
+
       x_inv_entry = -std::numeric_limits<double>::infinity();
       x_inv_exit = std::numeric_limits<double>::infinity();
     }
@@ -35,6 +40,12 @@ namespace ep::game
       y_inv_entry = (box2.GetY() + box2.GetHeight()) - box1.GetHeight();
       y_inv_exit = box2.GetY() - (box1.GetY() + box1.GetHeight());
     } else {
+      // vel_y == 0
+      // If box1 does not overlap with box 2 along Y axis
+      // then there is no collision
+      if ((box1.GetY() + box1.GetHeight()) <= box2.GetHeight() || (box2.GetY() + box2.GetHeight()) <= box1.GetY())
+        return {1.0, 0, 0};
+
       y_inv_entry = -std::numeric_limits<double>::infinity();
       y_inv_exit = std::numeric_limits<double>::infinity();
     }
@@ -53,7 +64,7 @@ namespace ep::game
 
     // No collision ?
     if (entry_time > exit_time || entry_time < 0.0 || exit_time > 1.0) {
-      return {0, 0, 1.0};
+      return {1.0, 0, 0};
     }
 
     std::uint8_t normal_x = 0;
@@ -64,6 +75,6 @@ namespace ep::game
       normal_y = vel_y > 0 ? -1 : 1;
     }
     
-    return {normal_x, normal_y, entry_time};
+    return {entry_time, normal_x, normal_y};
   }
 }
