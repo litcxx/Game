@@ -1,9 +1,11 @@
 #include "world.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <mutex>
 #include <thread>
+#include <algorithm>
 
 #include <spdlog/spdlog.h>
 
@@ -121,39 +123,35 @@ namespace ep::game
     // TODO check is this player exists
     auto player = players_[packet.GetID()];
     std::uint16_t opcode = packet.GetHeadOpcode();
-    constexpr double speed = 5;
+
+    constexpr double speed = 5.0;
+    double vel_x = 0.0;
+    double vel_y = 0.0;
 
     switch (to_opcode(opcode)) {
       case Opcodes::MoveForward:
-      {
         spdlog::info("Opcode::MoveForward");
-        double vel_x = 0.0;
-        double vel_y = -speed;
-        SweptData data{1.0, 0, 0};
-        std::vector<Tile> colliders = FindColliders(*player, vel_x, vel_y);
-        for (auto& tile : colliders) {
-          SweptData tmp = Collision::SweptAABB(*player, tile, vel_x, vel_y);
-          if (data.time_ > tmp.time_)
-            data = tmp;
-        }
-        player->Move(0, -speed);
-        OpcodeMovePlayer(send_packet, player);
+        vel_y = -speed;
+        MovePlayer(*player, vel_x, vel_y);
+        OpcodeMovePlayer(send_packet, *player);
         break;
-      }
       case Opcodes::MoveLeft:
         spdlog::info("Opcodes::MoveLeft");
-        player->Move(-speed, 0);
-        OpcodeMovePlayer(send_packet, player);
+        vel_x = -speed;
+        MovePlayer(*player, vel_x, vel_y);
+        OpcodeMovePlayer(send_packet, *player);
         break;
       case Opcodes::MoveBackward:
         spdlog::info("Opcodes::MoveBackward");
-        player->Move(0, speed);
-        OpcodeMovePlayer(send_packet, player);
+        vel_y = speed;
+        MovePlayer(*player, vel_x, vel_y);
+        OpcodeMovePlayer(send_packet, *player);
         break;
       case Opcodes::MoveRight:
         spdlog::info("Opcodes::MoveRight");
-        player->Move(speed, 0);
-        OpcodeMovePlayer(send_packet, player);
+        vel_x = speed;
+        MovePlayer(*player, vel_x, vel_y);
+        OpcodeMovePlayer(send_packet, *player);
         break;
       default:
         spdlog::warn("unknown opcode: {}", opcode);
@@ -162,19 +160,68 @@ namespace ep::game
     game_subsystem_->out_queue_.Push(std::move(send_packet));
   }
 
-  void World::OpcodeMovePlayer(ep::NetPacket& packet, std::shared_ptr<IPlayer> player)
+  void World::MovePlayer(IPlayer& player, double vel_x, double vel_y)
+  {
+    SweptData collision_res{1.0, 0, 0};
+    auto indices = FindCollisionIndices(player, vel_x, vel_y);
+    for (auto i : indices) {
+      SweptData tmp = Collision::SweptAABB(player, map_[i], vel_x, vel_y);
+      if (collision_res.time_ > tmp.time_)
+        collision_res = tmp;
+    }
+    vel_x *= collision_res.time_;
+    vel_y *= collision_res.time_;
+    player.Move(vel_x, vel_y);
+  }
+
+  void World::OpcodeMovePlayer(ep::NetPacket& packet, const IPlayer& player)
   {
     packet.SetHeadOpcode(to_uint16(ep::Opcodes::MovePlayer));
-    spdlog::info("id: {} x: {} y: {}", player->GetID(), player->GetX(), player->GetY());
-    packet << player->GetID() << player->GetX() << player->GetY();
+    spdlog::info("id: {} x: {} y: {}", player.GetID(), player.GetX(), player.GetY());
+    packet << player.GetID() << player.GetX() << player.GetY();
     spdlog::info("head size: {}", packet.GetHeadSize());
     spdlog::info("payload size: {}", packet.GetBodySize());
   }
 
-  std::vector<Tile> World::FindColliders(const IPlayer& player, double vel_x, double vel_y)
+  std::set<std::size_t> World::FindCollisionIndices(const IPlayer& player, double vel_x, double vel_y)
   {
     if (vel_x == 0 && vel_y == 0)
       return {};
+
+    // Find start pos
+    const double start_left = player.GetX();
+    const double start_top = player.GetY();
+    const double start_right = player.GetX() + player.GetWidth();
+    const double start_bottom = player.GetY() + player.GetHeight();
+
+    // Find next pos
+    const double end_left = start_left + vel_x;
+    const double end_top = start_top + vel_y;
+    const double end_right = start_right + vel_x;
+    const double end_bottom = start_bottom + vel_y;
+
+    // Calculate bounding box
+    std::size_t left_tile = std::floor(std::fmin(start_left, end_left) / config_.tile_);
+    std::size_t top_tile = std::floor(std::fmin(start_top, end_top) / config_.tile_);
+    std::size_t right_tile = std::floor(std::fmax(start_right, end_right) / config_.tile_);
+    std::size_t bottom_tile = std::floor(std::fmax(start_bottom, end_bottom) / config_.tile_);
+
+    // Clamp bounding box
+    left_tile = std::max<std::size_t>(0, left_tile);
+    top_tile = std::max<std::size_t>(0, top_tile);
+    right_tile = std::min<std::size_t>(config_.grid_x_ - 1, right_tile);
+    bottom_tile = std::min<std::size_t>(config_.grid_y_ - 1, bottom_tile);
+
+    std::set<std::size_t> res;
+    // Push all tiles inside bounding box to colliders buffer
+    for (std::size_t y = bottom_tile; y <= top_tile; y++) {
+      for (std::size_t x = left_tile; x <= right_tile; x++) {
+        std::size_t index = y * config_.tile_ + x;
+        res.insert(index);
+      }
+    }
+
+    return std::move(res);
   }
 
   void World::AddPlayer(std::shared_ptr<IPlayer> player)

@@ -3,6 +3,8 @@
 #include <unordered_map>
 #include <memory>
 #include <mutex>
+#include <vector>
+#include <set>
 
 #include "config/config.hpp"
 #include "subsystems/network_subsystem.hpp"
@@ -30,9 +32,10 @@ namespace ep::game
     void Tick(double dt);
     void ProcessEvent(const Event& event);
     void ProcessInput(ep::NetPacket packet);
-    std::vector<Tile> FindColliders(const IPlayer& player, double vel_x, double vel_y);
+    std::set<std::size_t> FindCollisionIndices(const IPlayer& player, double vel_x, double vel_y);
 
-    void OpcodeMovePlayer(ep::NetPacket& packet, std::shared_ptr<IPlayer> player);
+    void MovePlayer(IPlayer& player, double vel_x, double vel_y);
+    void OpcodeMovePlayer(ep::NetPacket& packet, const IPlayer& player);
 
     std::shared_ptr<ep::NetworkSubsystem> net_subsystem_;
     std::shared_ptr<ep::GameSubsystem> game_subsystem_;
