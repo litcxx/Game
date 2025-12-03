@@ -30,6 +30,7 @@ namespace ep::game
     void Tick(double dt);
     void ProcessEvent(const Event& event);
     void ProcessInput(ep::NetPacket packet);
+    std::vector<Tile> FindColliders(const IPlayer& player, double vel_x, double vel_y);
 
     void OpcodeMovePlayer(ep::NetPacket& packet, std::shared_ptr<IPlayer> player);
 
@@ -38,6 +39,6 @@ namespace ep::game
     const GameConfig& config_;
     mutable std::mutex players_mutex_;
     std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
-    std::vector<std::unique_ptr<Tile>> map_;
+    std::vector<Tile> map_;
   };
 }

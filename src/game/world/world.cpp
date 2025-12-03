@@ -8,10 +8,12 @@
 #include <spdlog/spdlog.h>
 
 #include "config/config.hpp"
+#include "physics/collision.hpp"
 #include "player/i_player.hpp"
 #include "protocol/base_packet.hpp"
 #include "protocol/events.hpp"
 #include "protocol/opcodes.hpp"
+#include "tile/tile.hpp"
 #include "utils/ts_queue.hpp"
 #include "player/player.hpp"
 
@@ -26,16 +28,16 @@ namespace ep::game
   {
     // Initialzie map
     map_.resize(config_.grid_x_ * config_.grid_y_);
-    for (auto y = 0; y < config_.grid_y_; y++) {
-      for (auto x = 0; x < config_.grid_x_; x++) {
+    for (std::size_t y = 0; y < config_.grid_y_; y++) {
+      for (std::size_t x = 0; x < config_.grid_x_; x++) {
         std::size_t index = y * config_.grid_x_ + x;
         // Create tile
         if (config_.map_[index] != 0) {
-          map_[index] = std::make_unique<Tile>(x * config_.tile_, 
-                                               y * config_.tile_, 
-                                               config_.tile_, 
-                                               config_.tile_);
-
+          map_[index] = Tile{static_cast<double>(x) * config_.tile_, 
+                             static_cast<double>(y) * config_.tile_, 
+                             config_.tile_, 
+                             config_.tile_,
+                             TileType::Solid};
         }
       }
     }
@@ -119,14 +121,25 @@ namespace ep::game
     // TODO check is this player exists
     auto player = players_[packet.GetID()];
     std::uint16_t opcode = packet.GetHeadOpcode();
-    constexpr int speed = 5;
+    constexpr double speed = 5;
 
     switch (to_opcode(opcode)) {
-      case Opcodes::MoveForward: 
+      case Opcodes::MoveForward:
+      {
         spdlog::info("Opcode::MoveForward");
+        double vel_x = 0.0;
+        double vel_y = -speed;
+        SweptData data{1.0, 0, 0};
+        std::vector<Tile> colliders = FindColliders(*player, vel_x, vel_y);
+        for (auto& tile : colliders) {
+          SweptData tmp = Collision::SweptAABB(*player, tile, vel_x, vel_y);
+          if (data.time_ > tmp.time_)
+            data = tmp;
+        }
         player->Move(0, -speed);
         OpcodeMovePlayer(send_packet, player);
         break;
+      }
       case Opcodes::MoveLeft:
         spdlog::info("Opcodes::MoveLeft");
         player->Move(-speed, 0);
@@ -156,6 +169,12 @@ namespace ep::game
     packet << player->GetID() << player->GetX() << player->GetY();
     spdlog::info("head size: {}", packet.GetHeadSize());
     spdlog::info("payload size: {}", packet.GetBodySize());
+  }
+
+  std::vector<Tile> World::FindColliders(const IPlayer& player, double vel_x, double vel_y)
+  {
+    if (vel_x == 0 && vel_y == 0)
+      return {};
   }
 
   void World::AddPlayer(std::shared_ptr<IPlayer> player)

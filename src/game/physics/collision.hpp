@@ -12,6 +12,6 @@ namespace ep::game
 
   class Collision {
   public:
-    SweptData SweptAABB(const IBox& box1, const IBox& box2, double vel_x, double vel_y);
+    static SweptData SweptAABB(const IBox& box1, const IBox& box2, double vel_x, double vel_y);
   };
 }

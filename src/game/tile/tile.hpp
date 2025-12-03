@@ -4,10 +4,16 @@
 
 namespace ep::game
 {
+  enum class TileType : std::uint16_t {
+    Empty,
+    Solid,
+  };
+
   class Tile : public IBox {
   public:
-    explicit Tile(double x, double y, std::uint8_t width, std::uint8_t height) noexcept :
-      x_(x), y_(y), width_(width), height_(height)
+    Tile() : type_(TileType::Empty) {}
+    explicit Tile(double x, double y, std::uint8_t width, std::uint8_t height, TileType type) noexcept :
+      x_(x), y_(y), width_(width), height_(height),type_(type)
     {}
 
     double GetX() const noexcept override { return x_; }
@@ -19,6 +25,7 @@ namespace ep::game
     double y_;
     std::uint8_t width_;
     std::uint8_t height_;
+    TileType type_;
   };
 
 }
