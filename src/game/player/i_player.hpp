@@ -12,7 +12,6 @@ namespace ep::game
     virtual void Move(double x, double y) = 0;
     virtual double GetVelX() const noexcept = 0;
     virtual double GetVelY() const noexcept = 0;
-    virtual void SetVelX(double vel_x) noexcept = 0;
-    virtual void SetVelY(double vel_y) noexcept = 0;
+    virtual void SetVel(double vel_x, double vel_y) noexcept = 0;
   };
 }

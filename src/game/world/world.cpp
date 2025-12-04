@@ -130,25 +130,25 @@ namespace ep::game
     switch (to_opcode(opcode)) {
       case Opcodes::MoveForward:
         spdlog::info("Opcode::MoveForward");
-        player->SetVelY(-speed);
+        player->SetVel(0.0, -speed);
         MovePlayer(*player);
         OpcodeMovePlayer(send_packet, *player);
         break;
       case Opcodes::MoveLeft:
         spdlog::info("Opcodes::MoveLeft");
-        player->SetVelX(-speed);
+        player->SetVel(-speed, 0.0);
         MovePlayer(*player);
         OpcodeMovePlayer(send_packet, *player);
         break;
       case Opcodes::MoveBackward:
         spdlog::info("Opcodes::MoveBackward");
-        player->SetVelY(speed);
+        player->SetVel(0.0, speed);
         MovePlayer(*player);
         OpcodeMovePlayer(send_packet, *player);
         break;
       case Opcodes::MoveRight:
         spdlog::info("Opcodes::MoveRight");
-        player->SetVelX(speed);
+        player->SetVel(speed, 0.0);
         MovePlayer(*player);
         OpcodeMovePlayer(send_packet, *player);
         break;
@@ -176,7 +176,7 @@ namespace ep::game
       vel_x *= swept.entry_time_;
       player.Move(vel_x, 0.0);
       if (swept.hit_)
-        player.SetVelX(0.0);
+        player.SetVel(0.0, player.GetVelY());
     }
 
     /* ------ Y Axis ------*/
@@ -190,7 +190,7 @@ namespace ep::game
       vel_y *= swept.entry_time_;
       player.Move(0.0, vel_y);
       if (swept.hit_)
-        player.SetVelY(0.0);
+        player.SetVel(player.GetVelX(), 0.0);
     }
   }
 

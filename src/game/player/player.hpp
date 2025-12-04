@@ -17,10 +17,9 @@ namespace ep::game
     std::size_t GetID() const noexcept override { return id_; }
 
     // velocity
-    double GetVelX() const noexcept { return vel_x_; }
-    double GetVelY() const noexcept { return vel_y_; }
-    void SetVelX(double vel_x) noexcept { vel_x_ = vel_x; }
-    void SetVelY(double vel_y) noexcept { vel_y_ = vel_y; }
+    double GetVelX() const noexcept override { return vel_x_; }
+    double GetVelY() const noexcept override { return vel_y_; }
+    void SetVel(double vel_x, double vel_y) noexcept override { vel_x_ = vel_x; vel_y_ = vel_y; }
 
     void Move(double dx, double dy) override;
 
