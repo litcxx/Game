@@ -2,7 +2,6 @@
 
 #include <cstdint>
 #include <cstring>
-#include <memory>
 
 #include "protocol/base_packet.hpp"
 
@@ -30,9 +29,8 @@ namespace ep
     return static_cast<Opcodes>(opcode);
   }
 
-  NetPacket CreatePlayerPacket(std::size_t id, double x, double y);
-  NetPacket AddPlayerPacket(std::size_t id, double x, double y);
+  NetPacket CreatePlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height);
+  NetPacket AddPlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height);
   NetPacket RmvPlayerPacket(std::size_t id);
   NetPacket MovePlayerPacket(std::size_t id, double x, double y);
-  std::shared_ptr<std::uint8_t[]> PacketBuffer(NetPacket packet);
 }

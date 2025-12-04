@@ -20,6 +20,7 @@ namespace ep::game
     double GetY() const noexcept override { return y_; }
     std::uint8_t GetWidth() const noexcept override { return width_; }
     std::uint8_t GetHeight() const noexcept override { return height_; }
+    TileType GetType() const noexcept { return type_; }
   private:
     double x_;
     double y_;

@@ -6,4 +6,5 @@ add_library(shared
 target_include_directories(shared PRIVATE
   ${CMAKE_SOURCE_DIR}/third_party
   ${CMAKE_SOURCE_DIR}/src/shared
+  ${CMAKE_SOURCE_DIR}/src/game
 )

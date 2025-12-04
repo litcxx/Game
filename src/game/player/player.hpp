@@ -16,7 +16,7 @@ namespace ep::game
 
     std::size_t GetID() const noexcept override { return id_; }
 
-    void Move(double x, double y) override;
+    void Move(double dx, double dy) override;
 
   private:
     std::size_t id_;

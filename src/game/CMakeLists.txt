@@ -10,3 +10,7 @@ target_include_directories(game PRIVATE
   ${CMAKE_SOURCE_DIR}/src/game
   ${CMAKE_SOURCE_DIR}/src/shared
 )
+
+target_link_libraries(game PRIVATE
+  shared 
+)

@@ -99,8 +99,9 @@ namespace ep::net
       // Make flat buffer from packet.
       auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(packet->MakeBuffer()));
 
-      spdlog::info("number of sessions: {}", sessions_.size());
-      spdlog::info("packet id: {}", packet->GetID());
+      // spdlog::info("number of sessions: {}", sessions_.size());
+      // spdlog::info("packet id: {}", packet->GetID());
+      // spdlog::info("packet size: {}", buf->size());
 
       switch (packet->GetPacketType()) {
         case PacketType::Rpc:

@@ -10,9 +10,9 @@ namespace ep::game
     height_(height)
   {}
 
-  void Player::Move(double x, double y)
+  void Player::Move(double dx, double dy)
   {
-    x_ = x;
-    y_ = y;
+    x_ += dx;
+    y_ += dy;
   }
 }
