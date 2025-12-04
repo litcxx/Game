@@ -10,7 +10,6 @@
 #include <spdlog/spdlog.h>
 
 #include "config/config.hpp"
-#include "physics/collision.hpp"
 #include "player/i_player.hpp"
 #include "protocol/base_packet.hpp"
 #include "protocol/events.hpp"
@@ -160,37 +159,36 @@ namespace ep::game
     game_subsystem_->out_queue_.Push(std::move(send_packet));
   }
 
-  void World::MovePlayer(IPlayer& player, double vel_x, double vel_y)
+  void World::MovePlayer(IPlayer& player, double& vel_x, double& vel_y)
   {
     spdlog::info("World::MovePlayer");
-
-    // Find colliders and calculate minimum sweptAABB collision
-    SweptData collision_res{1.0, 0, 0};
-    auto indices = FindCollisionIndices(player, vel_x, vel_y);
-    spdlog::info("indices: {}", indices.size());
-    for (auto i : indices) {
-      if (map_[i].GetType() != TileType::Empty) {
-        spdlog::info("calculate sweptAABB for tile: {}", i);
-        SweptData tmp = Collision::SweptAABB(player, map_[i], vel_x, vel_y);
-        spdlog::info("sweptAABB time: {}", tmp.time_);
-        if (collision_res.time_ > tmp.time_)
-          collision_res = tmp;
-      } else {
-        spdlog::info("tile {} is empty", i);
-      }
+    /* ------ X Axis ------*/
+    if (vel_x != 0 ) {
+      // calculate collision along x axis
+      SweptData swept = collision_.SweptAxis(player, 
+                                             config_.tile_, config_.grid_x_, config_.grid_y_,
+                                             map_,
+                                             vel_x, 0);
+    
+      vel_x *= swept.entry_time_;
+      player.Move(vel_x, 0);
+      if (swept.hit_)
+        vel_x = 0;
     }
 
-    spdlog::info("time: {}", collision_res.time_);
-
-    // Correct velocity
-    vel_x *= collision_res.time_;
-    vel_y *= collision_res.time_;
-
-    spdlog::info("old player pos:\nx: {}\ny: {}", player.GetX(), player.GetY());
-
-    player.Move(vel_x, vel_y);
-
-    spdlog::info("new player pos:\nx: {}\ny: {}", player.GetX(), player.GetY());
+    /* ------ Y Axis ------*/
+    if (vel_y != 0 ) {
+      // calculate collision along y axis
+      SweptData swept = collision_.SweptAxis(player, 
+                                             config_.tile_, config_.grid_x_, config_.grid_y_,
+                                             map_,
+                                             0, vel_y);
+    
+      vel_y *= swept.entry_time_;
+      player.Move(0, vel_y);
+      if (swept.hit_)
+        vel_y = 0.0;
+    }
   }
 
   void World::OpcodeMovePlayer(ep::NetPacket& packet, const IPlayer& player)
@@ -198,64 +196,6 @@ namespace ep::game
     packet.SetHeadOpcode(to_uint16(ep::Opcodes::MovePlayer));
     spdlog::info("id: {} x: {} y: {}", player.GetID(), player.GetX(), player.GetY());
     packet << player.GetID() << player.GetX() << player.GetY();
-    // spdlog::info("head size: {}", packet.GetHeadSize());
-    // spdlog::info("payload size: {}", packet.GetBodySize());
-  }
-
-  std::set<std::size_t> World::FindCollisionIndices(const IPlayer& player, double vel_x, double vel_y)
-  {
-    spdlog::info("World::FindCollisionIndices");
-    spdlog::info("vel: \nvel_x: {}\nvel_y: {}", vel_x, vel_y);
-    if (vel_x == 0 && vel_y == 0) 
-      return {};
-
-    // Find start pos
-    const double start_left = player.GetX();
-    const double start_top = player.GetY();
-    const double start_right = player.GetX() + player.GetWidth();
-    const double start_bottom = player.GetY() + player.GetHeight();
-  
-    spdlog::info("start pos:\nstart_left: {}\nstart_top: {}\nstart_right: {}\nstart_bottom: {}",start_left, start_top, start_right, start_bottom);
-
-    // Find next pos
-    const double end_left = start_left + vel_x;
-    const double end_top = start_top + vel_y;
-    const double end_right = start_right + vel_x;
-    const double end_bottom = start_bottom + vel_y;
-
-    spdlog::info("end pos:\nend_left: {}\nend_top: {}\nend_right: {}\nend_bottom: {}",end_left, end_top, end_right, end_bottom);
-
-    // Calculate bounding box
-    double bb_left = std::floor(std::fmin(start_left, end_left) / config_.tile_);
-    double bb_top = std::floor(std::fmin(start_top, end_top) / config_.tile_);
-    double bb_right = std::floor(std::fmax(start_right, end_right) / config_.tile_);
-    double bb_bottom  = std::floor(std::fmax(start_bottom, end_bottom) / config_.tile_);
-
-    spdlog::info("bb pos:\nbb_left: {}\nbb_top: {}\nbb_right: {}\nbb_bottom: {}",bb_left, bb_top, bb_right, bb_bottom);
-
-    // Clamp bounding box
-    std::size_t tile_left = std::max<std::size_t>(0, bb_left);
-    std::size_t tile_top = std::max<std::size_t>(0, bb_top);
-    std::size_t tile_right = std::min<std::size_t>(config_.grid_x_ - 1, bb_right);
-    std::size_t tile_bottom = std::min<std::size_t>(config_.grid_y_ - 1, bb_bottom);
-
-    spdlog::info("tile pos:\ntile_left: {}\ntile_top: {}\ntile_right: {}\ntile_bottom: {}",tile_left, tile_top, tile_right, tile_bottom);
-
-    std::set<std::size_t> res;
-    // Push all tiles inside bounding box to colliders buffer
-    for (std::size_t y = tile_top; y <= tile_bottom; y++) {
-      for (std::size_t x = tile_left; x <= tile_right; x++) {
-        std::size_t index = y * config_.grid_x_ + x;
-        res.insert(index);
-        // spdlog::info("+");
-      }
-    }
-
-    // debug
-    for (auto e : res)
-      spdlog::info("index: {}", e);
-
-    return std::move(res);
   }
 
   void World::AddPlayer(std::shared_ptr<IPlayer> player)

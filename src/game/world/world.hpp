@@ -12,6 +12,7 @@
 #include "player/i_player.hpp"
 #include "tile/tile.hpp"
 #include "protocol/events.hpp"
+#include "physics/collision.hpp"
 
 namespace ep::game
 {
@@ -34,7 +35,7 @@ namespace ep::game
     void ProcessInput(ep::NetPacket packet, double dt);
     std::set<std::size_t> FindCollisionIndices(const IPlayer& player, double vel_x, double vel_y);
 
-    void MovePlayer(IPlayer& player, double vel_x, double vel_y);
+    void MovePlayer(IPlayer& player, double& vel_x, double& vel_y);
     void OpcodeMovePlayer(ep::NetPacket& packet, const IPlayer& player);
 
     std::shared_ptr<ep::NetworkSubsystem> net_subsystem_;
@@ -43,5 +44,6 @@ namespace ep::game
     mutable std::mutex players_mutex_;
     std::unordered_map<std::size_t, std::shared_ptr<IPlayer>> players_;
     std::vector<Tile> map_;
+    Collision collision_;
   };
 }
