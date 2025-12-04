@@ -124,7 +124,7 @@ namespace ep::game
     auto player = players_[packet.GetID()];
     std::uint16_t opcode = packet.GetHeadOpcode();
 
-    double speed = 100.0 * dt;
+    double speed = 200.0 * dt;
     double vel_x = 0.0;
     double vel_y = 0.0;
 
@@ -286,34 +286,34 @@ namespace ep::game
       // TODO make it instance send
       game_subsystem_->out_queue_.Push(std::move(packet0));
 
-      // // Send all players to new player
-      // ep::NetPacket packet1;
-      // packet1.SetID(player->GetID());
-      // packet1.SetPacketType(ep::PacketType::Rpc);
-      // packet1.SetHeadOpcode(to_uint16(Opcodes::SpawnPlayers));
-      // packet1 << players_.size() - 1;
-      // for (const auto& elem : players_) {
-      //   if (elem.first != player->GetID()) {
-      //     spdlog::info("make packet1 id: {} x: {} y: {} width: {} height: {}", 
-      //                  elem.second->GetID(), 
-      //                  elem.second->GetX(), 
-      //                  elem.second->GetY(),
-      //                  elem.second->GetWidth(),
-      //                  elem.second->GetHeight());
-      //
-      //     packet1 << elem.second->GetID() 
-      //             << elem.second->GetX() 
-      //             << elem.second->GetY()
-      //             << elem.second->GetWidth()
-      //             << elem.second->GetHeight();
-      //   }
-      // }
-      // game_subsystem_->out_queue_.Push(std::move(packet1));
+      // Send all players to new player
+      ep::NetPacket packet1;
+      packet1.SetID(player->GetID());
+      packet1.SetPacketType(ep::PacketType::Rpc);
+      packet1.SetHeadOpcode(to_uint16(Opcodes::SpawnPlayers));
+      packet1 << players_.size() - 1;
+      for (const auto& elem : players_) {
+        if (elem.first != player->GetID()) {
+          spdlog::info("make packet1 id: {} x: {} y: {} width: {} height: {}", 
+                       elem.second->GetID(), 
+                       elem.second->GetX(), 
+                       elem.second->GetY(),
+                       elem.second->GetWidth(),
+                       elem.second->GetHeight());
+
+          packet1 << elem.second->GetID() 
+                  << elem.second->GetX() 
+                  << elem.second->GetY()
+                  << elem.second->GetWidth()
+                  << elem.second->GetHeight();
+        }
+      }
+      game_subsystem_->out_queue_.Push(std::move(packet1));
     }
     
     // // Notify others
-    // ep::NetPacket packet2 = AddPlayerPacket(player->GetID(), player->GetX(), player->GetY(), player->GetWidth(), player->GetHeight());
-    // game_subsystem_->out_queue_.Push(std::move(packet2));
+    ep::NetPacket packet2 = AddPlayerPacket(player->GetID(), player->GetX(), player->GetY(), player->GetWidth(), player->GetHeight());
+    game_subsystem_->out_queue_.Push(std::move(packet2));
   }
 
   void World::RemovePlayer(std::size_t id)
