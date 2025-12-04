@@ -35,7 +35,7 @@ namespace ep::game
     void ProcessInput(ep::NetPacket packet, double dt);
     std::set<std::size_t> FindCollisionIndices(const IPlayer& player, double vel_x, double vel_y);
 
-    void MovePlayer(IPlayer& player, double& vel_x, double& vel_y);
+    void MovePlayer(IPlayer& player);
     void OpcodeMovePlayer(ep::NetPacket& packet, const IPlayer& player);
 
     std::shared_ptr<ep::NetworkSubsystem> net_subsystem_;

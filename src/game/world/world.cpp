@@ -99,7 +99,8 @@ namespace ep::game
         spdlog::info("game event: AddNewPlayer id: {}", event.GetID());
         auto player  = std::make_shared<Player>(event.GetID(), 
                                                 config_.player_start_x_ * config_.tile_ + config_.player_offset_, 
-                                                config_.player_start_y_ * config_.tile_ + config_.player_offset_, 
+                                                config_.player_start_y_ * config_.tile_ + config_.player_offset_,
+                                                0.0, 0.0,
                                                 config_.tile_ - config_.player_offset_ * 2,
                                                 config_.tile_ - config_.player_offset_ * 2);
         AddPlayer(player);
@@ -124,32 +125,31 @@ namespace ep::game
     std::uint16_t opcode = packet.GetHeadOpcode();
 
     double speed = 200.0 * dt;
-    double vel_x = 0.0;
-    double vel_y = 0.0;
+    double g = 9.8 * dt;
 
     switch (to_opcode(opcode)) {
       case Opcodes::MoveForward:
         spdlog::info("Opcode::MoveForward");
-        vel_y = -speed;
-        MovePlayer(*player, vel_x, vel_y);
+        player->SetVelY(-speed);
+        MovePlayer(*player);
         OpcodeMovePlayer(send_packet, *player);
         break;
       case Opcodes::MoveLeft:
         spdlog::info("Opcodes::MoveLeft");
-        vel_x = -speed;
-        MovePlayer(*player, vel_x, vel_y);
+        player->SetVelX(-speed);
+        MovePlayer(*player);
         OpcodeMovePlayer(send_packet, *player);
         break;
       case Opcodes::MoveBackward:
         spdlog::info("Opcodes::MoveBackward");
-        vel_y = speed;
-        MovePlayer(*player, vel_x, vel_y);
+        player->SetVelY(speed);
+        MovePlayer(*player);
         OpcodeMovePlayer(send_packet, *player);
         break;
       case Opcodes::MoveRight:
         spdlog::info("Opcodes::MoveRight");
-        vel_x = speed;
-        MovePlayer(*player, vel_x, vel_y);
+        player->SetVelX(speed);
+        MovePlayer(*player);
         OpcodeMovePlayer(send_packet, *player);
         break;
       default:
@@ -159,21 +159,24 @@ namespace ep::game
     game_subsystem_->out_queue_.Push(std::move(send_packet));
   }
 
-  void World::MovePlayer(IPlayer& player, double& vel_x, double& vel_y)
+  void World::MovePlayer(IPlayer& player)
   {
     spdlog::info("World::MovePlayer");
+    double vel_x = player.GetVelX();
+    double vel_y = player.GetVelY();
+
     /* ------ X Axis ------*/
     if (vel_x != 0 ) {
       // calculate collision along x axis
       SweptData swept = collision_.SweptAxis(player, 
                                              config_.tile_, config_.grid_x_, config_.grid_y_,
                                              map_,
-                                             vel_x, 0);
+                                             vel_x, 0.0);
     
       vel_x *= swept.entry_time_;
-      player.Move(vel_x, 0);
+      player.Move(vel_x, 0.0);
       if (swept.hit_)
-        vel_x = 0;
+        player.SetVelX(0.0);
     }
 
     /* ------ Y Axis ------*/
@@ -182,12 +185,12 @@ namespace ep::game
       SweptData swept = collision_.SweptAxis(player, 
                                              config_.tile_, config_.grid_x_, config_.grid_y_,
                                              map_,
-                                             0, vel_y);
+                                             0.0, vel_y);
     
       vel_y *= swept.entry_time_;
-      player.Move(0, vel_y);
+      player.Move(0.0, vel_y);
       if (swept.hit_)
-        vel_y = 0.0;
+        player.SetVelY(0.0);
     }
   }
 
