@@ -149,7 +149,7 @@ namespace ep::net
 
   void Session::Send()
   {
-    spdlog::info("Session::Send");
+    // spdlog::info("Session::Send");
     if (!GetState())
       return spdlog::info("Close send operation to disconneted client");
 
@@ -180,7 +180,7 @@ namespace ep::net
           self->server_->CloseSession(self->id_);
           return;
         }
-        spdlog::info("write {} bytes to client", size);
+        // spdlog::info("write {} bytes to client", size);
 
         self->sending_.clear();
         // If out queue is not empty send again

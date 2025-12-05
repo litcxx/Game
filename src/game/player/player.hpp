@@ -13,15 +13,17 @@ namespace ep::game
     double GetY() const noexcept override { return y_; }
     std::uint8_t GetWidth() const noexcept override { return width_; };
     std::uint8_t GetHeight() const noexcept override { return height_; };
-
     std::size_t GetID() const noexcept override { return id_; }
+
+    void Move(double dx, double dy) override;
 
     // velocity
     double GetVelX() const noexcept override { return vel_x_; }
     double GetVelY() const noexcept override { return vel_y_; }
     void SetVel(double vel_x, double vel_y) noexcept override { vel_x_ = vel_x; vel_y_ = vel_y; }
 
-    void Move(double dx, double dy) override;
+    bool OnGround() const noexcept override { return on_ground_; }
+    void SetOnGround(bool state) noexcept override { on_ground_ = state; }
 
   private:
     std::size_t id_;
@@ -31,5 +33,6 @@ namespace ep::game
     double vel_y_;
     std::uint8_t width_;
     std::uint8_t height_;
+    bool on_ground_;
   };
 }

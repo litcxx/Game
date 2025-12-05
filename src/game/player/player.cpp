@@ -9,7 +9,8 @@ namespace ep::game
     vel_x_(vel_x),
     vel_y_(vel_y),
     width_(width),
-    height_(height)
+    height_(height),
+    on_ground_(false)
   {}
 
   void Player::Move(double dx, double dy)

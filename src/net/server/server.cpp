@@ -108,7 +108,7 @@ namespace ep::net
           sessions_[packet->GetID()]->PushToSend(buf);
           break;
         case PacketType::Broadcast:
-          spdlog::info("send packet to all sessions");
+          // spdlog::info("send packet to all sessions");
           for (const auto& elem: sessions_) {
             elem.second->PushToSend(buf);
           }

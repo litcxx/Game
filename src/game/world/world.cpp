@@ -79,11 +79,19 @@ namespace ep::game
       ProcessEvent(*event);
     }
 
-    // Pop packet from queue and process it.
+    for (auto item: players_) {
+      item.second->SetVel(0.0, item.second->GetVelY());
+    }
+
+    // Handle player inputs
     while (!game_subsystem_->in_queue_.Empty()) {
       auto packet = game_subsystem_->in_queue_.TryPop();
       ProcessInput(std::move(*packet), dt);
     }
+
+    // Update physics
+    for (auto item: players_)
+      Update(*item.second, dt);
 
     // Push all packets to network queue for broadcast.
     while (!game_subsystem_->out_queue_.Empty()) {
@@ -118,50 +126,52 @@ namespace ep::game
 
   void World::ProcessInput(ep::NetPacket packet, double dt)
   {
-    ep::NetPacket send_packet;
-    send_packet.SetPacketType(ep::PacketType::Broadcast);
+    spdlog::info("(World::ProcessInput)");
     // TODO check is this player exists
     auto player = players_[packet.GetID()];
     std::uint16_t opcode = packet.GetHeadOpcode();
 
-    double speed = 200.0 * dt;
-    double g = 9.8 * dt;
+    double speed = 100.0 * dt;
+    double jump_force = 400.0 * dt;
 
     switch (to_opcode(opcode)) {
-      case Opcodes::MoveForward:
-        spdlog::info("Opcode::MoveForward");
-        player->SetVel(0.0, -speed);
-        MovePlayer(*player);
-        OpcodeMovePlayer(send_packet, *player);
-        break;
       case Opcodes::MoveLeft:
         spdlog::info("Opcodes::MoveLeft");
-        player->SetVel(-speed, 0.0);
-        MovePlayer(*player);
-        OpcodeMovePlayer(send_packet, *player);
-        break;
-      case Opcodes::MoveBackward:
-        spdlog::info("Opcodes::MoveBackward");
-        player->SetVel(0.0, speed);
-        MovePlayer(*player);
-        OpcodeMovePlayer(send_packet, *player);
+        player->SetVel(-speed, player->GetVelY());
         break;
       case Opcodes::MoveRight:
         spdlog::info("Opcodes::MoveRight");
-        player->SetVel(speed, 0.0);
-        MovePlayer(*player);
-        OpcodeMovePlayer(send_packet, *player);
+        player->SetVel(speed, player->GetVelY());
+        break;
+      case ep::Opcodes::Jump:
+        spdlog::info("Opcodes::Jump");
+        if (player->OnGround()) {
+          player->SetVel(player->GetVelX(), -jump_force);
+          player->SetOnGround(false);
+          spdlog::info("JUMP!");
+        }
         break;
       default:
         spdlog::warn("unknown opcode: {}", opcode);
     }
-    
+  }
+
+  void World::Update(IPlayer& player, double dt)
+  {
+    // spdlog::info("(World::Update)");
+    const double g = 9.8;
+    double vel_y = player.GetVelY() + g * dt;
+    player.SetVel(player.GetVelX(), vel_y);
+    MovePlayer(player);
+    spdlog::info("vel_y: {}", player.GetVelY());
+
+    ep::NetPacket send_packet = MovePlayerPacket(player.GetID(), player.GetX(), player.GetY());
     game_subsystem_->out_queue_.Push(std::move(send_packet));
   }
 
   void World::MovePlayer(IPlayer& player)
   {
-    spdlog::info("World::MovePlayer");
+    spdlog::info("(World::MovePlayer)");
     double vel_x = player.GetVelX();
     double vel_y = player.GetVelY();
 
@@ -175,8 +185,9 @@ namespace ep::game
     
       vel_x *= swept.entry_time_;
       player.Move(vel_x, 0.0);
-      if (swept.hit_)
-        player.SetVel(0.0, player.GetVelY());
+      if (swept.hit_) {
+        player.SetVel(0.0, vel_y);
+      }
     }
 
     /* ------ Y Axis ------*/
@@ -189,8 +200,16 @@ namespace ep::game
     
       vel_y *= swept.entry_time_;
       player.Move(0.0, vel_y);
-      if (swept.hit_)
-        player.SetVel(player.GetVelX(), 0.0);
+      player.SetOnGround(false);
+      if (swept.hit_) {
+        if (vel_y >= 0.0) {
+          player.SetOnGround(true);
+          // spdlog::info("HIT GROUND");
+        } else {
+          // spdlog::info("HIT WALL");
+        }
+        player.SetVel(vel_x, 0.0);
+      }
     }
   }
 
@@ -203,7 +222,7 @@ namespace ep::game
 
   void World::AddPlayer(std::shared_ptr<IPlayer> player)
   {
-    spdlog::info("World::AddPlayer");
+    spdlog::info("(World::AddPlayer)");
     {
       std::lock_guard lock(players_mutex_);
       // TODO check if this id already exists
@@ -261,7 +280,7 @@ namespace ep::game
 
   void World::RemovePlayer(std::size_t id)
   {
-    spdlog::info("World::RemovePlayer");
+    spdlog::info("(World::RemovePlayer)");
     std::lock_guard lock(players_mutex_);
     // TODO check if this id is exists
     players_.erase(id);

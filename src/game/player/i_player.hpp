@@ -9,9 +9,11 @@ namespace ep::game
     virtual ~IPlayer() = default;
 
     virtual std::size_t GetID() const noexcept = 0;
-    virtual void Move(double x, double y) = 0;
     virtual double GetVelX() const noexcept = 0;
     virtual double GetVelY() const noexcept = 0;
+    virtual void Move(double x, double y) = 0;
     virtual void SetVel(double vel_x, double vel_y) noexcept = 0;
+    virtual bool OnGround() const noexcept = 0;
+    virtual void SetOnGround(bool state) noexcept = 0;
   };
 }

@@ -4,7 +4,6 @@
 #include <memory>
 #include <mutex>
 #include <vector>
-#include <set>
 
 #include "config/config.hpp"
 #include "subsystems/network_subsystem.hpp"
@@ -33,7 +32,7 @@ namespace ep::game
     void Tick(double dt);
     void ProcessEvent(const Event& event);
     void ProcessInput(ep::NetPacket packet, double dt);
-    std::set<std::size_t> FindCollisionIndices(const IPlayer& player, double vel_x, double vel_y);
+    void Update(IPlayer& player, double dt);
 
     void MovePlayer(IPlayer& player);
     void OpcodeMovePlayer(ep::NetPacket& packet, const IPlayer& player);
