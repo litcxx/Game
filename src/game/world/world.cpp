@@ -14,6 +14,7 @@
 #include "protocol/base_packet.hpp"
 #include "protocol/events.hpp"
 #include "protocol/opcodes.hpp"
+#include "spdlog/common.h"
 #include "tile/tile.hpp"
 #include "utils/ts_queue.hpp"
 #include "player/player.hpp"
@@ -163,7 +164,7 @@ namespace ep::game
     double vel_y = player.GetVelY() + g * dt;
     player.SetVel(player.GetVelX(), vel_y);
     MovePlayer(player);
-    spdlog::info("vel_y: {}", player.GetVelY());
+    // spdlog::info("vel_y: {}", player.GetVelY());
 
     ep::NetPacket send_packet = MovePlayerPacket(player.GetID(), player.GetX(), player.GetY());
     game_subsystem_->out_queue_.Push(std::move(send_packet));
@@ -171,12 +172,13 @@ namespace ep::game
 
   void World::MovePlayer(IPlayer& player)
   {
-    spdlog::info("(World::MovePlayer)");
+    // spdlog::info("(World::MovePlayer)");
     double vel_x = player.GetVelX();
     double vel_y = player.GetVelY();
 
     /* ------ X Axis ------*/
     if (vel_x != 0 ) {
+      spdlog::info("============== X AXIS ==============");
       // calculate collision along x axis
       SweptData swept = collision_.SweptAxis(player, 
                                              config_.tile_, config_.grid_x_, config_.grid_y_,
@@ -187,11 +189,15 @@ namespace ep::game
       player.Move(vel_x, 0.0);
       if (swept.hit_) {
         player.SetVel(0.0, vel_y);
+      spdlog::info("HIT SIDE WALL\n"\
+                   "x: {} y: {}", player.GetX(), player.GetY());
       }
+      spdlog::info("============== X AXIS ==============");
     }
 
     /* ------ Y Axis ------*/
     if (vel_y != 0 ) {
+      spdlog::info("============== Y AXIS ==============");
       // calculate collision along y axis
       SweptData swept = collision_.SweptAxis(player, 
                                              config_.tile_, config_.grid_x_, config_.grid_y_,
@@ -210,6 +216,7 @@ namespace ep::game
         }
         player.SetVel(vel_x, 0.0);
       }
+      spdlog::info("============== Y AXIS ==============");
     }
   }
 

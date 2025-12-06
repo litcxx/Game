@@ -25,6 +25,8 @@ set(SOURCES
   shared/ts_queue_tests.cpp
   game/player/player_tests.cpp
   game/world/world_tests.cpp
+  game/physics/collision_tests.cpp
+  game/physics/swept_math_tests.cpp
 )
 
 add_executable(unit_tests 
