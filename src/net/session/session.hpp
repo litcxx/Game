@@ -17,7 +17,7 @@ namespace ep::net
   public:
     using SendBuffer = std::shared_ptr<std::vector<std::uint8_t>>;
 
-    explicit Session(std::shared_ptr<Server> server, std::unique_ptr<ISocket> socket, std::size_t id);
+    explicit Session(std::shared_ptr<Server> server, std::shared_ptr<ISocket> socket, std::size_t id);
     ~Session() = default;
 
     Session(const Session&) = delete;
@@ -54,7 +54,7 @@ namespace ep::net
     void OnReadPacketBody(std::size_t size);
 
     std::shared_ptr<Server> server_;
-    std::unique_ptr<ISocket> socket_;
+    std::shared_ptr<ISocket> socket_;
     std::size_t id_;
     // Flag indicate session state: connected/disconnected
     mutable std::atomic_flag state_;

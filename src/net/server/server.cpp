@@ -68,9 +68,9 @@ namespace ep::net
       [this](const boost::system::error_code& ec, tcp::socket socket)
       {
         if (!ec) {
-          auto wsssocket = std::make_unique<WSSSocket>(std::move(socket), ctx_);
+          auto wsssocket = std::make_shared<WSSSocket>(std::move(socket), ctx_);
           std::size_t id = new_session_id_.fetch_add(1);
-          auto session = std::make_shared<Session>(shared_from_this(), std::move(wsssocket), id);
+          auto session = std::make_shared<Session>(shared_from_this(), wsssocket, id);
           session->Run();
         } else {
           spdlog::error("async_accept: {}", ec.what());

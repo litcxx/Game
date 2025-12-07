@@ -5,6 +5,7 @@
 #include <boost/beast/core/error.hpp>
 #include <boost/beast/websocket/rfc6455.hpp>
 #include <boost/beast/websocket/ssl.hpp>
+#include <boost/system/detail/error_code.hpp>
 
 #include <cstdint>
 #include <spdlog/spdlog.h>
@@ -17,16 +18,26 @@ namespace ep::net
     socket_.binary(true);
   }
 
-  WSSSocket::~WSSSocket()
-  {
-    close();
-  }
-
   void WSSSocket::close()
   {
+    CloseWebSocket();
+    CloseSSL();
+  }
+
+  void WSSSocket::CloseWebSocket()
+  {
     beast::error_code ec;
-    socket_.close(websocket::close_code::normal, ec);
-    spdlog::info("close websocket: {}", ec ? ec.what() : "success");
+    socket_.close(beast::websocket::normal, ec);
+    if (ec)
+      spdlog::warn("close websocket: {}", ec.what());
+  }
+
+  void WSSSocket::CloseSSL()
+  {
+    boost::system::error_code ec;
+    socket_.next_layer().shutdown(ec);
+    if (ec)
+      spdlog::warn("shutdown ssl: {}", ec.what());
   }
 
   void WSSSocket::async_read_some(std::uint8_t* buffer, std::size_t limit, ReadHandler handler)

@@ -17,12 +17,12 @@
 
 namespace ep::net
 {
-  Session::Session(std::shared_ptr<Server> server, std::unique_ptr<ISocket> socket, std::size_t id) :
-    server_{server},
-    socket_{std::move(socket)},
-    id_{id},
-    state_{ATOMIC_FLAG_INIT},
-    sending_{ATOMIC_FLAG_INIT}
+  Session::Session(std::shared_ptr<Server> server, std::shared_ptr<ISocket> socket, std::size_t id) :
+    server_(server),
+    socket_(socket),
+    id_(id),
+    state_(ATOMIC_FLAG_INIT),
+    sending_(ATOMIC_FLAG_INIT)
   {}
 
   void Session::Run()
@@ -32,8 +32,18 @@ namespace ep::net
     socket_->async_handshake(
       [self](const beast::error_code& ec)
       {
-        if (ec)
-          return spdlog::error("handshake: {}", ec.what());
+        // an error occured
+        if (ec) {
+          // client close connection
+          if (ec == websocket::error::closed)
+            return spdlog::info("session was closed");
+          else
+            return spdlog::warn("async_handshake: {}", ec.what());
+
+          self->socket_->close();
+          return;
+        }
+
         self->Accept();
       }
     );
@@ -57,6 +67,9 @@ namespace ep::net
             return spdlog::info("session was closed");
           else
             return spdlog::warn("accept: {}", ec.what());
+
+          self->socket_->close();
+          return;
         }
 
         // Finally connected
@@ -90,6 +103,7 @@ namespace ep::net
 
           // Close session process
           self->SetDisconneted();
+          self->socket_->close();
           self->server_->CloseSession(self->id_);
           return;
         }
@@ -130,6 +144,7 @@ namespace ep::net
 
           // Close session process
           self->SetDisconneted();
+          self->socket_->close();
           self->server_->CloseSession(self->id_);
           return;
         }
@@ -177,6 +192,7 @@ namespace ep::net
 
           // Close session process
           self->SetDisconneted();
+          self->socket_->close();
           self->server_->CloseSession(self->id_);
           return;
         }
