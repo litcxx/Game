@@ -84,9 +84,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            spdlog::info("session was closed");
+            spdlog::warn("session was closed");
           else
-            spdlog::warn("read : {}", ec.what());
+            spdlog::error("read : {}", ec.what());
 
           // Close session process
           self->SetDisconneted();
@@ -124,9 +124,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            spdlog::info("session was closed");
+            spdlog::warn("session was closed");
           else
-            spdlog::warn("read : {}", ec.what());
+            spdlog::error("read : {}", ec.what());
 
           // Close session process
           self->SetDisconneted();
@@ -151,13 +151,13 @@ namespace ep::net
   {
     // spdlog::info("Session::Send");
     if (!GetState())
-      return spdlog::info("Close send operation to disconneted client");
+      return spdlog::warn("Close send operation to disconneted client");
 
     if (out_queue_.Empty())
-      return spdlog::info("Return from send, out queue is empty");
+      return spdlog::warn("Return from send, out queue is empty");
 
     if (StartSending())
-      return spdlog::info("Close send operation, previous send is not finished");
+      return spdlog::warn("Close send operation, previous send is not finished");
 
     auto buf = out_queue_.TryPop();
 
@@ -171,9 +171,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            spdlog::info("session was closed");
+            spdlog::warn("session was closed");
           else
-            spdlog::warn("read : {}", ec.what());
+            spdlog::error("read : {}", ec.what());
 
           // Close session process
           self->SetDisconneted();
