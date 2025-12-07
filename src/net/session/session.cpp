@@ -150,11 +150,11 @@ namespace ep::net
   void Session::Send()
   {
     // spdlog::info("Session::Send");
-    if (!GetState())
-      return spdlog::warn("Close send operation to disconneted client");
+    if (!IsConnected())
+      return spdlog::warn("Close send operation, client is disconneted");
 
     if (out_queue_.Empty())
-      return spdlog::warn("Return from send, out queue is empty");
+      return spdlog::warn("Return from send, send queue is empty");
 
     if (StartSending())
       return spdlog::warn("Close send operation, previous send is not finished");

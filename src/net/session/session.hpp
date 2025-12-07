@@ -32,7 +32,7 @@ namespace ep::net
     [[maybe_unused]] bool SetConnected() const noexcept { return state_.test_and_set(); }
     void SetDisconneted() const noexcept { state_.clear(); }
     // true - connected, false - disconnected
-    [[nodiscard]] bool GetState() const noexcept { return state_.test(); }
+    [[nodiscard]] bool IsConnected() const noexcept { return state_.test(); }
 
     // true - sending, false - not sending
     [[maybe_unused]] bool StartSending() const noexcept { return sending_.test_and_set(); }
@@ -56,8 +56,10 @@ namespace ep::net
     std::shared_ptr<Server> server_;
     std::unique_ptr<ISocket> socket_;
     std::size_t id_;
+    // Flag indicate session state: connected/disconnected
     mutable std::atomic_flag state_;
     PacketHandler packet_handler_;
+    // Flag indicate session sending packet state: sending/not
     mutable std::atomic_flag sending_;
     ep::TSQueue<std::vector<uint8_t>> out_queue_;
   };
