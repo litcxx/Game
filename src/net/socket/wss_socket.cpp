@@ -20,8 +20,20 @@ namespace ep::net
 
   void WSSSocket::close()
   {
+    Cancel();
     CloseWebSocket();
     CloseSSL();
+  }
+
+  void WSSSocket::Cancel()
+  {
+    // Cancel all async operations
+    boost::system::error_code ec;
+    if (socket_.next_layer().next_layer().is_open()) {
+      socket_.next_layer().next_layer().cancel(ec);
+      if (ec)
+        spdlog::warn("Cancel error: {}", ec.what());
+    }
   }
 
   void WSSSocket::CloseWebSocket()
@@ -29,7 +41,7 @@ namespace ep::net
     beast::error_code ec;
     socket_.close(beast::websocket::normal, ec);
     if (ec)
-      spdlog::warn("close websocket: {}", ec.what());
+      spdlog::warn("Close websocket error: {}", ec.what());
   }
 
   void WSSSocket::CloseSSL()
@@ -37,7 +49,7 @@ namespace ep::net
     boost::system::error_code ec;
     socket_.next_layer().shutdown(ec);
     if (ec)
-      spdlog::warn("shutdown ssl: {}", ec.what());
+      spdlog::warn("Shutdown ssl error: {}", ec.what());
   }
 
   void WSSSocket::async_read_some(std::uint8_t* buffer, std::size_t limit, ReadHandler handler)

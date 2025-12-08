@@ -173,13 +173,13 @@ namespace ep::net
   {
     // spdlog::info("Session::Send");
     if (!IsConnected())
-      return spdlog::warn("Close send operation, client is disconneted");
+      return spdlog::info("Return from send operation, client is disconneted");
 
     if (out_queue_.Empty())
-      return spdlog::warn("Return from send, send queue is empty");
+      return spdlog::info("Return from send, queue is empty");
 
     if (StartSending())
-      return spdlog::warn("Close send operation, previous send is not finished");
+      return spdlog::info("Return from send operation, previous send is not finished");
 
     auto buf = out_queue_.TryPop();
 

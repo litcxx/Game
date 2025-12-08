@@ -25,6 +25,7 @@ namespace ep::net
     void async_handshake(CompletionHandler handler) override;
     std::string string_address() override;
   private:
+    void Cancel();
     void CloseWebSocket();
     void CloseSSL();
 
