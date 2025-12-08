@@ -1,6 +1,7 @@
 #include "session.hpp"
 
 #include <atomic>
+#include <boost/asio/ssl/error.hpp>
 #include <cstdint>
 #include <sys/types.h>
 
@@ -36,9 +37,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            return spdlog::info("session was closed");
+            spdlog::warn("WebSocket was closed cleanly");
           else
-            return spdlog::warn("async_handshake: {}", ec.what());
+            spdlog::error("SSL handshake error: {}", ec.what());
 
           self->socket_->close();
           return;
@@ -64,9 +65,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            return spdlog::info("session was closed");
+            spdlog::warn("WebSocket was closed cleanly");
           else
-            return spdlog::warn("accept: {}", ec.what());
+            spdlog::error("Accept error: {}", ec.what());
 
           self->socket_->close();
           return;
@@ -97,9 +98,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            spdlog::warn("session was closed");
+            spdlog::warn("WebSocket was closed cleanly");
           else
-            spdlog::error("read : {}", ec.what());
+            spdlog::error("Read header error: {}", ec.what());
 
           // Close session process
           self->SetDisconneted();
@@ -138,9 +139,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            spdlog::warn("session was closed");
+            spdlog::warn("WebSocket was closed cleanly");
           else
-            spdlog::error("read : {}", ec.what());
+            spdlog::error("Read body error: {}", ec.what());
 
           // Close session process
           self->SetDisconneted();
@@ -192,9 +193,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            spdlog::warn("session was closed");
+            spdlog::warn("WebSocket was closed cleanly");
           else
-            spdlog::error("read : {}", ec.what());
+            spdlog::error("Write error: {}", ec.what());
 
           // Close session process
           self->SetDisconneted();
