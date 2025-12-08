@@ -37,6 +37,7 @@ namespace ep
 
     game_config_.tick_rate_ = config_data["game"]["tick_rate"];
 
+    // Map
     std::string map = config_data["game"]["map"];
     std::ifstream map_file(std::filesystem::current_path() / "config" / map);
     nlohmann::json map_data = nlohmann::json::parse(map_file);
@@ -44,9 +45,6 @@ namespace ep
     game_config_.grid_x_ = map_data["grid_x"];
     game_config_.grid_y_ = map_data["grid_y"];
     game_config_.tile_ = map_data["tile"];
-    game_config_.player_start_x_ = map_data["player_start_x"];
-    game_config_.player_start_y_ = map_data["player_start_y"];
-    game_config_.player_offset_ = map_data["player_offset"];
 
     // Copy map.
     game_config_.map_.resize(game_config_.grid_x_ * game_config_.grid_y_);
@@ -54,13 +52,26 @@ namespace ep
     for(std::size_t i = 0; i < game_config_.grid_x_ * game_config_.grid_y_; i++)
       game_config_.map_[i] = tmp[i];
 
+    // Player
+    std::string player = config_data["game"]["player"];
+    std::ifstream player_file(std::filesystem::current_path() / "config" / player);
+    nlohmann::json player_data = nlohmann::json::parse(player_file);
+
+    game_config_.player_.width_ = player_data["type"]["default"]["width"];
+    game_config_.player_.height_ = player_data["type"]["default"]["height"];
+    game_config_.player_.player_start_x_ = player_data["type"]["default"]["player_start_x"];
+    game_config_.player_.player_start_y_ = player_data["type"]["default"]["player_start_y"];
+    game_config_.player_.player_offset_ = player_data["type"]["default"]["player_offset"];
+
     spdlog::info("The game tick rate: {} Hz", game_config_.tick_rate_);
     spdlog::info("The game grid x count: {}", game_config_.grid_x_);
     spdlog::info("The game grid y count: {}", game_config_.grid_y_);
     spdlog::info("The game tile: {}", game_config_.tile_);
-    spdlog::info("Player start x: {}", game_config_.player_start_x_);
-    spdlog::info("Player start y: {}", game_config_.player_start_y_);
-    spdlog::info("Player offset: {}", game_config_.player_offset_);
+    spdlog::info("Player width: {}", game_config_.player_.width_);
+    spdlog::info("Player height: {}", game_config_.player_.height_);
+    spdlog::info("Player start x: {}", game_config_.player_.player_start_x_);
+    spdlog::info("Player start y: {}", game_config_.player_.player_start_y_);
+    spdlog::info("Player offset: {}", game_config_.player_.player_offset_);
 
     // Debug map.
     for (int y = 0; y < 25; y++) {

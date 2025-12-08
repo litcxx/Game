@@ -5,7 +5,6 @@
 #include <cstdint>
 #include <mutex>
 #include <thread>
-#include <algorithm>
 
 #include <spdlog/spdlog.h>
 
@@ -107,11 +106,11 @@ namespace ep::game
       case ep::EventCode::AddNewPlayer: {
         spdlog::info("game event: AddNewPlayer id: {}", event.GetID());
         auto player  = std::make_shared<Player>(event.GetID(), 
-                                                config_.player_start_x_ * config_.tile_ + config_.player_offset_, 
-                                                config_.player_start_y_ * config_.tile_ + config_.player_offset_,
+                                                config_.player_.player_start_x_ * config_.tile_ + config_.player_.player_offset_, 
+                                                config_.player_.player_start_y_ * config_.tile_ + config_.player_.player_offset_,
                                                 0.0, 0.0,
-                                                config_.tile_ - config_.player_offset_ * 2,
-                                                config_.tile_ - config_.player_offset_ * 2);
+                                                config_.player_.width_,
+                                                config_.player_.height_);
         AddPlayer(player);
         break;
       }

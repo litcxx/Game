@@ -12,15 +12,26 @@ namespace ep
     std::uint16_t io_threads_;
   };
 
-  struct GameConfig {
-    std::uint8_t tick_rate_;
-    std::uint16_t grid_x_;
-    std::uint16_t grid_y_;
-    std::uint8_t tile_;
+  struct PlayerConfig {
+    std::uint8_t width_;
+    std::uint8_t height_;
     std::uint16_t player_start_x_;
     std::uint16_t player_start_y_;
     std::uint16_t player_offset_;
+  };
+
+  struct GameConfig {
+    // Game
+    std::uint8_t tick_rate_;
+
+    // Map
+    std::uint8_t tile_;
+    std::uint16_t grid_x_;
+    std::uint16_t grid_y_;
     std::vector<std::uint8_t> map_;
+
+    // Player
+    PlayerConfig player_;
   };
 
   class Config {

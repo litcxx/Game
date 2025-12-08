@@ -6,6 +6,7 @@
   },
   "game": {
     "tick_rate": 60,
-    "map": "test_map.json"
+    "map": "map.json",
+    "player": "player.json"
   }
 }
