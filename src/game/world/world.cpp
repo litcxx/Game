@@ -177,7 +177,7 @@ namespace ep::game
 
     /* ------ X Axis ------*/
     if (vel_x != 0 ) {
-      spdlog::info("============== X AXIS ==============");
+      // spdlog::info("============== X AXIS ==============");
       // calculate collision along x axis
       SweptData swept = collision_.SweptAxis(player, 
                                              config_.tile_, config_.grid_x_, config_.grid_y_,
@@ -188,15 +188,15 @@ namespace ep::game
       player.Move(vel_x, 0.0);
       if (swept.hit_) {
         player.SetVel(0.0, vel_y);
-      spdlog::info("HIT SIDE WALL\n"\
-                   "x: {} y: {}", player.GetX(), player.GetY());
+      // spdlog::info("HIT SIDE WALL\n"\
+      //              "x: {} y: {}", player.GetX(), player.GetY());
       }
-      spdlog::info("============== X AXIS ==============");
+      // spdlog::info("============== X AXIS ==============");
     }
 
     /* ------ Y Axis ------*/
     if (vel_y != 0 ) {
-      spdlog::info("============== Y AXIS ==============");
+      // spdlog::info("============== Y AXIS ==============");
       // calculate collision along y axis
       SweptData swept = collision_.SweptAxis(player, 
                                              config_.tile_, config_.grid_x_, config_.grid_y_,
@@ -215,7 +215,7 @@ namespace ep::game
         }
         player.SetVel(vel_x, 0.0);
       }
-      spdlog::info("============== Y AXIS ==============");
+      // spdlog::info("============== Y AXIS ==============");
     }
   }
 

@@ -2,10 +2,12 @@
   "server": {
     "ip": "0.0.0.0",
     "port": 8080,
-    "io_threads": 4
+    "io_threads": 4,
+    "net_threads": 1
   },
   "game": {
     "tick_rate": 60,
+    "game_threads": 4,
     "map": "map.json",
     "player": "player.json"
   }

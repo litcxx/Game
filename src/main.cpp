@@ -48,10 +48,11 @@ int main(int argc, char* argv[])
 
   const auto address = net::ip::make_address(config->net_config_.ip_);
   const auto port = config->net_config_.port_;
-  const auto threads = std::max<int>(1, config->net_config_.io_threads_);
+  const auto io_threads = std::max<int>(1, config->net_config_.io_threads_);
+  const auto net_threads = std::max<int>(1, config->net_config_.net_threads_);
 
   // The io_context is required for all I/O.
-  net::io_context ioc{threads};
+  net::io_context ioc{io_threads};
 
   // The SSL context is required, and holds certificates.
   ssl::context ctx(ssl::context::tlsv12_server);
@@ -73,23 +74,27 @@ int main(int argc, char* argv[])
   // Server main loop.
   server->Run();
 
-  // Server boradcast all general packets.
-  std::jthread sender_tread(
-    [server]
-    { 
-      server->Sender(); 
-    }
-  );
+  // Server send packets to clients
+  std::vector<std::jthread> net_thread_pool;
+  for(auto i = 0; i < net_threads; i++) {
+    net_thread_pool.emplace_back(
+      [server]
+      { 
+        server->Sender(); 
+      }
+    );
+  }
 
   // Run the I/O service on the requested number of threads.
-  std::vector<std::jthread> v;
-  v.reserve(threads - 1);
-  for(auto i = threads - 1; i > 0; --i)
-    v.emplace_back(
-    [&ioc]
-    {
-        ioc.run();
-    });
+  std::vector<std::jthread> io_thread_pool;
+  for(auto i = 0; i < io_threads - 1; i++) {
+    io_thread_pool.emplace_back(
+      [&ioc]
+      {
+          ioc.run();
+      }
+    );
+  }
   ioc.run();
 
   return EXIT_SUCCESS;

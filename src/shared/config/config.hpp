@@ -9,7 +9,8 @@ namespace ep
   struct NetConfig {
     std::string ip_;
     std::uint16_t port_;
-    std::uint16_t io_threads_;
+    std::uint8_t io_threads_;
+    std::uint8_t net_threads_;
   };
 
   struct PlayerConfig {
@@ -23,6 +24,7 @@ namespace ep
   struct GameConfig {
     // Game
     std::uint8_t tick_rate_;
+    std::uint8_t game_threads_;
 
     // Map
     std::uint8_t tile_;

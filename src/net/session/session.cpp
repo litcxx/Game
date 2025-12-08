@@ -162,6 +162,12 @@ namespace ep::net
     );
   }
 
+  void Session::PushToSend(SendBuffer packet)
+  {
+    out_queue_.Push(packet); 
+    Send();
+  }
+
   void Session::Send()
   {
     // spdlog::info("Session::Send");
@@ -204,12 +210,5 @@ namespace ep::net
           self->Send();
       }
     );
-  }
-
-
-  void Session::PushToSend(SendBuffer packet)
-  {
-    out_queue_.Push(packet); 
-    Send();
   }
 }
