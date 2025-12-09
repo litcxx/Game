@@ -23,26 +23,10 @@ namespace ep::net
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;
 
-    // Initialie ssl handshake and websocket accept connection
     void Run();
-    void Send();
     std::size_t GetID() const { return id_; }
-
-    // Session state
-    [[maybe_unused]] bool SetConnected() const noexcept { return state_.test_and_set(); }
-    void SetDisconneted() const noexcept { state_.clear(); }
-    // true - connected, false - disconnected
-    [[nodiscard]] bool IsConnected() const noexcept { return state_.test(); }
-
-    // true - sending, false - not sending
-    [[maybe_unused]] bool StartSending() const noexcept { return sending_.test_and_set(); }
-    void StopSending() const noexcept { return sending_.clear(); }
-
     void PushToSend(SendBuffer packet);
-
   private:
-    // WebSocket accept connection
-    void Accept();
 
     // Read bytes untill read the full packet header
     void ReadPacketHead();
@@ -52,6 +36,17 @@ namespace ep::net
     // and push to incoming queue
     void ReadPacketBody();
     void OnReadPacketBody(std::size_t size);
+
+    void Send();
+
+    // Session state
+    [[maybe_unused]] bool SetConnected() const noexcept { return state_.test_and_set(); }
+    void SetDisconneted() const noexcept { state_.clear(); }
+    [[nodiscard]] bool IsConnected() const noexcept { return state_.test(); }
+
+    // Sending state
+    [[maybe_unused]] bool StartSending() const noexcept { return sending_.test_and_set(); }
+    void StopSending() const noexcept { return sending_.clear(); }
 
     std::shared_ptr<Server> server_;
     std::shared_ptr<ISocket> socket_;

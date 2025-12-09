@@ -28,31 +28,6 @@ namespace ep::net
 
   void Session::Run()
   {
-    spdlog::info("Session::Run");
-    auto self = shared_from_this();
-    socket_->async_handshake(
-      [self](const beast::error_code& ec)
-      {
-        // an error occured
-        if (ec) {
-          // client close connection
-          if (ec == websocket::error::closed)
-            spdlog::warn("WebSocket was closed cleanly");
-          else
-            spdlog::error("SSL handshake error: {}", ec.what());
-
-          self->socket_->close();
-          return;
-        }
-
-        self->Accept();
-      }
-    );
-  }
-
-  void Session::Accept()
-  {
-
     spdlog::info("Session::Accept");
     // TODO set timeout
     // TODO set decorator
@@ -65,12 +40,9 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            spdlog::warn("WebSocket was closed cleanly");
+            return spdlog::warn("WebSocket was closed cleanly");
           else
-            spdlog::error("Accept error: {}", ec.what());
-
-          self->socket_->close();
-          return;
+            return spdlog::error("Accept error: {}", ec.what());
         }
 
         // Finally connected
@@ -104,7 +76,6 @@ namespace ep::net
 
           // Close session process
           self->SetDisconneted();
-          self->socket_->close();
           self->server_->CloseSession(self->id_);
           return;
         }
@@ -145,7 +116,6 @@ namespace ep::net
 
           // Close session process
           self->SetDisconneted();
-          self->socket_->close();
           self->server_->CloseSession(self->id_);
           return;
         }
@@ -171,13 +141,15 @@ namespace ep::net
 
   void Session::Send()
   {
-    // spdlog::info("Session::Send");
+    // Check if session is disconnected
     if (!IsConnected())
       return spdlog::info("Return from send operation, client is disconneted");
 
+    // Check if send queue is empty
     if (out_queue_.Empty())
       return spdlog::info("Return from send, queue is empty");
 
+    // Check if previous sending finished
     if (StartSending())
       return spdlog::info("Return from send operation, previous send is not finished");
 
@@ -199,7 +171,6 @@ namespace ep::net
 
           // Close session process
           self->SetDisconneted();
-          self->socket_->close();
           self->server_->CloseSession(self->id_);
           return;
         }

@@ -6,6 +6,7 @@
 
 #include <boost/asio/ssl/context.hpp>
 #include <spdlog/spdlog.h>
+#include "spdlog/common.h"
 
 #include "server/server.hpp"
 #include "world/world.hpp"
@@ -24,6 +25,9 @@ int main(int argc, char* argv[])
     spdlog::error("Usage: {} <config>", argv[0]);
     return EXIT_FAILURE;
   }
+  
+  // TMP set log leve
+  spdlog::set_level(spdlog::level::debug);
 
   // Initialize config.
   auto config = ep::Config::GetInstance(argv[1]);

@@ -13,13 +13,18 @@
 namespace ep::net
 {
   WSSSocket::WSSSocket(tcp::socket&& socket, ssl::context& ctx) :
-    socket_(std::move(socket), ctx)
+    socket_(std::move(socket), ctx),
+    closed_(ATOMIC_FLAG_INIT)
   {
     socket_.binary(true);
+    spdlog::info("Set websocket binary mode: {}", socket_.binary());
   }
 
   void WSSSocket::close()
   {
+    // Check if already closed
+    if (IsClosed()) return;
+    spdlog::info("Close connection");
     Cancel();
     CloseWebSocket();
     CloseSSL();
@@ -38,18 +43,49 @@ namespace ep::net
 
   void WSSSocket::CloseWebSocket()
   {
-    beast::error_code ec;
-    socket_.close(beast::websocket::normal, ec);
-    if (ec)
-      spdlog::warn("Close websocket error: {}", ec.what());
+    auto self = shared_from_this();
+    socket_.async_close(
+      beast::websocket::normal,
+      [self](const beast::error_code& ec)
+      {
+        if (ec)
+          spdlog::warn("Close websocket error: {}", ec.what());
+        
+        self->CloseSSL();
+      }
+    );
   }
 
   void WSSSocket::CloseSSL()
   {
-    boost::system::error_code ec;
-    socket_.next_layer().shutdown(ec);
-    if (ec)
-      spdlog::warn("Shutdown ssl error: {}", ec.what());
+    auto self = shared_from_this();
+    socket_.next_layer().async_shutdown(
+      [self](const boost::system::error_code& ec)
+      {
+        if (ec)
+          spdlog::warn("Shutdown ssl error: {}", ec.what());
+      }
+    );
+  }
+
+  void WSSSocket::async_accept(CompletionHandler handler)
+  {
+    auto self = shared_from_this();
+    socket_.next_layer().async_handshake(
+      ssl::stream_base::server,
+      [self, handler = std::move(handler)](const beast::error_code& ec)
+      {
+        if (ec) {
+          // client close connection
+          if (ec == websocket::error::closed)
+            return spdlog::warn("WebSocket was closed cleanly");
+          else
+            return spdlog::error("SSL handshake error: {}", ec.what());
+        }
+
+        self->socket_.async_accept(std::move(handler));
+      }
+    );
   }
 
   void WSSSocket::async_read_some(std::uint8_t* buffer, std::size_t limit, ReadHandler handler)
@@ -60,16 +96,6 @@ namespace ep::net
   void WSSSocket::async_write(const std::uint8_t* buffer, std::size_t limit, ReadHandler handler)
   {
     socket_.async_write(net::buffer(buffer, limit), handler);
-  }
-
-  void WSSSocket::async_accept(CompletionHandler handler)
-  {
-    socket_.async_accept(std::move(handler));
-  }
-
-  void WSSSocket::async_handshake(CompletionHandler handler)
-  {
-    socket_.next_layer().async_handshake(ssl::stream_base::server, std::move(handler));
   }
 
   std::string WSSSocket::string_address()
