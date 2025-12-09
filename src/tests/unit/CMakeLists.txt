@@ -45,7 +45,7 @@ target_include_directories(unit_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src/net
   ${CMAKE_SOURCE_DIR}/src/game
   ${CMAKE_SOURCE_DIR}/src/shared
-  ${CMAKE_SOURCE_DIR}/src/tests
+  ${CMAKE_SOURCE_DIR}/src/tests/unit
 )
 
 include(GoogleTest)
