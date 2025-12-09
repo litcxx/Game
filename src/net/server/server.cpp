@@ -14,7 +14,8 @@
 #include "protocol/events.hpp"
 #include "protocol/opcodes.hpp"
 #include "session/session.hpp"
-#include "socket/wss_socket.hpp"
+// #include "socket/wss_socket.hpp"
+#include "socket/ws_socket.hpp"
 
 namespace ep::net
 {
@@ -68,9 +69,10 @@ namespace ep::net
       [this](const boost::system::error_code& ec, tcp::socket socket)
       {
         if (!ec) {
-          auto wsssocket = std::make_shared<WSSSocket>(std::move(socket), ctx_);
+          // auto wsssocket = std::make_shared<WSSSocket>(std::move(socket), ctx_);
+          auto wssocket = std::make_shared<WSSocket>(std::move(socket));
           std::size_t id = new_session_id_.fetch_add(1);
-          auto session = std::make_shared<Session>(shared_from_this(), wsssocket, id);
+          auto session = std::make_shared<Session>(shared_from_this(), wssocket, id);
           session->Run();
         } else {
           spdlog::error("async_accept: {}", ec.what());

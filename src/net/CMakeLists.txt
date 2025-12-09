@@ -5,6 +5,7 @@ add_library(net
   session/session.cpp
   session/packet_handler.cpp
   socket/wss_socket.cpp
+  socket/ws_socket.cpp
 )
 
 target_include_directories(net PRIVATE
