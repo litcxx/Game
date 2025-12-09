@@ -40,9 +40,11 @@ namespace ep::net
         if (ec) {
           // client close connection
           if (ec == websocket::error::closed)
-            return spdlog::warn("WebSocket was closed cleanly");
+            spdlog::warn("WebSocket was closed cleanly");
           else
-            return spdlog::error("Accept error: {}", ec.what());
+            spdlog::error("Accept error: {}", ec.what());
+          self->socket_->close();
+          return;
         }
 
         // Finally connected
@@ -75,6 +77,7 @@ namespace ep::net
             spdlog::error("Read header error: {}", ec.what());
 
           // Close session process
+          self->socket_->close();
           self->SetDisconneted();
           self->server_->CloseSession(self->id_);
           return;
@@ -115,6 +118,7 @@ namespace ep::net
             spdlog::error("Read body error: {}", ec.what());
 
           // Close session process
+          self->socket_->close();
           self->SetDisconneted();
           self->server_->CloseSession(self->id_);
           return;
@@ -170,6 +174,7 @@ namespace ep::net
             spdlog::error("Write error: {}", ec.what());
 
           // Close session process
+          self->socket_->close();
           self->SetDisconneted();
           self->server_->CloseSession(self->id_);
           return;
