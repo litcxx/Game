@@ -2,7 +2,6 @@
 
 #include <atomic>
 #include <boost/asio/ssl/error.hpp>
-#include <cstdint>
 #include <sys/types.h>
 
 #include <boost/asio/ssl/stream_base.hpp>
@@ -13,7 +12,6 @@
 #include <spdlog/spdlog.h>
 
 #include "server/server.hpp"
-#include "aliases/asio_aliases.hpp"
 #include "aliases/beast_aliases.hpp"
 
 namespace ep::net
@@ -22,7 +20,7 @@ namespace ep::net
     server_(server),
     socket_(socket),
     id_(id),
-    state_(ATOMIC_FLAG_INIT),
+    state_(State::Connecting),
     sending_(ATOMIC_FLAG_INIT)
   {}
 
@@ -43,20 +41,44 @@ namespace ep::net
             spdlog::warn("WebSocket was closed cleanly");
           else
             spdlog::error("Accept error: {}", ec.what());
-          self->socket_->close();
-          return;
+
+          self->SetDisconneting();
+        } else {
+          // Finally connected
+          self->SetConnected();
         }
 
-        // Finally connected
-        self->SetConnected();
+        self->ProcessState();
 
-        // Add client to server and game
-        self->server_->AddSession(self);
-
-        // Start reading client inputs
-        self->ReadPacketHead();
       }
     );
+  }
+
+  void Session::ProcessState()
+  {
+    switch (GetState()) {
+      case State::Connecting:
+        break;
+      case State::Connected:
+        // Add client to server and game
+        server_->AddSession(shared_from_this());
+
+        // Start reading client inputs
+        ReadPacketHead();
+        break;
+      case State::Disconnecting:
+        socket_->close();
+        SetDisconneted();
+        break;
+      case State::Disconnected:
+        socket_->close();
+        server_->CloseSession(id_);
+        break;
+      case State::User:
+        break;
+      default:
+        spdlog::error("Unknown session state");
+    }
   }
 
   void Session::ReadPacketHead()
@@ -77,25 +99,24 @@ namespace ep::net
             spdlog::error("Read header error: {}", ec.what());
 
           // Close session process
-          self->socket_->close();
           self->SetDisconneted();
-          self->server_->CloseSession(self->id_);
+          self->ProcessState();
           return;
         }
 
         // Continue reading the header, untill the complete PacketHead is recived.
         if (!self->packet_handler_.UpdateHeadSize(size))
           return self->ReadPacketHead();
-        else {
-          // All header has been received. If payload size == 0 push to queue 
-          // and continue read next header. Otherwise read the body.
-          if (self->packet_handler_.BodySizeLeft())
-            self->ReadPacketBody();
-          else {
-            self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
-            self->ReadPacketHead();
-          }
-        }
+
+        // Check if packet contains payload data, then read the data
+        if (self->packet_handler_.BodySizeLeft())
+          return self->ReadPacketBody();
+
+        // Packet does not contain payload data, push to handler
+        self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
+
+        // Continue reading next packet
+        self->ReadPacketHead();
       }
     );
   }
@@ -118,21 +139,20 @@ namespace ep::net
             spdlog::error("Read body error: {}", ec.what());
 
           // Close session process
-          self->socket_->close();
           self->SetDisconneted();
-          self->server_->CloseSession(self->id_);
+          self->ProcessState();
           return;
         }
 
         // Continue reading payload data untill all data has been received.
         if (!self->packet_handler_.UpdateBodySize(size))
-          self->ReadPacketBody();
-        else {
-          // All payload data has been received.
-          // Push packet to incoming queue and start reading the next header.
-          self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
-          self->ReadPacketHead();
-        }
+          return self->ReadPacketBody();
+
+        // All payload data has been received, push to handler
+        self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
+
+        // Continue reading next packet
+        self->ReadPacketHead();
       }
     );
   }
@@ -174,9 +194,8 @@ namespace ep::net
             spdlog::error("Write error: {}", ec.what());
 
           // Close session process
-          self->socket_->close();
           self->SetDisconneted();
-          self->server_->CloseSession(self->id_);
+          self->ProcessState();
           return;
         }
         // spdlog::info("write {} bytes to client", size);

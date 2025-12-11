@@ -24,7 +24,7 @@ namespace ep::net
   {
     // Check if already closed
     if (IsClosed()) return;
-    spdlog::info("Close connection");
+    spdlog::info("WSSSocket::close");
     Cancel();
     CloseWebSocket();
     CloseSSL();
