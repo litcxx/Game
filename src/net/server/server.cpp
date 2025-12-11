@@ -134,9 +134,9 @@ namespace ep::net
     std::lock_guard lock(sessions_mutex_);
     if (sessions_.find(id) != sessions_.end()) {
       sessions_.erase(id);
+      game_susbsystem_->event_queue_.Push(Event(ep::EventCode::RemovePlayer, id));
     } else {
-      spdlog::error("close session server errror id: {}", id);
+      spdlog::error("Server::CloseSession errror id: {}", id);
     }
-    game_susbsystem_->event_queue_.Push(Event(ep::EventCode::RemovePlayer, id));
   }
 }

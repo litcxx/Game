@@ -42,7 +42,7 @@ namespace ep::net
           else
             spdlog::error("Accept error: {}", ec.what());
 
-          self->SetDisconneting();
+          self->SetDisconnecting();
         } else {
           // Finally connected
           self->SetConnected();
@@ -68,11 +68,10 @@ namespace ep::net
         break;
       case State::Disconnecting:
         socket_->close();
-        SetDisconneted();
+        server_->CloseSession(id_);
+        SetDisconnected();
         break;
       case State::Disconnected:
-        socket_->close();
-        server_->CloseSession(id_);
         break;
       case State::User:
         break;
@@ -99,7 +98,7 @@ namespace ep::net
             spdlog::error("Read header error: {}", ec.what());
 
           // Close session process
-          self->SetDisconneted();
+          self->SetDisconnecting();
           self->ProcessState();
           return;
         }
@@ -139,7 +138,7 @@ namespace ep::net
             spdlog::error("Read body error: {}", ec.what());
 
           // Close session process
-          self->SetDisconneted();
+          self->SetDisconnecting();
           self->ProcessState();
           return;
         }
@@ -194,7 +193,7 @@ namespace ep::net
             spdlog::error("Write error: {}", ec.what());
 
           // Close session process
-          self->SetDisconneted();
+          self->SetDisconnecting();
           self->ProcessState();
           return;
         }

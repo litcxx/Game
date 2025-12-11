@@ -53,8 +53,8 @@ namespace ep::net
     // Session state
     void SetConnecting() const noexcept { return state_.store(State::Connecting, std::memory_order_release); }
     void SetConnected() const noexcept { return state_.store(State::Connected, std::memory_order_release); }
-    void SetDisconneting() const noexcept { return state_.store(State::Disconnecting, std::memory_order_release); }
-    void SetDisconneted() const noexcept { return state_.store(State::Disconnected, std::memory_order_release); }
+    void SetDisconnecting() const noexcept { return state_.store(State::Disconnecting, std::memory_order_release); }
+    void SetDisconnected() const noexcept { return state_.store(State::Disconnected, std::memory_order_release); }
     void SetUser() const noexcept { return state_.store(State::User, std::memory_order_release); }
 
     [[nodiscard]] State GetState() const noexcept { return state_.load(std::memory_order_acquire); }
