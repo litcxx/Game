@@ -4,7 +4,6 @@
 #include <optional>
 
 #include <mariadb/mysql.h>
-#include <spdlog/spdlog.h>
 
 #include "i_connection.hpp"
 
@@ -27,7 +26,6 @@ namespace ep::db
     bool Init();
     bool Connect(const std::string& host, const std::string& user, 
                  const std::string& pswd, const std::string& db_name);
-    bool AddUserSTMT();
 
     const std::string table_name_;
     MYSQL* db_;

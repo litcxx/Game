@@ -13,6 +13,7 @@
 #include "subsystems/network_subsystem.hpp"
 #include "subsystems/game_subsystem.hpp"
 #include "config/config.hpp"
+#include "db/sql_connection.hpp"
 
 int main(int argc, char* argv[])
 {
@@ -26,7 +27,7 @@ int main(int argc, char* argv[])
     return EXIT_FAILURE;
   }
   
-  // TMP set log leve
+  // Set spdlog level
   spdlog::set_level(spdlog::level::debug);
 
   // Initialize config.

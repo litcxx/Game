@@ -14,8 +14,9 @@
   "db": {
     "db_name": "EndlessPeak",
     "users": {
-      "host": "user",
-      "pswd": "user123",
+      "host": "localhost",
+      "user": "user",
+      "password": "user123",
       "table_name": "users"
     }
   }

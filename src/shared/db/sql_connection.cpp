@@ -1,5 +1,7 @@
 #include "sql_connection.hpp"
 
+#include <spdlog/spdlog.h>
+
 namespace ep::db
 {
   SQLConnection::SQLConnection(const std::string& table_name) :

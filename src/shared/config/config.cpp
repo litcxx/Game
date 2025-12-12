@@ -14,6 +14,7 @@ namespace ep
   {
     InitNetConfig(filename);
     InitGameConfig(filename);
+    InitLoginDBConfig(filename);
   }
 
   void Config::InitNetConfig(const std::string& filename)
@@ -84,6 +85,24 @@ namespace ep
         }
         std::cout << "\n";
     }
+  }
+
+  void Config::InitLoginDBConfig(const std::string& filename)
+  {
+    std::ifstream config(filename);
+    nlohmann::json config_data = nlohmann::json::parse(config);
+
+    login_db_config_.db_name_ = config_data["db"]["db_name"];
+    login_db_config_.host_ = config_data["db"]["users"]["host"];
+    login_db_config_.user_ = config_data["db"]["users"]["user"];
+    login_db_config_.password_ = config_data["db"]["users"]["password"];
+    login_db_config_.table_name_ = config_data["db"]["users"]["table_name"];
+
+    spdlog::info("User data base name: {}", login_db_config_.db_name_);
+    spdlog::info("Data base host: {}", login_db_config_.host_);
+    spdlog::info("Data base user: {}", login_db_config_.user_);
+    spdlog::info("Data base passwrod: {}", login_db_config_.password_);
+    spdlog::info("Data base table name: {}", login_db_config_.table_name_);
   }
 
   std::shared_ptr<Config> Config::GetInstance(std::string filename)
