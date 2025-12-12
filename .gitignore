@@ -2,3 +2,4 @@
 /third_party
 /.cache
 *.key
+/Testing/Temporary
