@@ -10,5 +10,13 @@
     "game_threads": 4,
     "map": "map.json",
     "player": "player.json"
+  },
+  "db": {
+    "db_name": "EndlessPeak",
+    "users": {
+      "host": "user",
+      "pswd": "user123",
+      "table_name": "users"
+    }
   }
 }

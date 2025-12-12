@@ -21,6 +21,10 @@ namespace ep
     std::uint16_t player_offset_;
   };
 
+  struct DataBase {
+
+  };
+
   struct GameConfig {
     // Game
     std::uint8_t tick_rate_;
