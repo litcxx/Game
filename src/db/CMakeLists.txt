@@ -10,4 +10,5 @@ target_include_directories(db PRIVATE
   # hardcoded for now
   /usr/include/mariadb
   ${CMAKE_SOURCE_DIR}/third_party
+  ${CMAKE_SOURCE_DIR}/src/db
 )
