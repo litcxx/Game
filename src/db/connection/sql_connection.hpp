@@ -19,6 +19,8 @@ namespace ep::db
 
     static std::optional<SQLConnection> Load(const std::string& host, const std::string& user, 
                                         const std::string& password, const std::string& db_name);
+
+    MYSQL* GetDB() { return db_; }
   private:
     SQLConnection();
 
