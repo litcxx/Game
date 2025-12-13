@@ -13,13 +13,14 @@
 #include "subsystems/network_subsystem.hpp"
 #include "subsystems/game_subsystem.hpp"
 #include "config/config.hpp"
-#include "db/sql_connection.hpp"
+#include "connection/sql_connection.hpp"
 
 int main(int argc, char* argv[])
 {
   // Clear project namespaces for readability.
   using namespace ep::net;
   using namespace ep::game;
+  using namespace ep::db;
 
   // Check command line arguments.
   if (argc != 2) {
@@ -32,6 +33,15 @@ int main(int argc, char* argv[])
 
   // Initialize config.
   auto config = ep::Config::GetInstance(argv[1]);
+
+  // // Load login database
+  // auto login_db = SQLConnection::Load(
+  //   config->login_db_config_.host_,
+  //   config->login_db_config_.user_,
+  //   config->login_db_config_.password_,
+  //   config->login_db_config_.db_name_,
+  //   config->login_db_config_.table_name_
+  // );
 
   // Initialize network subsystem.
   auto net_subsystem = std::make_shared<ep::NetworkSubsystem>();

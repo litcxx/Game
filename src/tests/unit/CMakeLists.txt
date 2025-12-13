@@ -27,7 +27,6 @@ set(SOURCES
   game/world/world_tests.cpp
   game/physics/collision_tests.cpp
   game/physics/swept_math_tests.cpp
-  db/sql_connection_tests.cpp
 )
 
 add_executable(unit_tests 

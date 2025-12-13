@@ -1,7 +1,6 @@
 add_library(shared
   config/config.cpp
   protocol/opcodes.cpp
-  db/sql_connection.cpp
 )
 
 target_include_directories(shared PRIVATE

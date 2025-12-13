@@ -33,13 +33,13 @@ namespace ep::db
 
   
   std::optional<SQLConnection> SQLConnection::Load(const std::string& host, const std::string& user, 
-                                         const std::string& pswd, const std::string& db_name, 
+                                         const std::string& password, const std::string& db_name, 
                                          const std::string& table_name)
   {
     SQLConnection db(table_name);
     if (!db.Init())
       return std::nullopt;
-    if (!db.Connect(host, user, pswd, db_name))
+    if (!db.Connect(host, user, password, db_name))
       return std::nullopt;
 
      return std::optional<SQLConnection>(std::move(db));
@@ -60,10 +60,10 @@ namespace ep::db
 
   
   bool SQLConnection::Connect(const std::string& host, const std::string& user, 
-                         const std::string& pswd, const std::string& db_name)
+                         const std::string& password, const std::string& db_name)
   {
     spdlog::info("Connect to database...");
-    if (mysql_real_connect(db_, host.c_str(), user.c_str(), pswd.c_str(), db_name.c_str(), 0, nullptr, 0) == nullptr) {
+    if (mysql_real_connect(db_, host.c_str(), user.c_str(), password.c_str(), db_name.c_str(), 0, nullptr, 0) == nullptr) {
       spdlog::error("mysql_real_connect error: {}", mysql_error(db_));
       return false;
     }
