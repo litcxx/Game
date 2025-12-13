@@ -18,16 +18,14 @@ namespace ep::db
     SQLConnection& operator=(SQLConnection&& other);
 
     static std::optional<SQLConnection> Load(const std::string& host, const std::string& user, 
-                                        const std::string& password, const std::string& db_name,
-                                        const std::string& table_name);
+                                        const std::string& password, const std::string& db_name);
   private:
-    explicit SQLConnection(const std::string& table_name);
+    SQLConnection();
 
     bool Init();
     bool Connect(const std::string& host, const std::string& user, 
                  const std::string& password, const std::string& db_name);
 
-    const std::string table_name_;
     MYSQL* db_;
   };
 }

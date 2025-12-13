@@ -4,8 +4,7 @@
 
 namespace ep::db
 {
-  SQLConnection::SQLConnection(const std::string& table_name) :
-    table_name_(table_name),
+  SQLConnection::SQLConnection() :
     db_(nullptr)
   {}
 
@@ -31,12 +30,10 @@ namespace ep::db
     return *this;
   }
 
-  
   std::optional<SQLConnection> SQLConnection::Load(const std::string& host, const std::string& user, 
-                                         const std::string& password, const std::string& db_name, 
-                                         const std::string& table_name)
+                                         const std::string& password, const std::string& db_name)
   {
-    SQLConnection db(table_name);
+    SQLConnection db;
     if (!db.Init())
       return std::nullopt;
     if (!db.Connect(host, user, password, db_name))
