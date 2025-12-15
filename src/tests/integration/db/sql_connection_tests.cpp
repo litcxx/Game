@@ -21,18 +21,16 @@ int main(int argc, char** argv)
     config->login_db_config_.host_,
     config->login_db_config_.user_,
     config->login_db_config_.password_,
-    config->login_db_config_.db_name_,
-    config->login_db_config_.table_name_
+    config->login_db_config_.db_name_
   );
 
   if (!db) {
     spdlog::error("Load config error:\n"\
-      "host: {}\nuser: {}\npasswprd: {}\ndatabase name: {}\ntable name: {}\n",
+      "host: {}\nuser: {}\npasswprd: {}\ndatabase name: {}\n",
       config->login_db_config_.host_,
       config->login_db_config_.user_,
       config->login_db_config_.password_,
-      config->login_db_config_.db_name_,
-      config->login_db_config_.table_name_
+      config->login_db_config_.db_name_
     );
     return EXIT_FAILURE;
   }
