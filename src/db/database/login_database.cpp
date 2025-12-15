@@ -1,4 +1,5 @@
 #include "login_database.hpp"
+#include "mariadb_com.h"
 
 #include <cstdint>
 #include <limits>
@@ -36,5 +37,27 @@ namespace ep::db
   void LoginDataBase::PrepareStatements(MYSQL* db)
   {
     PrepareSTMT(connection_->GetDB(), LoginSTMT::AddUser, "INSERT INTO  users (login, password) VALUES (?, ?)");
+  }
+
+  template<>
+  void LoginDataBase::Insert<UserData>(UserData data)
+  {
+    MYSQL_BIND bind[2];
+    std::memset(bind, 0, sizeof(bind));
+
+    bind[0].buffer_type = MYSQL_TYPE_STRING;
+    bind[0].buffer = data.name_;
+    bind[0].buffer_length = strlen(data.name_);
+
+    bind[1].buffer_type = MYSQL_TYPE_STRING;
+    bind[1].buffer = data.password_;
+    bind[1].buffer_length = strlen(data.password_);
+
+    MYSQL_STMT* stmt = stmts_[static_cast<std::uint8_t>(LoginSTMT::AddUser)];
+    if (mysql_stmt_bind_param(stmt, bind))
+      return spdlog::error("mysql_stmt_bind_param:\nname: {}\npassword: {}", data.name_, data.password_);
+
+    if (mysql_stmt_execute(stmt))
+      return spdlog::error("mysql_stmt_execute:\nname: {}\npassword: {}", data.name_, data.password_);
   }
 }
