@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <optional>
 
 #include <mariadb/mysql.h>
 
@@ -26,11 +27,8 @@ namespace ep::db
 
     void PrepareStatements(MYSQL* db);
 
-    template<typename T>
-    void Insert(T data) {}
-
-    template<>
-    void Insert<UserData>(UserData data);
+    void Insert(UserData data);
+  std::optional<UserData> Get(std::string name);
 
   private:
     void PrepareSTMT(MYSQL* db, LoginSTMT code, const std::string& sql);

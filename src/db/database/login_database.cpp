@@ -39,8 +39,7 @@ namespace ep::db
     PrepareSTMT(connection_->GetDB(), LoginSTMT::AddUser, "INSERT INTO  users (login, password) VALUES (?, ?)");
   }
 
-  template<>
-  void LoginDataBase::Insert<UserData>(UserData data)
+  void LoginDataBase::Insert(UserData data)
   {
     MYSQL_BIND bind[2];
     std::memset(bind, 0, sizeof(bind));
@@ -59,5 +58,10 @@ namespace ep::db
 
     if (mysql_stmt_execute(stmt))
       return spdlog::error("mysql_stmt_execute:\nname: {}\npassword: {}", data.name_, data.password_);
+  }
+
+  std::optional<UserData> Get(std::string name)
+  {
+    return std::nullopt;
   }
 }
