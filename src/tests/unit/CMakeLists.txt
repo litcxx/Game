@@ -27,6 +27,7 @@ set(SOURCES
   game/world/world_tests.cpp
   game/physics/collision_tests.cpp
   game/physics/swept_math_tests.cpp
+  cryptography/sha256_tests.cpp
 )
 
 add_executable(unit_tests 
@@ -39,6 +40,7 @@ target_link_libraries(unit_tests PRIVATE
   GTest::gmock
   net
   game
+  crypto
 )
 
 target_include_directories(unit_tests PRIVATE
