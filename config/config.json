@@ -13,11 +13,11 @@
   },
   "db": {
     "db_name": "EndlessPeak",
-    "users": {
-      "host": "localhost",
-      "user": "user",
-      "password": "user123",
-      "table_name": "users"
+    "host": "localhost",
+    "user": "user",
+    "password": "user123",
+    "tables": {
+      "accounts_table": "accounts"
     }
   }
 }
