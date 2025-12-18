@@ -13,6 +13,7 @@ target_link_libraries(server PRIVATE
   net
   game
   shared 
+  db
 )
 
 target_compile_options(server PRIVATE

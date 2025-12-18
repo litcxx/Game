@@ -8,8 +8,10 @@ add_library(game
 
 target_include_directories(game PRIVATE
   ${CMAKE_SOURCE_DIR}/third_party
+)
+
+target_include_directories(game PUBLIC
   ${CMAKE_SOURCE_DIR}/src/game
-  ${CMAKE_SOURCE_DIR}/src/shared
 )
 
 target_link_libraries(game PRIVATE
