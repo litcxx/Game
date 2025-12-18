@@ -3,10 +3,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
-#include <vector>
 
 namespace ep
 {
