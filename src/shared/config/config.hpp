@@ -21,6 +21,14 @@ namespace ep
     std::uint16_t player_offset_;
   };
 
+  struct AccountsDBConfig {
+    std::string db_name_;
+    std::string host_;
+    std::string user_;
+    std::string password_;
+    std::string table_name_;
+  };
+
   struct GameConfig {
     // Game
     std::uint8_t tick_rate_;
@@ -46,10 +54,12 @@ namespace ep
 
     NetConfig net_config_;
     GameConfig game_config_;
+    AccountsDBConfig accounts_db_config_;
 
   private:
     explicit Config(std::string filename);
     void InitNetConfig(const std::string& filename);
     void InitGameConfig(const std::string& filename);
+    void InitAccountsDBConfig(const std::string& filename);
   };
 }

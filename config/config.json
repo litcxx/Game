@@ -10,5 +10,14 @@
     "game_threads": 4,
     "map": "map.json",
     "player": "player.json"
+  },
+  "db": {
+    "db_name": "EndlessPeak",
+    "host": "localhost",
+    "user": "user",
+    "password": "user123",
+    "tables": {
+      "accounts_table": "accounts"
+    }
   }
 }

@@ -3,10 +3,10 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
-#include <vector>
 
 namespace ep
 {
@@ -14,6 +14,7 @@ namespace ep
   {
     InitNetConfig(filename);
     InitGameConfig(filename);
+    InitAccountsDBConfig(filename);
   }
 
   void Config::InitNetConfig(const std::string& filename)
@@ -84,6 +85,24 @@ namespace ep
         }
         std::cout << "\n";
     }
+  }
+
+  void Config::InitAccountsDBConfig(const std::string& filename)
+  {
+    std::ifstream config(filename);
+    nlohmann::json config_data = nlohmann::json::parse(config);
+
+    accounts_db_config_.db_name_ = config_data["db"]["db_name"];
+    accounts_db_config_.host_ = config_data["db"]["host"];
+    accounts_db_config_.user_ = config_data["db"]["user"];
+    accounts_db_config_.password_ = config_data["db"]["password"];
+    accounts_db_config_.table_name_ = config_data["db"]["tables"]["accounts_table"];
+
+    spdlog::info("User data base name: {}", accounts_db_config_.db_name_);
+    spdlog::info("Data base host: {}", accounts_db_config_.host_);
+    spdlog::info("Data base user: {}", accounts_db_config_.user_);
+    spdlog::info("Data base passwrod: {}", accounts_db_config_.password_);
+    spdlog::info("Data base table name: {}", accounts_db_config_.table_name_);
   }
 
   std::shared_ptr<Config> Config::GetInstance(std::string filename)
