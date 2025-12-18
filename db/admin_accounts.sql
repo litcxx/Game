@@ -1,0 +1,9 @@
+CREATE USER IF NOT EXISTS 'user'@'localhost' IDENTIFIED BY 'user123';
+
+CREATE DATABASE IF NOT EXISTS auth_db
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+
+GRANT ALL PRIVILEGES ON EndlessPeak.* TO 'user'@'localhost';
+
+FLUSH PRIVILEGES;
