@@ -21,11 +21,11 @@ namespace ep::net
   public:
     explicit Server(net::io_context& ioc, 
                     ssl::context& ctx, 
-                    tcp::endpoint endpoint, 
-                    std::shared_ptr<ep::NetworkSubsystem> net_susbsystem,
-                    std::shared_ptr<ep::GameSubsystem> game_subsystem);
+                    std::shared_ptr<NetworkSubsystem> net_susbsystem,
+                    std::shared_ptr<GameSubsystem> game_subsystem) noexcept;
     ~Server() = default;
 
+    bool StartListen(tcp::endpoint endpoint) noexcept;
     // Async accept new client.
     void Run();
 
@@ -40,7 +40,7 @@ namespace ep::net
     mutable std::mutex sessions_mutex_;
     std::atomic<std::size_t> new_session_id_;
     std::unordered_map<std::size_t, std::shared_ptr<Session>> sessions_;
-    std::shared_ptr<ep::NetworkSubsystem> net_susbsystem_;
-    std::shared_ptr<ep::GameSubsystem> game_susbsystem_;
+    std::shared_ptr<NetworkSubsystem> net_susbsystem_;
+    std::shared_ptr<GameSubsystem> game_susbsystem_;
   };
 }

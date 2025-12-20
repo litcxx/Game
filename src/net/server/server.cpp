@@ -1,65 +1,63 @@
 #include "server.hpp"
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
 
+#include <spdlog/spdlog.h>
 #include <boost/asio/ssl/context.hpp>
 #include <boost/system/detail/error_code.hpp>
 #include <boost/asio/strand.hpp>
-#include <cstddef>
-#include <cstdint>
-#include <memory>
-#include <spdlog/spdlog.h>
 
-#include "protocol/base_packet.hpp"
-#include "protocol/events.hpp"
-#include "protocol/opcodes.hpp"
 #include "session/session.hpp"
-// #include "socket/wss_socket.hpp"
 #include "socket/ws_socket.hpp"
 
 namespace ep::net
 {
   Server::Server(boost::asio::io_context& ioc, 
                  ssl::context& ctx, 
-                 tcp::endpoint endpoint, 
-                 std::shared_ptr<ep::NetworkSubsystem> net_susbsystem, 
-                 std::shared_ptr<ep::GameSubsystem> game_subsystem) :
+                 std::shared_ptr<NetworkSubsystem> net_susbsystem, 
+                 std::shared_ptr<GameSubsystem> game_subsystem) noexcept :
     ioc_{ioc},
     ctx_{ctx},
     acceptor_{ioc},
     new_session_id_{0},
     net_susbsystem_(net_susbsystem),
     game_susbsystem_(game_subsystem)
-{
+  {}
+
+  bool Server::StartListen(tcp::endpoint endpoint) noexcept
+  {
     boost::system::error_code ec;
 
     // Open the acceptor.
-    acceptor_.open(endpoint.protocol(), ec);
+    ec = acceptor_.open(endpoint.protocol(), ec);
     if (ec) {
       spdlog::error("open: {}", ec.what());
-      return;
+      return false;
     }
 
     // Allow address reuse.
-    acceptor_.set_option(boost::asio::socket_base::reuse_address(true), ec);
+    ec = acceptor_.set_option(boost::asio::socket_base::reuse_address(true), ec);
     if (ec) {
       spdlog::error("set_option: {}", ec.what());
-      return;
+      return false;
     }
 
     // Bind to the server address.
-    acceptor_.bind(endpoint, ec);
+    ec = acceptor_.bind(endpoint, ec);
     if (ec) {
       spdlog::error("bind: {}", ec.what());
-      return;
+      return false;
     }
 
     // Start listening for connections.
-    acceptor_.listen(boost::asio::socket_base::max_listen_connections, ec);
+    ec = acceptor_.listen(boost::asio::socket_base::max_listen_connections, ec);
     if (ec) {
       spdlog::error("listen: {}", ec.what());
-      return;
+      return false;
     }
+
+    return true;
   }
 
   void Server::Run()
@@ -90,7 +88,7 @@ namespace ep::net
       std::lock_guard lock(sessions_mutex_);
       sessions_[session->GetID()] = session;
     }
-    game_susbsystem_->event_queue_.Push(Event(ep::EventCode::AddNewPlayer, session->GetID()));
+    game_susbsystem_->event_queue_.Push(Event(EventCode::AddNewPlayer, session->GetID()));
   }
  
   void Server::Sender()
@@ -134,7 +132,7 @@ namespace ep::net
     std::lock_guard lock(sessions_mutex_);
     if (sessions_.find(id) != sessions_.end()) {
       sessions_.erase(id);
-      game_susbsystem_->event_queue_.Push(Event(ep::EventCode::RemovePlayer, id));
+      game_susbsystem_->event_queue_.Push(Event(EventCode::RemovePlayer, id));
     } else {
       spdlog::error("Server::CloseSession errror id: {}", id);
     }
