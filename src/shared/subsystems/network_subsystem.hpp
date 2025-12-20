@@ -15,6 +15,6 @@ namespace ep
 
     TSQueue<NetPacket> in_queue_;
     TSQueue<NetPacket> out_queue_;
-    TSQueue<Event> event_queue_;
+    // TSQueue<Event> event_queue_;
   };
 }

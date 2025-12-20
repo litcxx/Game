@@ -88,7 +88,10 @@ namespace ep::net
       std::lock_guard lock(sessions_mutex_);
       sessions_[session->GetID()] = session;
     }
-    game_susbsystem_->event_queue_.Push(Event(EventCode::AddNewPlayer, session->GetID()));
+      NetPacket packet;
+      packet.SetHeadOpcode(0x0003);
+      net_susbsystem_->in_queue_.Push(std::move(packet));
+    // game_susbsystem_->event_queue_.Push(Event(EventCode::AddNewPlayer, session->GetID()));
   }
  
   void Server::Sender()
@@ -132,7 +135,10 @@ namespace ep::net
     std::lock_guard lock(sessions_mutex_);
     if (sessions_.find(id) != sessions_.end()) {
       sessions_.erase(id);
-      game_susbsystem_->event_queue_.Push(Event(EventCode::RemovePlayer, id));
+      NetPacket packet;
+      packet.SetHeadOpcode(0x0017);
+      net_susbsystem_->in_queue_.Push(std::move(packet));
+      // game_susbsystem_->event_queue_.Push(Event(EventCode::RemovePlayer, id));
     } else {
       spdlog::error("Server::CloseSession errror id: {}", id);
     }
