@@ -3,17 +3,13 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
-#include <mutex>
 #include <thread>
 
 #include <spdlog/spdlog.h>
-
-#include "config/config.hpp"
-#include "player/i_player.hpp"
-#include "protocol/base_packet.hpp"
-#include "protocol/events.hpp"
-#include "protocol/opcodes.hpp"
 #include "spdlog/common.h"
+
+#include "protocol/base_packet.hpp"
+#include "protocol/opcodes.hpp"
 #include "tile/tile.hpp"
 #include "utils/ts_queue.hpp"
 #include "player/player.hpp"
@@ -67,17 +63,8 @@ namespace ep::game
 
   void World::Tick(double dt)
   {
-    // Double buffering event queue.
-    ep::TSSwap(game_subsystem_->event_queue_, net_subsystem_->event_queue_);
-
     // Double buffering incoming queue.
     ep::TSSwap(game_subsystem_->in_queue_, net_subsystem_->in_queue_);
-
-    // Handle events.
-    while (!game_subsystem_->event_queue_.Empty()) {
-      auto event = game_subsystem_->event_queue_.TryPop();
-      ProcessEvent(*event);
-    }
 
     for (auto item: players_) {
       item.second->SetVel(0.0, item.second->GetVelY());
@@ -100,30 +87,6 @@ namespace ep::game
     }
   }
 
-  void World::ProcessEvent(const Event& event)
-  {
-    switch (event.GetEvent()) {
-      case ep::EventCode::AddNewPlayer: {
-        spdlog::info("game event: AddNewPlayer id: {}", event.GetID());
-        auto player  = std::make_shared<Player>(event.GetID(), 
-                                                config_.player_.player_start_x_ * config_.tile_ + config_.player_.player_offset_, 
-                                                config_.player_.player_start_y_ * config_.tile_ + config_.player_.player_offset_,
-                                                0.0, 0.0,
-                                                config_.player_.width_,
-                                                config_.player_.height_);
-        AddPlayer(player);
-        break;
-      }
-      case ep::EventCode::RemovePlayer: {
-        spdlog::info("game event: remove player");
-        RemovePlayer(event.GetID());
-        break;
-      }
-      default:
-        spdlog::info("game event: unknown event");
-    }
-  }
-
   void World::ProcessInput(ep::NetPacket packet, double dt)
   {
     spdlog::info("(World::ProcessInput)");
@@ -135,6 +98,22 @@ namespace ep::game
     double jump_force = 400.0 * dt;
 
     switch (to_opcode(opcode)) {
+      case Opcodes::CreatePlayer:
+      {
+        spdlog::info("Opcodes::CreatePlayer");
+        auto player  = std::make_shared<Player>(packet.GetID(), 
+                                                config_.player_.player_start_x_ * config_.tile_ + config_.player_.player_offset_, 
+                                                config_.player_.player_start_y_ * config_.tile_ + config_.player_.player_offset_,
+                                                0.0, 0.0,
+                                                config_.player_.width_,
+                                                config_.player_.height_);
+        AddPlayer(player);
+        break;
+      }
+      case Opcodes::RemovePlayer:
+        spdlog::info("Opcodes::RemovePlayer");
+        RemovePlayer(packet.GetID());
+        break;
       case Opcodes::MoveLeft:
         spdlog::info("Opcodes::MoveLeft");
         player->SetVel(-speed, player->GetVelY());
@@ -290,7 +269,7 @@ namespace ep::game
     std::lock_guard lock(players_mutex_);
     // TODO check if this id is exists
     players_.erase(id);
-    ep::NetPacket packet = RmvPlayerPacket(id);
+    ep::NetPacket packet = RemovePlayerPacket(id);
     game_subsystem_->out_queue_.Push(std::move(packet));
   }
 

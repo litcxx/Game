@@ -15,7 +15,7 @@ namespace ep
     Jump                    = 0x0014,
     MovePlayer              = 0x0015,
     AddPlayer               = 0x0016,
-    RmvPlayer               = 0x0017,
+    RemovePlayer               = 0x0017,
   };
 
   constexpr std::uint16_t to_uint16(Opcodes opcode)
@@ -30,6 +30,6 @@ namespace ep
 
   NetPacket CreatePlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height);
   NetPacket AddPlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height);
-  NetPacket RmvPlayerPacket(std::size_t id);
+  NetPacket RemovePlayerPacket(std::size_t id);
   NetPacket MovePlayerPacket(std::size_t id, double x, double y);
 }

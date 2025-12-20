@@ -22,12 +22,12 @@ namespace ep
     return std::move(packet);
   }
 
-  NetPacket RmvPlayerPacket(std::size_t id)
+  NetPacket RemovePlayerPacket(std::size_t id)
   {
     NetPacket packet;
     packet.SetID(id);
     packet.SetPacketType(PacketType::RpcOthers);
-    packet.SetHeadOpcode(to_uint16(Opcodes::RmvPlayer));
+    packet.SetHeadOpcode(to_uint16(Opcodes::RemovePlayer));
     packet << id;
     return std::move(packet);
   }

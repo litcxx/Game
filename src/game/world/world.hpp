@@ -10,7 +10,6 @@
 #include "subsystems/game_subsystem.hpp"
 #include "player/i_player.hpp"
 #include "tile/tile.hpp"
-#include "protocol/events.hpp"
 #include "physics/collision.hpp"
 
 namespace ep::game
@@ -30,7 +29,6 @@ namespace ep::game
     std::size_t PlayerNumbers() const;
   private:
     void Tick(double dt);
-    void ProcessEvent(const Event& event);
     void ProcessInput(ep::NetPacket packet, double dt);
     void Update(IPlayer& player, double dt);
 
