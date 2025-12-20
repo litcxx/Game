@@ -3,8 +3,6 @@
 #include <cstdint>
 #include <cstring>
 
-#include "protocol/base_packet.hpp"
-
 namespace ep
 {
   enum class Opcodes : std::uint16_t {
@@ -15,7 +13,7 @@ namespace ep
     Jump                    = 0x0014,
     MovePlayer              = 0x0015,
     AddPlayer               = 0x0016,
-    RemovePlayer               = 0x0017,
+    RemovePlayer            = 0x0017,
   };
 
   constexpr std::uint16_t to_uint16(Opcodes opcode)
@@ -27,9 +25,4 @@ namespace ep
   {
     return static_cast<Opcodes>(opcode);
   }
-
-  NetPacket CreatePlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height);
-  NetPacket AddPlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height);
-  NetPacket RemovePlayerPacket(std::size_t id);
-  NetPacket MovePlayerPacket(std::size_t id, double x, double y);
 }

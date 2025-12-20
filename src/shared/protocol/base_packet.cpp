@@ -1,7 +1,12 @@
-#include "opcodes.hpp"
+#include "base_packet.hpp"
 
 namespace ep
 {
+  NetPacket::NetPacket(Opcodes opcode, std::size_t id) :
+    head_{swap_endian(to_uint16(opcode)), 0},
+    id_(id)
+  {}
+
   NetPacket CreatePlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height)
   {
     NetPacket packet;
@@ -41,4 +46,5 @@ namespace ep
     packet << id << x << y;
     return std::move(packet);
   }
+
 }
