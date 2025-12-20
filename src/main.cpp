@@ -13,14 +13,12 @@
 #include "subsystems/network_subsystem.hpp"
 #include "subsystems/game_subsystem.hpp"
 #include "config/config.hpp"
-#include "connection/sql_connection.hpp"
 
 int main(int argc, char* argv[])
 {
   // Clear project namespaces for readability.
   using namespace ep::net;
   using namespace ep::game;
-  using namespace ep::db;
 
   // Check command line arguments.
   if (argc != 2) {
@@ -34,35 +32,14 @@ int main(int argc, char* argv[])
   // Initialize config.
   auto config = ep::Config::GetInstance(argv[1]);
 
-  // // Load login database
-  // auto login_db = SQLConnection::Load(
-  //   config->login_db_config_.host_,
-  //   config->login_db_config_.user_,
-  //   config->login_db_config_.password_,
-  //   config->login_db_config_.db_name_,
-  //   config->login_db_config_.table_name_
-  // );
-
-  // Initialize network subsystem.
+  // Initialize subsystems
   auto net_subsystem = std::make_shared<ep::NetworkSubsystem>();
-
-  // Initialize game subsystem.
   auto game_subsystem = std::make_shared<ep::GameSubsystem>();
 
-  // Initialize the world and run game loop.
+  // Initialize the world
   auto world = std::make_shared<World>(net_subsystem, 
                                        game_subsystem,
                                        config->game_config_);
-  // Game main loop.
-  std::jthread game_thread(
-    [&world]
-    {
-      world->GameLoop();
-    }
-  );
-
-  const auto address = net::ip::make_address(config->net_config_.ip_);
-  const auto port = config->net_config_.port_;
   const auto io_threads = std::max<int>(1, config->net_config_.io_threads_);
   const auto net_threads = std::max<int>(1, config->net_config_.net_threads_);
 
@@ -80,14 +57,29 @@ int main(int argc, char* argv[])
   ctx.use_private_key_file("certs/server.key", ssl::context::pem);
   ctx.set_verify_mode(ssl::verify_none);
 
-  // Create and launch a listening port.
+  // Start server
   auto server = std::make_shared<Server>(ioc, 
                                          ctx, 
-                                         tcp::endpoint{address, port},
                                          net_subsystem,
                                          game_subsystem);
-  // Server main loop.
+
+  const auto address = net::ip::make_address(config->net_config_.ip_);
+  const auto port = config->net_config_.port_;
+  if (!server->StartListen(tcp::endpoint{address, port})) {
+    return EXIT_FAILURE;
+  }
+
+  // Run server
   server->Run();
+
+  // Run game
+  std::jthread game_thread(
+    [&world]
+    {
+      world->GameLoop();
+    }
+  );
+
 
   // Server send packets to clients
   std::vector<std::jthread> net_thread_pool;
