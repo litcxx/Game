@@ -89,6 +89,7 @@ namespace ep::net
       sessions_[session->GetID()] = session;
     }
       NetPacket packet;
+      packet.SetID(session->GetID());
       packet.SetHeadOpcode(0x0003);
       net_susbsystem_->in_queue_.Push(std::move(packet));
     // game_susbsystem_->event_queue_.Push(Event(EventCode::AddNewPlayer, session->GetID()));
@@ -136,6 +137,7 @@ namespace ep::net
     if (sessions_.find(id) != sessions_.end()) {
       sessions_.erase(id);
       NetPacket packet;
+      packet.SetID(id);
       packet.SetHeadOpcode(0x0017);
       net_susbsystem_->in_queue_.Push(std::move(packet));
       // game_susbsystem_->event_queue_.Push(Event(EventCode::RemovePlayer, id));
