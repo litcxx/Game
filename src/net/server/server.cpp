@@ -8,6 +8,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <boost/asio/strand.hpp>
 
+#include "protocol/opcodes.hpp"
 #include "session/session.hpp"
 #include "socket/ws_socket.hpp"
 
@@ -88,10 +89,7 @@ namespace ep::net
       std::lock_guard lock(sessions_mutex_);
       sessions_[session->GetID()] = session;
     }
-      NetPacket packet;
-      packet.SetID(session->GetID());
-      packet.SetHeadOpcode(0x0003);
-      net_susbsystem_->in_queue_.Push(std::move(packet));
+    net_susbsystem_->in_queue_.Push(NetPacket(Opcodes::CreatePlayer, session->GetID()));
   }
  
   void Server::Sender()
@@ -135,10 +133,7 @@ namespace ep::net
     std::lock_guard lock(sessions_mutex_);
     if (sessions_.find(id) != sessions_.end()) {
       sessions_.erase(id);
-      NetPacket packet;
-      packet.SetID(id);
-      packet.SetHeadOpcode(0x0017);
-      net_susbsystem_->in_queue_.Push(std::move(packet));
+      net_susbsystem_->in_queue_.Push(NetPacket(Opcodes::RemovePlayer, id));
     } else {
       spdlog::error("Server::CloseSession errror id: {}", id);
     }

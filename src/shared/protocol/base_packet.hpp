@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <algorithm>
 
+#include "opcodes.hpp"
+
 namespace ep
 {
   template<typename T>
@@ -49,6 +51,7 @@ namespace ep
     friend NetPacket& operator>>(NetPacket& packet, T& value);
   public:
     NetPacket() = default;
+    NetPacket(Opcodes opcode, std::size_t id);
     ~NetPacket() = default;
 
     // Get header data.
@@ -128,4 +131,9 @@ namespace ep
 
     return packet;
   }
+
+  NetPacket CreatePlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height);
+  NetPacket AddPlayerPacket(std::size_t id, double x, double y, std::uint8_t width, std::uint8_t height);
+  NetPacket RemovePlayerPacket(std::size_t id);
+  NetPacket MovePlayerPacket(std::size_t id, double x, double y);
 }
