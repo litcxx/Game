@@ -92,7 +92,6 @@ namespace ep::net
       packet.SetID(session->GetID());
       packet.SetHeadOpcode(0x0003);
       net_susbsystem_->in_queue_.Push(std::move(packet));
-    // game_susbsystem_->event_queue_.Push(Event(EventCode::AddNewPlayer, session->GetID()));
   }
  
   void Server::Sender()
@@ -140,7 +139,6 @@ namespace ep::net
       packet.SetID(id);
       packet.SetHeadOpcode(0x0017);
       net_susbsystem_->in_queue_.Push(std::move(packet));
-      // game_susbsystem_->event_queue_.Push(Event(EventCode::RemovePlayer, id));
     } else {
       spdlog::error("Server::CloseSession errror id: {}", id);
     }
