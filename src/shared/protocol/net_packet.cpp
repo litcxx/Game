@@ -1,4 +1,4 @@
-#include "base_packet.hpp"
+#include "net_packet.hpp"
 
 namespace ep
 {

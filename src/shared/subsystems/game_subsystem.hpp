@@ -1,7 +1,7 @@
 #pragma once
 
 #include "utils/ts_queue.hpp"
-#include "protocol/base_packet.hpp"
+#include "protocol/net_packet.hpp"
 
 namespace ep
 {

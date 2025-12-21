@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include "protocol/base_packet.hpp"
+#include "protocol/net_packet.hpp"
 #include "session/packet_handler.hpp"
 
 TEST(PacketHandlerTest, Init)

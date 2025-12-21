@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "protocol/base_packet.hpp"
+#include "protocol/net_packet.hpp"
 
 TEST(NetPacketTest, OperatorInOut)
 {

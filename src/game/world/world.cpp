@@ -8,7 +8,7 @@
 #include <spdlog/spdlog.h>
 #include "spdlog/common.h"
 
-#include "protocol/base_packet.hpp"
+#include "protocol/net_packet.hpp"
 #include "protocol/opcodes.hpp"
 #include "tile/tile.hpp"
 #include "utils/ts_queue.hpp"
@@ -16,8 +16,8 @@
 
 namespace ep::game
 {
-  World::World(std::shared_ptr<ep::NetworkSubsystem> net_subsystem, 
-               std::shared_ptr<ep::GameSubsystem> game_subsystem, 
+  World::World(std::shared_ptr<NetworkSubsystem> net_subsystem, 
+               std::shared_ptr<GameSubsystem> game_subsystem, 
                const GameConfig& config) :
     net_subsystem_(net_subsystem),
     game_subsystem_(game_subsystem),
@@ -64,7 +64,7 @@ namespace ep::game
   void World::Tick(double dt)
   {
     // Double buffering incoming queue.
-    ep::TSSwap(game_subsystem_->in_queue_, net_subsystem_->in_queue_);
+    TSSwap(game_subsystem_->in_queue_, net_subsystem_->in_queue_);
 
     for (auto item: players_) {
       item.second->SetVel(0.0, item.second->GetVelY());
@@ -87,7 +87,7 @@ namespace ep::game
     }
   }
 
-  void World::ProcessInput(ep::NetPacket packet, double dt)
+  void World::ProcessInput(NetPacket packet, double dt)
   {
     spdlog::info("(World::ProcessInput)");
     // TODO check is this player exists
@@ -122,7 +122,7 @@ namespace ep::game
         spdlog::info("Opcodes::MoveRight");
         player->SetVel(speed, player->GetVelY());
         break;
-      case ep::Opcodes::Jump:
+      case Opcodes::Jump:
         spdlog::info("Opcodes::Jump");
         if (player->OnGround()) {
           player->SetVel(player->GetVelX(), -jump_force);
@@ -144,7 +144,7 @@ namespace ep::game
     MovePlayer(player);
     // spdlog::info("vel_y: {}", player.GetVelY());
 
-    ep::NetPacket send_packet = MovePlayerPacket(player.GetID(), player.GetX(), player.GetY());
+    NetPacket send_packet = MovePlayerPacket(player.GetID(), player.GetX(), player.GetY());
     game_subsystem_->out_queue_.Push(std::move(send_packet));
   }
 
@@ -198,9 +198,9 @@ namespace ep::game
     }
   }
 
-  void World::OpcodeMovePlayer(ep::NetPacket& packet, const IPlayer& player)
+  void World::OpcodeMovePlayer(NetPacket& packet, const IPlayer& player)
   {
-    packet.SetHeadOpcode(to_uint16(ep::Opcodes::MovePlayer));
+    packet.SetHeadOpcode(to_uint16(Opcodes::MovePlayer));
     spdlog::info("id: {} x: {} y: {}", player.GetID(), player.GetX(), player.GetY());
     packet << player.GetID() << player.GetX() << player.GetY();
   }
@@ -221,7 +221,7 @@ namespace ep::game
                    player->GetWidth(),
                    player->GetHeight());
       // Create player on client side
-      ep::NetPacket packet0 = CreatePlayerPacket(
+      NetPacket packet0 = CreatePlayerPacket(
         player->GetID(),
         player->GetX(),
         player->GetY(),
@@ -234,9 +234,9 @@ namespace ep::game
       game_subsystem_->out_queue_.Push(std::move(packet0));
 
       // Send all players to new player
-      ep::NetPacket packet1;
+      NetPacket packet1;
       packet1.SetID(player->GetID());
-      packet1.SetPacketType(ep::PacketType::Rpc);
+      packet1.SetPacketType(PacketType::Rpc);
       packet1.SetHeadOpcode(to_uint16(Opcodes::SpawnPlayers));
       packet1 << players_.size() - 1;
       for (const auto& elem : players_) {
@@ -259,7 +259,7 @@ namespace ep::game
     }
     
     // // Notify others
-    ep::NetPacket packet2 = AddPlayerPacket(player->GetID(), player->GetX(), player->GetY(), player->GetWidth(), player->GetHeight());
+    NetPacket packet2 = AddPlayerPacket(player->GetID(), player->GetX(), player->GetY(), player->GetWidth(), player->GetHeight());
     game_subsystem_->out_queue_.Push(std::move(packet2));
   }
 
@@ -269,7 +269,7 @@ namespace ep::game
     std::lock_guard lock(players_mutex_);
     // TODO check if this id is exists
     players_.erase(id);
-    ep::NetPacket packet = RemovePlayerPacket(id);
+    NetPacket packet = RemovePlayerPacket(id);
     game_subsystem_->out_queue_.Push(std::move(packet));
   }
 

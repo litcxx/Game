@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "protocol/base_packet.hpp"
+#include "protocol/net_packet.hpp"
 
 namespace ep::net
 {

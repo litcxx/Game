@@ -9,7 +9,7 @@
 #include <boost/asio/ssl/context.hpp>
 
 #include "aliases/asio_aliases.hpp"
-#include "protocol/base_packet.hpp"
+#include "protocol/net_packet.hpp"
 #include "subsystems/game_subsystem.hpp"
 #include "subsystems/network_subsystem.hpp"
 
