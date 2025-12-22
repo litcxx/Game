@@ -102,12 +102,12 @@ namespace ep::net
     for (;;) {
       auto packet = net_susbsystem_->out_queue_.WaitAndPop();
       // Make flat buffer from packet.
-      auto net_packet = (*packet)->GetNetPacket();
+      auto net_packet = packet->GetNetPacket();
       auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(net_packet.MakeBuffer()));
 
-      switch ((*packet)->GetType()) {
+      switch (packet->GetType()) {
         case PacketType::Rpc:
-          sessions_[(*packet)->GetID()]->PushToSend(buf);
+          sessions_[packet->GetID()]->PushToSend(buf);
           break;
         case PacketType::Broadcast:
           for (const auto& elem: sessions_) {
@@ -116,7 +116,7 @@ namespace ep::net
           break;
         case PacketType::RpcOthers:
           for (const auto& elem: sessions_) {
-            if (elem.first != (*packet)->GetID()) {
+            if (elem.first != packet->GetID()) {
               elem.second->PushToSend(buf);
             }
           }

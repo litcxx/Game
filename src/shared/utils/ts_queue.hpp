@@ -1,14 +1,19 @@
 #pragma once
 
+#include <optional>
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <concepts>
 
 namespace ep
 {
   template<typename T>
+  concept MovableType = std::movable<T>;
+
+  template<MovableType T>
   class TSQueue {
-    template<typename U>
+    template<MovableType U>
     friend void TSSwap(TSQueue<U>& lhs, TSQueue<U>& rhs);
   public:
     TSQueue() = default;
@@ -17,98 +22,67 @@ namespace ep
 
     void Swap(TSQueue<T>& other);
     
-    std::shared_ptr<T> TryPop() noexcept;
-    bool TryPop(T& value);
+    std::optional<T> TryPop();
+    T WaitAndPop();
+    void Push(T value);
 
-    std::shared_ptr<T> WaitAndPop() noexcept;
-    void WaitAndPop(T& value);
-
-    void Push(T new_value);
-    void Push(std::shared_ptr<T> new_value);
     bool Empty() const noexcept;
-    int Size() const noexcept;
+    std::size_t Size() const noexcept;
 
   private:
     mutable std::mutex data_mutex_;
     std::condition_variable data_cond_;
-    std::queue<std::shared_ptr<T>> data_;
+    std::queue<T> data_;
   };
 
-  template<typename U>
+  template<MovableType U>
   void TSSwap(TSQueue<U>& lhs, TSQueue<U>& rhs)
   {
     if (&lhs == &rhs) return;
     std::scoped_lock lock(lhs.data_mutex_, rhs.data_mutex_);
-    std::swap(lhs.data_, rhs.data_);
+    auto tmp = std::move(lhs.data_);
+    lhs.data_ = std::move(rhs.data_);
+    rhs.data_ = std::move(tmp);
   }
 
-  template<typename T>
-  std::shared_ptr<T> TSQueue<T>::TryPop() noexcept
+  template<MovableType T>
+  std::optional<T> TSQueue<T>::TryPop()
   {
     std::lock_guard lock(data_mutex_);
     if (data_.empty())
-      return std::shared_ptr<T>();
-    std::shared_ptr<T> res = std::move(data_.front());
+      return std::nullopt;
+    auto value = std::make_optional<T>(std::move(data_.front()));
+    data_.pop();
+    return value;
+  }
+
+  template<MovableType T>
+  T TSQueue<T>::WaitAndPop()
+  {
+    std::unique_lock lock(data_mutex_);
+    data_cond_.wait(lock, [this]{ return !this->data_.empty(); });
+    auto res = std::move(data_.front());
     data_.pop();
     return res;
   }
 
-  template<typename T>
-  bool TSQueue<T>::TryPop(T& value)
+  template<MovableType T>
+  void TSQueue<T>::Push(T value)
   {
     std::lock_guard lock(data_mutex_);
-    if (data_.empty())
-      return false;
-    value = std::move(*data_.front());
-    data_.pop();
-    return true;
-  }
-
-  template<typename T>
-  std::shared_ptr<T> TSQueue<T>::WaitAndPop() noexcept
-  {
-    std::unique_lock lock(data_mutex_);
-    data_cond_.wait(lock, [this]{ return !this->data_.empty(); });
-    std::shared_ptr<T> res = std::move(data_.front());
-    data_.pop();
-    return res;
-  }
-
-  template<typename T>
-  void TSQueue<T>::WaitAndPop(T& value)
-  {
-    std::unique_lock lock(data_mutex_);
-    data_cond_.wait(lock, [this]{ return !this->data_.empty(); });
-    value = std::move(*data_.front());
-    data_.pop();
-  }
-
-  template<typename T>
-  void TSQueue<T>::Push(T new_value)
-  {
-    std::shared_ptr<T> data = std::make_shared<T>(std::move(new_value));
-    std::lock_guard lock(data_mutex_);
-    data_.push(data);
+    data_.push(std::move(value));
     data_cond_.notify_one();
   }
 
-  template<typename T>
-  void TSQueue<T>::Push(std::shared_ptr<T> new_value)
-  {
-    std::lock_guard lock(data_mutex_);
-    data_.push(new_value);
-    data_cond_.notify_one();
-  }
-
-  template<typename T>
+  template<MovableType T>
   bool TSQueue<T>::Empty() const noexcept
   {
     std::lock_guard lock(data_mutex_);
     return data_.empty();
   }
 
-  template<typename T>
-  int TSQueue<T>::Size() const noexcept
+  template<MovableType T>
+  std::size_t TSQueue<T>::Size() const noexcept
   {
     std::lock_guard lock(data_mutex_);
     return data_.size();
