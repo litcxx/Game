@@ -78,7 +78,8 @@ namespace ep::game
     // Handle player inputs
     while (!game_subsystem_->in_queue_.Empty()) {
       auto packet = game_subsystem_->in_queue_.TryPop();
-      ProcessInput(std::move(*packet), dt);
+      if (packet)
+        ProcessInput(std::move(packet.value()), dt);
     }
 
     // Update physics
@@ -89,7 +90,7 @@ namespace ep::game
     // Push all packets to network queue for broadcast.
     while (!game_subsystem_->out_queue_.Empty()) {
       auto packet = game_subsystem_->out_queue_.TryPop();
-      net_subsystem_->out_queue_.Push(std::move(*packet));
+      net_subsystem_->out_queue_.Push(std::move(packet.value()));
     }
   }
 

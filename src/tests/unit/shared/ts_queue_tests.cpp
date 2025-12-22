@@ -1,5 +1,4 @@
 #include <thread>
-#include <utility>
 
 #include <gtest/gtest.h>
 
@@ -17,9 +16,11 @@ TEST(TSQueueTest, ZeroSize)
   EXPECT_EQ(data.Size(), 0);
 }
 
-TEST(TSQueueTest, PushVal)
+TEST(TSQueueTest, Push)
 {
   ep::TSQueue<int> data;
+  EXPECT_EQ(data.Empty(), true);
+
   std::thread t([&data]{
     data.Push(1);
     data.Push(1);
@@ -31,70 +32,25 @@ TEST(TSQueueTest, PushVal)
   EXPECT_EQ(data.Empty(), false);
 }
 
-TEST(TSQueueTest, PushPtr)
+TEST(TSQueueTest, TryPop)
 {
   ep::TSQueue<int> data;
-  std::thread t([&data]{
-    std::shared_ptr<int> a(new int(1));
-    data.Push(std::move(a));
-  });
-  t.join();
-  
-  EXPECT_EQ(data.Size(), 1);
-  EXPECT_EQ(data.Empty(), false);
+
+  auto value = data.TryPop();
+  EXPECT_EQ(value, std::nullopt);
+
+  data.Push(1);
+  auto value2 = data.TryPop();
+  EXPECT_EQ(value2, 1);
 }
 
-TEST(TSQueueTest, TryPopPtr)
+TEST(TSQueueTest, WaitAndPop)
 {
   ep::TSQueue<int> data;
-  std::shared_ptr<int> value = data.TryPop();
-  EXPECT_EQ(value, std::shared_ptr<int>());
+  data.Push(1);
 
-  std::thread t([&data]{
-    data.Push(1);
-  });
-  t.join();
-  value = data.TryPop();
-  EXPECT_EQ(*value, 1);
-}
-
-TEST(TSQueueTest, TryPopValue)
-{
-  ep::TSQueue<int> data;
-  int value;
-  EXPECT_EQ(data.TryPop(value), false);
-
-  std::thread t([&data]{
-    data.Push(1);
-  });
-  t.join();
-  EXPECT_EQ(data.TryPop(value), true);
+  auto value = data.WaitAndPop();
   EXPECT_EQ(value, 1);
-}
-
-TEST(TSQueueTest, WaitAndPopPtr)
-{
-  ep::TSQueue<int> data;
-  std::thread t([&data]{
-    std::shared_ptr<int> value = data.WaitAndPop();
-    EXPECT_EQ(*value, 1);
-  });
-  data.Push(1);
-  t.join();
-  EXPECT_EQ(data.Size(), 0);
-}
-
-TEST(TSQueueTest, WaitAndPopValue)
-{
-  ep::TSQueue<int> data;
-  std::thread t([&data]{
-    int value;
-    data.WaitAndPop(value);
-    EXPECT_EQ(value, 1);
-  });
-  data.Push(1);
-  t.join();
-  EXPECT_EQ(data.Size(), 0);
 }
 
 TEST(TSQueueTest, Swap)

@@ -180,11 +180,14 @@ namespace ep::net
       return spdlog::info("Return from send operation, previous send is not finished");
 
     auto buf = out_queue_.TryPop();
+    // This check should never pass
+    if (!buf)
+      return spdlog::error("buffer is nullopt:\nfile: {} line: {}", __FILE__, __LINE__);
 
     auto self = shared_from_this();
     socket_->async_write(
-      buf->data(), 
-      buf->size(),
+      (*buf)->data(), 
+      (*buf)->size(),
       [self, buf](const beast::error_code& ec, std::size_t size)
       {
         // an error occured
