@@ -7,6 +7,7 @@
 #include <cstring>
 #include <type_traits>
 #include <algorithm>
+#include <memory>
 
 namespace ep
 {
@@ -61,36 +62,24 @@ namespace ep
     void SetHeadSize(std::uint32_t size) noexcept { head_.size_ = swap_endian(size); }
 
     // Get body data.
-    std::size_t GetBodySize() const noexcept { return body_.size(); }
-    std::uint8_t* GetBodyData() noexcept { return body_.data(); }
+    std::size_t GetBodySize() const noexcept;
+    std::uint8_t* GetBodyData() noexcept;
 
     bool IsValidHeader() const noexcept;
-    void ResizeBody(std::size_t size) { body_.resize(size); }
+    void ResizeBody(std::size_t size);
     std::vector<std::uint8_t> MakeBuffer();
 
   private:
     PacketHead head_{};
-    std::vector<std::uint8_t> body_;
+    std::unique_ptr<std::vector<std::uint8_t>> body_;
   };
-
-  inline bool NetPacket::IsValidHeader() const noexcept
-  { 
-    return swap_endian(head_.opcode_) < packet_info::kMaxOpcode && 
-           swap_endian(head_.size_) < packet_info::kMaxPayloadSize;
-  }
-
-  inline std::vector<std::uint8_t> NetPacket::MakeBuffer()
-  {
-    std::vector<std::uint8_t> res(body_.size() + sizeof(PacketHead));
-    memcpy(res.data(), &head_, sizeof(PacketHead));
-    memcpy(res.data() + sizeof(PacketHead), body_.data(), body_.size());
-    
-    return res;
-  }
 
   template<PodType T>
   NetPacket& operator<<(NetPacket& packet, T value)
   {
+    if (!packet.body_)
+      packet.body_ = std::make_unique<std::vector<std::uint8_t>>();
+
     // Convert from host byte order to network byte order.
     value = swap_endian(value);
 
