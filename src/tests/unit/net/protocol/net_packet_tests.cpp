@@ -2,11 +2,24 @@
 
 #include "protocol/net_packet.hpp"
 
+TEST(NetPacketTest, HeaderGetters)
+{
+  ep::NetPacket packet;
+  EXPECT_EQ(packet.GetHeadOpcode(), 0);
+  EXPECT_EQ(packet.GetHeadSize(), 0);
+  EXPECT_NE(packet.GetHeadData(), nullptr);
+}
+
+TEST(NetPacketTest, BodyGetters)
+{
+  ep::NetPacket packet;
+  EXPECT_EQ(packet.GetBodySize(), 0);
+  EXPECT_EQ(packet.GetBodyData(), nullptr);
+}
+
 TEST(NetPacketTest, OperatorInOut)
 {
   ep::NetPacket packet;
-  EXPECT_EQ(packet.GetHeadSize(), 0);
-  EXPECT_EQ(packet.GetBodySize(), 0);
 
   packet << 3.14 << 0.5f << 521;
   EXPECT_EQ(packet.GetBodySize(), sizeof(double) + sizeof(float) + sizeof(int));
