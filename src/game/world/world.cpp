@@ -3,12 +3,14 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <thread>
 
 #include <spdlog/spdlog.h>
+#include "protocol/server_packet.hpp"
 #include "spdlog/common.h"
 
-#include "protocol/base_packet.hpp"
+#include "protocol/net_packet.hpp"
 #include "protocol/opcodes.hpp"
 #include "tile/tile.hpp"
 #include "utils/ts_queue.hpp"
@@ -16,8 +18,8 @@
 
 namespace ep::game
 {
-  World::World(std::shared_ptr<ep::NetworkSubsystem> net_subsystem, 
-               std::shared_ptr<ep::GameSubsystem> game_subsystem, 
+  World::World(std::shared_ptr<NetworkSubsystem> net_subsystem, 
+               std::shared_ptr<GameSubsystem> game_subsystem, 
                const GameConfig& config) :
     net_subsystem_(net_subsystem),
     game_subsystem_(game_subsystem),
@@ -64,9 +66,12 @@ namespace ep::game
   void World::Tick(double dt)
   {
     // Double buffering incoming queue.
-    ep::TSSwap(game_subsystem_->in_queue_, net_subsystem_->in_queue_);
+    TSSwap(game_subsystem_->in_queue_, net_subsystem_->in_queue_);
 
-    for (auto item: players_) {
+    spdlog::info("queue length: {}", game_subsystem_->in_queue_.Size());
+
+    spdlog::info("number of players: {}", players_.size());
+    for (auto item : players_) {
       item.second->SetVel(0.0, item.second->GetVelY());
     }
 
@@ -77,31 +82,37 @@ namespace ep::game
     }
 
     // Update physics
-    for (auto item: players_)
+    spdlog::info("number of players: {}", players_.size());
+    for (auto item : players_)
       Update(*item.second, dt);
 
     // Push all packets to network queue for broadcast.
     while (!game_subsystem_->out_queue_.Empty()) {
       auto packet = game_subsystem_->out_queue_.TryPop();
-      net_subsystem_->out_queue_.Push(std::move(packet));
+      net_subsystem_->out_queue_.Push(std::move(*packet));
     }
   }
 
-  void World::ProcessInput(ep::NetPacket packet, double dt)
+  void World::ProcessInput(std::unique_ptr<ServerPacket> packet, double dt)
   {
     spdlog::info("(World::ProcessInput)");
     // TODO check is this player exists
-    auto player = players_[packet.GetID()];
-    std::uint16_t opcode = packet.GetHeadOpcode();
+    auto player = players_[packet->GetID()];
+    if (!player)
+      spdlog::info("player not found id: {}\nfile: {} line: {}", packet->GetID(), __FILE__, __LINE__);
+    auto net_packet = packet->GetNetPacket();
+    std::uint16_t opcode = net_packet.GetHeadOpcode();
 
     double speed = 100.0 * dt;
     double jump_force = 400.0 * dt;
+
+    spdlog::info("Process packet:\nid: {}\nopcode:{}", packet->GetID(), net_packet.GetHeadOpcode());
 
     switch (to_opcode(opcode)) {
       case Opcodes::CreatePlayer:
       {
         spdlog::info("Opcodes::CreatePlayer");
-        auto player  = std::make_shared<Player>(packet.GetID(), 
+        auto player  = std::make_shared<Player>(packet->GetID(), 
                                                 config_.player_.player_start_x_ * config_.tile_ + config_.player_.player_offset_, 
                                                 config_.player_.player_start_y_ * config_.tile_ + config_.player_.player_offset_,
                                                 0.0, 0.0,
@@ -112,7 +123,7 @@ namespace ep::game
       }
       case Opcodes::RemovePlayer:
         spdlog::info("Opcodes::RemovePlayer");
-        RemovePlayer(packet.GetID());
+        RemovePlayer(packet->GetID());
         break;
       case Opcodes::MoveLeft:
         spdlog::info("Opcodes::MoveLeft");
@@ -122,7 +133,7 @@ namespace ep::game
         spdlog::info("Opcodes::MoveRight");
         player->SetVel(speed, player->GetVelY());
         break;
-      case ep::Opcodes::Jump:
+      case Opcodes::Jump:
         spdlog::info("Opcodes::Jump");
         if (player->OnGround()) {
           player->SetVel(player->GetVelX(), -jump_force);
@@ -137,26 +148,27 @@ namespace ep::game
 
   void World::Update(IPlayer& player, double dt)
   {
-    // spdlog::info("(World::Update)");
+    spdlog::info("(World::Update)");
     const double g = 9.8;
     double vel_y = player.GetVelY() + g * dt;
     player.SetVel(player.GetVelX(), vel_y);
     MovePlayer(player);
     // spdlog::info("vel_y: {}", player.GetVelY());
 
-    ep::NetPacket send_packet = MovePlayerPacket(player.GetID(), player.GetX(), player.GetY());
-    game_subsystem_->out_queue_.Push(std::move(send_packet));
+    spdlog::info("make move packet");
+    auto move_packet = std::make_unique<ServerPacket>(MovePlayerPacket(player.GetID(), player.GetX(), player.GetY()), player.GetID());
+    game_subsystem_->out_queue_.Push(std::move(move_packet));
   }
 
   void World::MovePlayer(IPlayer& player)
   {
-    // spdlog::info("(World::MovePlayer)");
+    spdlog::info("(World::MovePlayer)");
     double vel_x = player.GetVelX();
     double vel_y = player.GetVelY();
 
     /* ------ X Axis ------*/
     if (vel_x != 0 ) {
-      // spdlog::info("============== X AXIS ==============");
+      spdlog::info("============== X AXIS ==============");
       // calculate collision along x axis
       SweptData swept = collision_.SweptAxis(player, 
                                              config_.tile_, config_.grid_x_, config_.grid_y_,
@@ -170,12 +182,12 @@ namespace ep::game
       // spdlog::info("HIT SIDE WALL\n"\
       //              "x: {} y: {}", player.GetX(), player.GetY());
       }
-      // spdlog::info("============== X AXIS ==============");
+      spdlog::info("============== X AXIS ==============");
     }
 
     /* ------ Y Axis ------*/
     if (vel_y != 0 ) {
-      // spdlog::info("============== Y AXIS ==============");
+      spdlog::info("============== Y AXIS ==============");
       // calculate collision along y axis
       SweptData swept = collision_.SweptAxis(player, 
                                              config_.tile_, config_.grid_x_, config_.grid_y_,
@@ -194,15 +206,8 @@ namespace ep::game
         }
         player.SetVel(vel_x, 0.0);
       }
-      // spdlog::info("============== Y AXIS ==============");
+      spdlog::info("============== Y AXIS ==============");
     }
-  }
-
-  void World::OpcodeMovePlayer(ep::NetPacket& packet, const IPlayer& player)
-  {
-    packet.SetHeadOpcode(to_uint16(ep::Opcodes::MovePlayer));
-    spdlog::info("id: {} x: {} y: {}", player.GetID(), player.GetX(), player.GetY());
-    packet << player.GetID() << player.GetX() << player.GetY();
   }
 
   void World::AddPlayer(std::shared_ptr<IPlayer> player)
@@ -221,46 +226,50 @@ namespace ep::game
                    player->GetWidth(),
                    player->GetHeight());
       // Create player on client side
-      ep::NetPacket packet0 = CreatePlayerPacket(
+      auto create_packet = std::make_unique<ServerPacket>(CreatePlayerPacket(
         player->GetID(),
         player->GetX(),
         player->GetY(),
         player->GetWidth(),
         player->GetHeight()
-      );
+      ), player->GetID(), PacketType::Rpc);
 
       // spdlog::info("packet body size: {}", packet0.GetBodySize());
       // TODO make it instance send
-      game_subsystem_->out_queue_.Push(std::move(packet0));
+      game_subsystem_->out_queue_.Push(std::move(create_packet));
 
       // Send all players to new player
-      ep::NetPacket packet1;
-      packet1.SetID(player->GetID());
-      packet1.SetPacketType(ep::PacketType::Rpc);
-      packet1.SetHeadOpcode(to_uint16(Opcodes::SpawnPlayers));
-      packet1 << players_.size() - 1;
+      NetPacket spawn_packet;
+      spawn_packet.SetHeadOpcode(to_uint16(Opcodes::SpawnPlayers));
+      spawn_packet << players_.size() - 1;
       for (const auto& elem : players_) {
         if (elem.first != player->GetID()) {
-          spdlog::info("make packet1 id: {} x: {} y: {} width: {} height: {}", 
+          spdlog::info("make spawn_packet id: {} x: {} y: {} width: {} height: {}", 
                        elem.second->GetID(), 
                        elem.second->GetX(), 
                        elem.second->GetY(),
                        elem.second->GetWidth(),
                        elem.second->GetHeight());
 
-          packet1 << elem.second->GetID() 
+          spawn_packet << elem.second->GetID() 
                   << elem.second->GetX() 
                   << elem.second->GetY()
                   << elem.second->GetWidth()
                   << elem.second->GetHeight();
         }
       }
-      game_subsystem_->out_queue_.Push(std::move(packet1));
+      game_subsystem_->out_queue_.Push(std::make_unique<ServerPacket>(std::move(spawn_packet), player->GetID(), PacketType::Rpc));
     }
     
     // // Notify others
-    ep::NetPacket packet2 = AddPlayerPacket(player->GetID(), player->GetX(), player->GetY(), player->GetWidth(), player->GetHeight());
-    game_subsystem_->out_queue_.Push(std::move(packet2));
+    auto add_packet = std::make_unique<ServerPacket>(AddPlayerPacket(
+      player->GetID(), 
+      player->GetX(), 
+      player->GetY(), 
+      player->GetWidth(), 
+      player->GetHeight()
+    ), player->GetID(), PacketType::RpcOthers);
+    game_subsystem_->out_queue_.Push(std::move(add_packet));
   }
 
   void World::RemovePlayer(std::size_t id)
@@ -269,8 +278,8 @@ namespace ep::game
     std::lock_guard lock(players_mutex_);
     // TODO check if this id is exists
     players_.erase(id);
-    ep::NetPacket packet = RemovePlayerPacket(id);
-    game_subsystem_->out_queue_.Push(std::move(packet));
+    auto remove_packet = std::make_unique<ServerPacket>(RemovePlayerPacket(id), id);
+    game_subsystem_->out_queue_.Push(std::move(remove_packet));
   }
 
   std::size_t World::PlayerNumbers() const

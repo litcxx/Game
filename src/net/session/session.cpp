@@ -11,6 +11,7 @@
 #include <boost/beast/websocket/error.hpp>
 #include <spdlog/spdlog.h>
 
+#include "protocol/server_packet.hpp"
 #include "server/server.hpp"
 #include "aliases/beast_aliases.hpp"
 
@@ -112,7 +113,8 @@ namespace ep::net
           return self->ReadPacketBody();
 
         // Packet does not contain payload data, push to handler
-        self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
+        auto packet = std::make_unique<ServerPacket>(self->packet_handler_.ExtractPacket(), self->id_);
+        self->server_->PushPacket(std::move(packet));
 
         // Continue reading next packet
         self->ReadPacketHead();
@@ -148,7 +150,8 @@ namespace ep::net
           return self->ReadPacketBody();
 
         // All payload data has been received, push to handler
-        self->server_->PushPacket(std::move(self->packet_handler_.ExtractPacket()), self->id_);
+        auto packet = std::make_unique<ServerPacket>(self->packet_handler_.ExtractPacket(), self->id_);
+        self->server_->PushPacket(std::move(packet));
 
         // Continue reading next packet
         self->ReadPacketHead();

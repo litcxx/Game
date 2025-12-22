@@ -1,6 +1,6 @@
 add_library(shared
   config/config.cpp
-  protocol/base_packet.cpp
+  protocol/net_packet.cpp
 )
 
 target_include_directories(shared PRIVATE
