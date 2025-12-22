@@ -1,13 +1,12 @@
 #pragma once
 
+#include "protocol/opcodes.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <vector>
 #include <cstring>
 #include <type_traits>
 #include <algorithm>
-
-#include "opcodes.hpp"
 
 namespace ep
 {
@@ -21,15 +20,9 @@ namespace ep
   
   namespace packet_info
   {
-    inline constexpr std::uint16_t kMaxOpcode = 0x0FFF;
-    inline constexpr std::uint32_t kMaxPayloadSize = 128;
+    constexpr std::uint16_t kMaxOpcode = 0x0FFF;
+    constexpr std::uint32_t kMaxPayloadSize = 128;
   }
-
-  enum class PacketType : uint8_t {
-    Broadcast,
-    Rpc,
-    RpcOthers,
-  };
 
   template<typename T>
   concept PodType = std::is_standard_layout_v<T>;
@@ -51,7 +44,11 @@ namespace ep
     friend NetPacket& operator>>(NetPacket& packet, T& value);
   public:
     NetPacket() = default;
-    NetPacket(Opcodes opcode, std::size_t id);
+    explicit NetPacket(Opcodes opcode);
+    NetPacket(const NetPacket&) = delete;
+    NetPacket& operator=(const NetPacket&) = delete;
+    NetPacket(NetPacket&& other);
+    NetPacket& operator=(NetPacket&& other);
     ~NetPacket() = default;
 
     // Get header data.
@@ -67,19 +64,12 @@ namespace ep
     std::size_t GetBodySize() const noexcept { return body_.size(); }
     std::uint8_t* GetBodyData() noexcept { return body_.data(); }
 
-    std::size_t GetID() const noexcept { return id_; }
-    void SetID(std::size_t id) noexcept { id_ = id; }
-
     bool IsValidHeader() const noexcept;
     void ResizeBody(std::size_t size) { body_.resize(size); }
     std::vector<std::uint8_t> MakeBuffer();
-    void SetPacketType(PacketType type) noexcept { type_ = type; }
-    PacketType GetPacketType() const noexcept { return type_; }
 
   private:
     PacketHead head_{};
-    std::size_t id_{};
-    enum PacketType type_{PacketType::Broadcast};
     std::vector<std::uint8_t> body_;
   };
 

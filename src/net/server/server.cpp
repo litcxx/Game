@@ -9,6 +9,7 @@
 #include <boost/asio/strand.hpp>
 
 #include "protocol/opcodes.hpp"
+#include "protocol/server_packet.hpp"
 #include "session/session.hpp"
 #include "socket/ws_socket.hpp"
 
@@ -89,7 +90,10 @@ namespace ep::net
       std::lock_guard lock(sessions_mutex_);
       sessions_[session->GetID()] = session;
     }
-    net_susbsystem_->in_queue_.Push(NetPacket(Opcodes::CreatePlayer, session->GetID()));
+    // net_susbsystem_->in_queue_.Push(NetPacket(Opcodes::CreatePlayer, session->GetID()));
+    spdlog::info("Push Opcodes::CreatePlayer\nfile: {} line: {}", __FILE__, __LINE__);
+    auto packet = std::make_unique<ServerPacket>(NetPacket(Opcodes::CreatePlayer), session->GetID());
+    net_susbsystem_->in_queue_.Push(std::move(packet));
   }
  
   void Server::Sender()
@@ -98,11 +102,12 @@ namespace ep::net
     for (;;) {
       auto packet = net_susbsystem_->out_queue_.WaitAndPop();
       // Make flat buffer from packet.
-      auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(packet->MakeBuffer()));
+      auto net_packet = (*packet)->GetNetPacket();
+      auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(net_packet.MakeBuffer()));
 
-      switch (packet->GetPacketType()) {
+      switch ((*packet)->GetType()) {
         case PacketType::Rpc:
-          sessions_[packet->GetID()]->PushToSend(buf);
+          sessions_[(*packet)->GetID()]->PushToSend(buf);
           break;
         case PacketType::Broadcast:
           for (const auto& elem: sessions_) {
@@ -111,7 +116,7 @@ namespace ep::net
           break;
         case PacketType::RpcOthers:
           for (const auto& elem: sessions_) {
-            if (elem.first != packet->GetID()) {
+            if (elem.first != (*packet)->GetID()) {
               elem.second->PushToSend(buf);
             }
           }
@@ -122,9 +127,8 @@ namespace ep::net
     }
   }
 
-  void Server::PushPacket(NetPacket packet, std::size_t id)
+  void Server::PushPacket(std::unique_ptr<ServerPacket> packet) noexcept
   {
-    packet.SetID(id);
     net_susbsystem_->in_queue_.Push(std::move(packet));
   }
 
@@ -133,7 +137,9 @@ namespace ep::net
     std::lock_guard lock(sessions_mutex_);
     if (sessions_.find(id) != sessions_.end()) {
       sessions_.erase(id);
-      net_susbsystem_->in_queue_.Push(NetPacket(Opcodes::RemovePlayer, id));
+      spdlog::info("Push Opcodes::RemovePlayer\nfile: {} line: {}", __FILE__, __LINE__);
+      auto packet = std::make_unique<ServerPacket>(NetPacket(Opcodes::RemovePlayer), id);
+      net_susbsystem_->in_queue_.Push(std::move(packet));
     } else {
       spdlog::error("Server::CloseSession errror id: {}", id);
     }

@@ -9,7 +9,7 @@
 #include <boost/asio/ssl/context.hpp>
 
 #include "aliases/asio_aliases.hpp"
-#include "protocol/net_packet.hpp"
+#include "protocol/server_packet.hpp"
 #include "subsystems/game_subsystem.hpp"
 #include "subsystems/network_subsystem.hpp"
 
@@ -29,7 +29,7 @@ namespace ep::net
     // Async accept new client.
     void Run();
 
-    void PushPacket(NetPacket packet, std::size_t id);
+    void PushPacket(std::unique_ptr<ServerPacket> packet) noexcept;
     void AddSession(std::shared_ptr<Session> session) noexcept;
     void CloseSession(std::size_t id);
     void Sender();

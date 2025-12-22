@@ -72,6 +72,6 @@ namespace ep::net
     mutable std::atomic_flag sending_;
     mutable std::atomic<State> state_;  
     PacketHandler packet_handler_;
-    ep::TSQueue<std::vector<uint8_t>> out_queue_;
+    TSQueue<std::vector<uint8_t>> out_queue_;
   };
 }
