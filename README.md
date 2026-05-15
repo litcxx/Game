@@ -1,4 +1,4 @@
-# EndlessPeak
+# WebSocket Game Server
 A simple server for 2D games using WebSocket
 
 ## Features
