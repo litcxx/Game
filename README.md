@@ -34,7 +34,7 @@ cmake --build build -j4
 ```
 
 ## Simple visualisation client
-- git@github.com:kenka1/EndlessPeakClient.git
+- https://github.com/kenka1/EndlessPeakClient.git
 
 ## License
 This project is licensed under the MIT License.
