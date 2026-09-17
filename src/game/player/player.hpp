@@ -2,7 +2,7 @@
 
 #include "i_player.hpp"
 
-namespace ep::game {
+namespace lit::game {
 class Player : public IPlayer {
   public:
     explicit Player(std::size_t id, double x, double y, double vel_x, double vel_y,
@@ -38,4 +38,4 @@ class Player : public IPlayer {
     std::uint8_t height_;
     bool on_ground_;
 };
-}  // namespace ep::game
+}  // namespace lit::game

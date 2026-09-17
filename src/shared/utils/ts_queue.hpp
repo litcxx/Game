@@ -6,7 +6,7 @@
 #include <optional>
 #include <queue>
 
-namespace ep {
+namespace lit {
 template <typename T>
 concept MovableType = std::movable<T>;
 
@@ -80,4 +80,4 @@ std::size_t TSQueue<T>::size() const noexcept {
     std::lock_guard lock(data_mutex_);
     return data_.size();
 }
-}  // namespace ep
+}  // namespace lit

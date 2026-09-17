@@ -12,14 +12,14 @@ static constexpr std::uint8_t kTickRate = 60;
 
 // TEST(WorldTests, AddPlayers)
 // {
-//   auto net_subsystem = std::make_shared<ep::net::NetworkSubsystem>();
-//   auto game_subsystem = std::make_shared<ep::game::GameSubsystem>();
-//   ep::game::World world(net_subsystem, game_subsystem, tick_rate);
+//   auto net_subsystem = std::make_shared<lit::net::NetworkSubsystem>();
+//   auto game_subsystem = std::make_shared<lit::game::GameSubsystem>();
+//   lit::game::World world(net_subsystem, game_subsystem, tick_rate);
 //
 //   EXPECT_EQ(world.PlayerNumbers(), 0);
 //
 //   for (auto i = 0; i < 5; i++) {
-//     auto player = std::make_shared<ep::tests::MockPlayer>();
+//     auto player = std::make_shared<lit::tests::MockPlayer>();
 //
 //     EXPECT_CALL(*player, GetID())
 //       .Times(1)
@@ -33,14 +33,14 @@ static constexpr std::uint8_t kTickRate = 60;
 //
 // TEST(WorldTests, RemovePlayers)
 // {
-//   auto net_subsystem = std::make_shared<ep::net::NetworkSubsystem>();
-//   auto game_subsystem = std::make_shared<ep::game::GameSubsystem>();
-//   ep::game::World world(net_subsystem, game_subsystem, tick_rate);
+//   auto net_subsystem = std::make_shared<lit::net::NetworkSubsystem>();
+//   auto game_subsystem = std::make_shared<lit::game::GameSubsystem>();
+//   lit::game::World world(net_subsystem, game_subsystem, tick_rate);
 //
 //   EXPECT_EQ(world.PlayerNumbers(), 0);
 //
 //   for (auto i = 0; i < 5; i++) {
-//     auto player = std::make_shared<ep::tests::MockPlayer>();
+//     auto player = std::make_shared<lit::tests::MockPlayer>();
 //
 //     EXPECT_CALL(*player, GetID())
 //       .Times(1)

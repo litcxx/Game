@@ -2,7 +2,7 @@
 
 #include "tile/i_box.hpp"
 
-namespace ep::game {
+namespace lit::game {
 class IPlayer : public IBox {
   public:
     virtual ~IPlayer() = default;
@@ -15,4 +15,4 @@ class IPlayer : public IBox {
     virtual bool on_ground() const noexcept = 0;
     virtual void set_on_ground(bool state) noexcept = 0;
 };
-}  // namespace ep::game
+}  // namespace lit::game

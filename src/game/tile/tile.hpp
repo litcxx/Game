@@ -2,7 +2,7 @@
 
 #include "tile/i_box.hpp"
 
-namespace ep::game {
+namespace lit::game {
 enum class TileType : std::uint16_t {
     Empty,
     Solid,
@@ -29,4 +29,4 @@ class Tile : public IBox {
     TileType type_;
 };
 
-}  // namespace ep::game
+}  // namespace lit::game

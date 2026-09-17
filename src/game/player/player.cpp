@@ -1,6 +1,6 @@
 #include "player.hpp"
 
-namespace ep::game {
+namespace lit::game {
 Player::Player(std::size_t id, double x, double y, double vel_x, double vel_y, std::uint8_t width,
                std::uint8_t height)
     : id_(id),
@@ -16,4 +16,4 @@ void Player::move(double dx, double dy) {
     x_ += dx;
     y_ += dy;
 }
-}  // namespace ep::game
+}  // namespace lit::game

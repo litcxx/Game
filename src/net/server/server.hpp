@@ -12,7 +12,7 @@
 #include "subsystems/game_subsystem.hpp"
 #include "subsystems/network_subsystem.hpp"
 
-namespace ep::net {
+namespace lit::net {
 class Session;
 
 class Server : public std::enable_shared_from_this<Server> {
@@ -41,4 +41,4 @@ class Server : public std::enable_shared_from_this<Server> {
     std::shared_ptr<NetworkSubsystem> net_susbsystem_;
     std::shared_ptr<GameSubsystem> game_susbsystem_;
 };
-}  // namespace ep::net
+}  // namespace lit::net

@@ -16,7 +16,7 @@
 #include "tile/tile.hpp"
 #include "utils/ts_queue.hpp"
 
-namespace ep::game {
+namespace lit::game {
 World::World(std::shared_ptr<NetworkSubsystem> net_subsystem,
              std::shared_ptr<GameSubsystem> game_subsystem, const GameConfig& config)
     : net_subsystem_(net_subsystem), game_subsystem_(game_subsystem), config_(config) {
@@ -257,4 +257,4 @@ std::size_t World::player_numbers() const {
     std::lock_guard lock(players_mutex_);
     return players_.size();
 }
-}  // namespace ep::game
+}  // namespace lit::game

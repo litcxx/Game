@@ -2,7 +2,7 @@
 
 #include <spdlog/spdlog.h>
 
-namespace ep::db {
+namespace lit::db {
 SQLConnection::SQLConnection() : db_(nullptr) {}
 
 SQLConnection::~SQLConnection() {
@@ -50,4 +50,4 @@ bool SQLConnection::connect(const std::string& host, const std::string& user,
     spdlog::info("Sucess");
     return true;
 }
-}  // namespace ep::db
+}  // namespace lit::db

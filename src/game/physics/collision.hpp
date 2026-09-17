@@ -7,7 +7,7 @@
 #include "tile/i_box.hpp"
 #include "tile/tile.hpp"
 
-namespace ep::game {
+namespace lit::game {
 class Collision {
   public:
     // Calculate sweptAABB collsion along one axis
@@ -21,4 +21,4 @@ class Collision {
                                                  std::uint16_t grid_x, std::uint8_t grid_y,
                                                  double vel_x, double vel_y);
 };
-}  // namespace ep::game
+}  // namespace lit::game

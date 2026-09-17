@@ -7,7 +7,7 @@
 
 #include "i_connection.hpp"
 
-namespace ep::db {
+namespace lit::db {
 class SQLConnection : public IConnection {
   public:
     ~SQLConnection();
@@ -31,4 +31,4 @@ class SQLConnection : public IConnection {
 
     MYSQL* db_;
 };
-}  // namespace ep::db
+}  // namespace lit::db

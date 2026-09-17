@@ -1,6 +1,6 @@
 #pragma once
 
-namespace ep::net {
+namespace lit::net {
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
-}  // namespace ep::net
+}  // namespace lit::net

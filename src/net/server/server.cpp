@@ -13,7 +13,7 @@
 #include "session/session.hpp"
 #include "socket/ws_socket.hpp"
 
-namespace ep::net {
+namespace lit::net {
 Server::Server(boost::asio::io_context& ioc, ssl::context& ctx,
                std::shared_ptr<NetworkSubsystem> net_susbsystem,
                std::shared_ptr<GameSubsystem> game_subsystem) noexcept
@@ -133,4 +133,4 @@ void Server::close_session(std::size_t id) {
         spdlog::error("Server::CloseSession errror id: {}", id);
     }
 }
-}  // namespace ep::net
+}  // namespace lit::net

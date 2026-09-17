@@ -13,10 +13,10 @@ int main(int argc, char** argv) {
     }
 
     // Load config
-    auto config = ep::Config::get_instance(argv[1]);
+    auto config = lit::Config::get_instance(argv[1]);
 
     // Load sql_connection
-    auto con = ep::db::SQLConnection::load(
+    auto con = lit::db::SQLConnection::load(
         config->accounts_db_config.host, config->accounts_db_config.user,
         config->accounts_db_config.password, config->accounts_db_config.db_name);
 

@@ -9,7 +9,7 @@
 #include "socket/i_socket.hpp"
 #include "utils/ts_queue.hpp"
 
-namespace ep::net {
+namespace lit::net {
 class Server;
 
 class Session : public std::enable_shared_from_this<Session> {
@@ -86,4 +86,4 @@ class Session : public std::enable_shared_from_this<Session> {
     PacketHandler packet_handler_;
     TSQueue<SendBuffer> out_queue_;
 };
-}  // namespace ep::net
+}  // namespace lit::net

@@ -7,7 +7,7 @@
 #include <string>
 #include <system_error>
 
-namespace ep::net {
+namespace lit::net {
 class ISocket {
   public:
     using ReadHandler = std::function<void(const std::error_code& ec, std::size_t size)>;
@@ -22,4 +22,4 @@ class ISocket {
     virtual std::string string_address() = 0;
     virtual void close() = 0;
 };
-}  // namespace ep::net
+}  // namespace lit::net

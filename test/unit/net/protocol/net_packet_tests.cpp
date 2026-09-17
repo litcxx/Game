@@ -3,20 +3,20 @@
 #include "protocol/net_packet.hpp"
 
 TEST(NetPacketTest, HeaderGetters) {
-    ep::NetPacket packet;
+    lit::NetPacket packet;
     EXPECT_EQ(packet.get_head_opcode(), 0);
     EXPECT_EQ(packet.get_head_size(), 0);
     EXPECT_NE(packet.get_head_data(), nullptr);
 }
 
 TEST(NetPacketTest, BodyGetters) {
-    ep::NetPacket packet;
+    lit::NetPacket packet;
     EXPECT_EQ(packet.get_body_size(), 0);
     EXPECT_EQ(packet.get_body_data(), nullptr);
 }
 
 TEST(NetPacketTest, OperatorInOut) {
-    ep::NetPacket packet;
+    lit::NetPacket packet;
 
     packet << 3.14 << 0.5f << 521;
     EXPECT_EQ(packet.get_body_size(), sizeof(double) + sizeof(float) + sizeof(int));

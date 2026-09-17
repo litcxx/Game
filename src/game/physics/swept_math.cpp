@@ -4,7 +4,7 @@
 
 #include <limits>
 
-namespace ep::game {
+namespace lit::game {
 SweptData swept_aabb(const IBox& box1, const IBox& box2, double vel_x, double vel_y) noexcept {
     // spdlog::info("(Collision::SweptAABB)");
     if (vel_x == 0 && vel_y == 0) return {1.0, 0, 0, false};
@@ -112,4 +112,4 @@ SweptData swept_aabb(const IBox& box1, const IBox& box2, double vel_x, double ve
 
     return {entry_time, normal_x, normal_y, true};
 }
-}  // namespace ep::game
+}  // namespace lit::game

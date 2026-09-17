@@ -10,7 +10,7 @@
 
 #include "protocol/opcodes.hpp"
 
-namespace ep {
+namespace lit {
 template <typename T>
 static T swap_endian(T value) {
     std::uint8_t* ptr = reinterpret_cast<std::uint8_t*>(&value);
@@ -113,4 +113,4 @@ NetPacket add_player_packet(std::size_t id, double x, double y, std::uint8_t wid
                             std::uint8_t height);
 NetPacket remove_player_packet(std::size_t id);
 NetPacket move_player_packet(std::size_t id, double x, double y);
-}  // namespace ep
+}  // namespace lit

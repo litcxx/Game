@@ -2,7 +2,7 @@
 
 #include "net_packet.hpp"
 
-namespace ep {
+namespace lit {
 enum class PacketType : uint8_t {
     Broadcast,
     Rpc,
@@ -26,4 +26,4 @@ class ServerPacket {
     std::size_t id_;
     PacketType type_;
 };
-}  // namespace ep
+}  // namespace lit

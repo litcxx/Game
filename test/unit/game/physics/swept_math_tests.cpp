@@ -4,7 +4,7 @@
 #include "game/tile/mock_box.hpp"
 #include "physics/swept_math.hpp"
 
-namespace ep::tests {
+namespace lit::tests {
 class BoxesData {
   public:
     BoxesData(int x1, int y1, int x2, int y2, int tile, double vel_x, double vel_y)
@@ -87,4 +87,4 @@ TEST(SweptMathTests, SweptAABBCollisionVelYBottom) {
     EXPECT_EQ(res.hit, true);
 }
 
-}  // namespace ep::tests
+}  // namespace lit::tests
