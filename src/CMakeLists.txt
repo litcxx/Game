@@ -1,27 +1,15 @@
-add_executable(server 
+add_executable(server
   main.cpp
 )
 
-target_include_directories(server PRIVATE
-  ${CMAKE_SOURCE_DIR}/third_party
-  ${CMAKE_SOURCE_DIR}/src/net
-  ${CMAKE_SOURCE_DIR}/src/game
-  ${CMAKE_SOURCE_DIR}/src/shared
-)
-
+# Include dirs for net/game/shared/db come transitively from their PUBLIC
+# usage requirements below, so they don't need to be listed again here.
 target_link_libraries(server PRIVATE
   net
   game
-  shared 
+  shared
   db
+  third_party
+  project_options
+  project_warnings
 )
-
-target_compile_options(server PRIVATE
-  $<$<CONFIG:Debug>:-Wall -Wextra -Wpedantic -g -DDEBUG>
-  $<$<CONFIG:Release>:-O2>
-)
-
-if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_compile_options(server PRIVATE -fsanitize=address -fsanitize=undefined)
-  target_link_options(server PRIVATE -fsanitize=address -fsanitize=undefined)
-endif()

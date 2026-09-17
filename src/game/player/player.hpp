@@ -2,28 +2,31 @@
 
 #include "i_player.hpp"
 
-namespace ep::game
-{
-  class Player : public IPlayer {
+namespace ep::game {
+class Player : public IPlayer {
   public:
-    explicit Player(std::size_t id, double x, double y, double vel_x, double vel_y, std::uint8_t width, std::uint8_t height);
+    explicit Player(std::size_t id, double x, double y, double vel_x, double vel_y,
+                    std::uint8_t width, std::uint8_t height);
     ~Player() = default;
 
-    double GetX() const noexcept override { return x_; }
-    double GetY() const noexcept override { return y_; }
-    std::uint8_t GetWidth() const noexcept override { return width_; };
-    std::uint8_t GetHeight() const noexcept override { return height_; };
-    std::size_t GetID() const noexcept override { return id_; }
+    double get_x() const noexcept override { return x_; }
+    double get_y() const noexcept override { return y_; }
+    std::uint8_t get_width() const noexcept override { return width_; };
+    std::uint8_t get_height() const noexcept override { return height_; };
+    std::size_t get_id() const noexcept override { return id_; }
 
-    void Move(double dx, double dy) override;
+    void move(double dx, double dy) override;
 
     // velocity
-    double GetVelX() const noexcept override { return vel_x_; }
-    double GetVelY() const noexcept override { return vel_y_; }
-    void SetVel(double vel_x, double vel_y) noexcept override { vel_x_ = vel_x; vel_y_ = vel_y; }
+    double get_vel_x() const noexcept override { return vel_x_; }
+    double get_vel_y() const noexcept override { return vel_y_; }
+    void set_vel(double vel_x, double vel_y) noexcept override {
+        vel_x_ = vel_x;
+        vel_y_ = vel_y;
+    }
 
-    bool OnGround() const noexcept override { return on_ground_; }
-    void SetOnGround(bool state) noexcept override { on_ground_ = state; }
+    bool on_ground() const noexcept override { return on_ground_; }
+    void set_on_ground(bool state) noexcept override { on_ground_ = state; }
 
   private:
     std::size_t id_;
@@ -34,5 +37,5 @@ namespace ep::game
     std::uint8_t width_;
     std::uint8_t height_;
     bool on_ground_;
-  };
-}
+};
+}  // namespace ep::game
