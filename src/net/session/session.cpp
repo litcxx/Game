@@ -15,7 +15,7 @@
 #include "protocol/server_packet.hpp"
 #include "server/server.hpp"
 
-namespace ep::net {
+namespace lit::net {
 Session::Session(std::shared_ptr<Server> server, std::shared_ptr<ISocket> socket, std::size_t id)
     : server_(server),
       socket_(socket),
@@ -188,4 +188,4 @@ void Session::send() {
             if (!self->out_queue_.empty()) self->send();
         });
 }
-}  // namespace ep::net
+}  // namespace lit::net

@@ -4,7 +4,7 @@
 
 // TEST(Player, InitTest)
 // {
-//   ep::game::Player p(1, 2, 3, 1, 1);
+//   lit::game::Player p(1, 2, 3, 1, 1);
 //
 //   EXPECT_EQ(p.GetX(), 1);
 //   EXPECT_EQ(p.GetY(), 2);
@@ -13,7 +13,7 @@
 //
 // TEST(Player, Move)
 // {
-//   ep::game::Player p(0, 0, 0, 1, 1);
+//   lit::game::Player p(0, 0, 0, 1, 1);
 //
 //   double dx = 1.5;
 //   double dy = 3.14;

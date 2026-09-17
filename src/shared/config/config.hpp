@@ -4,7 +4,7 @@
 #include <memory>
 #include <vector>
 
-namespace ep {
+namespace lit {
 struct NetConfig {
     std::string ip;
     std::uint16_t port;
@@ -61,4 +61,4 @@ class Config {
     void init_game_config(const std::string& filename);
     void init_accounts_db_config(const std::string& filename);
 };
-}  // namespace ep
+}  // namespace lit

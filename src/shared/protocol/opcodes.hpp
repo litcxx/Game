@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <cstring>
 
-namespace ep {
+namespace lit {
 enum class Opcodes : std::uint16_t {
     CreatePlayer = 0x0003,
     SpawnPlayers = 0x0004,
@@ -18,4 +18,4 @@ enum class Opcodes : std::uint16_t {
 constexpr std::uint16_t to_uint16(Opcodes opcode) { return static_cast<std::uint16_t>(opcode); }
 
 constexpr Opcodes to_opcode(std::uint16_t opcode) { return static_cast<Opcodes>(opcode); }
-}  // namespace ep
+}  // namespace lit

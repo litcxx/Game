@@ -16,8 +16,8 @@
 
 int main(int argc, char* argv[]) {
     // Clear project namespaces for readability.
-    using namespace ep::net;
-    using namespace ep::game;
+    using namespace lit::net;
+    using namespace lit::game;
 
     // Check command line arguments.
     if (argc != 2) {
@@ -29,11 +29,11 @@ int main(int argc, char* argv[]) {
     spdlog::set_level(spdlog::level::debug);
 
     // Initialize config.
-    auto config = ep::Config::get_instance(argv[1]);
+    auto config = lit::Config::get_instance(argv[1]);
 
     // Initialize subsystems
-    auto net_subsystem = std::make_shared<ep::NetworkSubsystem>();
-    auto game_subsystem = std::make_shared<ep::GameSubsystem>();
+    auto net_subsystem = std::make_shared<lit::NetworkSubsystem>();
+    auto game_subsystem = std::make_shared<lit::GameSubsystem>();
 
     // Initialize the world
     auto world = std::make_shared<World>(net_subsystem, game_subsystem, config->game_config);

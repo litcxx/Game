@@ -8,7 +8,7 @@
 #include <nlohmann/json.hpp>
 #include <vector>
 
-namespace ep {
+namespace lit {
 Config::Config(std::string filename) {
     init_net_config(filename);
     init_game_config(filename);
@@ -105,4 +105,4 @@ std::shared_ptr<Config> Config::get_instance(std::string filename) {
     static std::shared_ptr<Config> config(new Config(filename));
     return config;
 }
-}  // namespace ep
+}  // namespace lit

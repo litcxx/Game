@@ -13,7 +13,7 @@
 #include "subsystems/network_subsystem.hpp"
 #include "tile/tile.hpp"
 
-namespace ep::game {
+namespace lit::game {
 class World {
   public:
     explicit World(std::shared_ptr<NetworkSubsystem> net_subsystem,
@@ -42,4 +42,4 @@ class World {
     std::vector<Tile> map_;
     Collision collision_;
 };
-}  // namespace ep::game
+}  // namespace lit::game

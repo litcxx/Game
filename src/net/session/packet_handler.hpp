@@ -5,7 +5,7 @@
 
 #include "protocol/net_packet.hpp"
 
-namespace ep::net {
+namespace lit::net {
 class PacketHandler {
   public:
     PacketHandler() = default;
@@ -50,4 +50,4 @@ class PacketHandler {
     std::size_t body_already_read_{};
     NetPacket packet_;
 };
-}  // namespace ep::net
+}  // namespace lit::net

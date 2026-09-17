@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace ep::game {
+namespace lit::game {
 class IBox {
   public:
     virtual ~IBox() = default;
@@ -12,4 +12,4 @@ class IBox {
     virtual std::uint8_t get_width() const noexcept = 0;
     virtual std::uint8_t get_height() const noexcept = 0;
 };
-}  // namespace ep::game
+}  // namespace lit::game

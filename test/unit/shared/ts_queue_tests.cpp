@@ -5,17 +5,17 @@
 #include "utils/ts_queue.hpp"
 
 TEST(TSQueueTest, Empty) {
-    ep::TSQueue<int> data;
+    lit::TSQueue<int> data;
     EXPECT_EQ(data.empty(), true);
 }
 
 TEST(TSQueueTest, ZeroSize) {
-    ep::TSQueue<int> data;
+    lit::TSQueue<int> data;
     EXPECT_EQ(data.size(), 0);
 }
 
 TEST(TSQueueTest, Push) {
-    ep::TSQueue<int> data;
+    lit::TSQueue<int> data;
     EXPECT_EQ(data.empty(), true);
 
     std::thread t([&data] {
@@ -30,7 +30,7 @@ TEST(TSQueueTest, Push) {
 }
 
 TEST(TSQueueTest, TryPop) {
-    ep::TSQueue<int> data;
+    lit::TSQueue<int> data;
 
     auto value = data.try_pop();
     EXPECT_EQ(value, std::nullopt);
@@ -41,7 +41,7 @@ TEST(TSQueueTest, TryPop) {
 }
 
 TEST(TSQueueTest, WaitAndPop) {
-    ep::TSQueue<int> data;
+    lit::TSQueue<int> data;
     data.push(1);
 
     auto value = data.wait_and_pop();
@@ -49,12 +49,12 @@ TEST(TSQueueTest, WaitAndPop) {
 }
 
 TEST(TSQueueTest, Swap) {
-    ep::TSQueue<int> data;
+    lit::TSQueue<int> data;
 
     for (int i = 0; i < 5; i++) data.push(1);
     EXPECT_EQ(data.size(), 5);
 
-    ep::TSQueue<int> tmp;
+    lit::TSQueue<int> tmp;
     EXPECT_EQ(tmp.size(), 0);
 
     ts_swap(tmp, data);

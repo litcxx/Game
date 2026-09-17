@@ -4,7 +4,7 @@
 #include <openssl/evp.h>
 #include <openssl/rand.h>
 
-namespace ep::crypto {
+namespace lit::crypto {
 std::optional<std::vector<std::uint8_t>> hash(const std::string& password,
                                               const std::vector<std::uint8_t>& salt, int iterations,
                                               int hash_length) {
@@ -35,4 +35,4 @@ std::optional<std::vector<std::uint8_t>> generate_salt(std::size_t size) {
     if (RAND_bytes(salt.data(), static_cast<int>(size)) == -1) return std::nullopt;
     return salt;
 }
-}  // namespace ep::crypto
+}  // namespace lit::crypto

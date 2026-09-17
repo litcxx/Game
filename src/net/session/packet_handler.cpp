@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace ep::net {
+namespace lit::net {
 NetPacket PacketHandler::extract_packet() noexcept {
     head_already_read_ = 0;
     body_already_read_ = 0;
@@ -52,4 +52,4 @@ bool PacketHandler::update_body_size(std::size_t size) {
 
     return true;
 }
-}  // namespace ep::net
+}  // namespace lit::net

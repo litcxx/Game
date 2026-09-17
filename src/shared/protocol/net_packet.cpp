@@ -2,7 +2,7 @@
 
 #include "opcodes.hpp"
 
-namespace ep {
+namespace lit {
 NetPacket::NetPacket(Opcodes opcode) : head_{swap_endian(to_uint16(opcode)), 0} {}
 
 NetPacket::NetPacket(NetPacket&& other) : head_(other.head_), body_(std::move(other.body_)) {
@@ -79,4 +79,4 @@ NetPacket move_player_packet(std::size_t id, double x, double y) {
     packet << id << x << y;
     return packet;
 }
-}  // namespace ep
+}  // namespace lit

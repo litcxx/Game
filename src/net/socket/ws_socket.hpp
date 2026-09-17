@@ -10,7 +10,7 @@
 #include "boost/asio/ssl/stream.hpp"
 #include "socket/i_socket.hpp"
 
-namespace ep::net {
+namespace lit::net {
 class WSSocket : public ISocket, public std::enable_shared_from_this<WSSocket> {
   public:
     explicit WSSocket(Tcp::socket&& socket);
@@ -35,4 +35,4 @@ class WSSocket : public ISocket, public std::enable_shared_from_this<WSSocket> {
     // Flag indicate socket closed state: true / false
     mutable std::atomic_flag closed_;
 };
-}  // namespace ep::net
+}  // namespace lit::net

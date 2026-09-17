@@ -1,8 +1,8 @@
 #pragma once
 
-namespace ep::db {
+namespace lit::db {
 class IConnection {
   public:
     virtual ~IConnection() = default;
 };
-}  // namespace ep::db
+}  // namespace lit::db

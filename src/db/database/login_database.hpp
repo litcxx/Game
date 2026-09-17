@@ -10,7 +10,7 @@
 
 #include "connection/sql_connection.hpp"
 
-namespace ep::db {
+namespace lit::db {
 enum class LoginSTMT : std::uint8_t {
     AddUser = 0x01,
     GetUserByName = 0x02,
@@ -59,4 +59,4 @@ class LoginDataBase {
     SQLConnection connection_;
     std::vector<MYSQL_STMT*> stmts_;
 };
-}  // namespace ep::db
+}  // namespace lit::db

@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace ep::crypto {
+namespace lit::crypto {
 enum class Crypto : std::uint32_t { kNumIterations = 10'000, kHashLength = 32, kSaltLength = 16 };
 
 std::optional<std::vector<std::uint8_t>> hash(
@@ -18,4 +18,4 @@ bool verify_hash(const std::string& password, const std::vector<std::uint8_t>& e
 
 std::optional<std::vector<std::uint8_t>> generate_salt(
     std::size_t size = static_cast<std::size_t>(Crypto::kSaltLength));
-}  // namespace ep::crypto
+}  // namespace lit::crypto

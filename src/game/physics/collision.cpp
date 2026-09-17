@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <limits>
 
-namespace ep::game {
+namespace lit::game {
 SweptData Collision::swept_axis(const IBox &box, std::uint8_t tile, std::uint16_t grid_x,
                                 std::uint8_t grid_y, const std::vector<Tile> &map, double vel_x,
                                 double vel_y) {
@@ -99,4 +99,4 @@ std::set<std::size_t> Collision::find_collision_indices(const IBox &box, uint8_t
 
     return res;
 }
-}  // namespace ep::game
+}  // namespace lit::game

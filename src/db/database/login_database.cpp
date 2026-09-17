@@ -5,7 +5,7 @@
 #include "mariadb_com.h"
 #include "sha256.hpp"
 
-namespace ep::db {
+namespace lit::db {
 LoginDataBase::LoginDataBase(SQLConnection&& connection) : connection_(std::move(connection)) {
     init_stmts(LoginConfig::kNumStmts);
     prepare_statements();
@@ -218,4 +218,4 @@ bool LoginDataBase::remove(std::string login) {
 
     return true;
 }
-}  // namespace ep::db
+}  // namespace lit::db

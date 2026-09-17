@@ -10,7 +10,7 @@
 #include <boost/system/detail/error_code.hpp>
 #include <cstdint>
 
-namespace ep::net {
+namespace lit::net {
 WSSocket::WSSocket(Tcp::socket&& socket) : socket_(std::move(socket)), closed_(ATOMIC_FLAG_INIT) {
     socket_.binary(true);
     spdlog::info("Set websocket binary mode: {}", socket_.binary());
@@ -53,4 +53,4 @@ void WSSocket::async_write(const std::uint8_t* buffer, std::size_t limit, ReadHa
 std::string WSSocket::string_address() {
     return socket_.next_layer().remote_endpoint().address().to_string();
 }
-}  // namespace ep::net
+}  // namespace lit::net
