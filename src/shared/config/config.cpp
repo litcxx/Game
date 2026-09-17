@@ -88,6 +88,7 @@ void Config::init_accounts_db_config(const std::string& filename) {
     std::ifstream config(filename);
     nlohmann::json config_data = nlohmann::json::parse(config);
 
+    // TODO change to env-variables
     accounts_db_config.db_name = config_data["db"]["db_name"];
     accounts_db_config.host = config_data["db"]["host"];
     accounts_db_config.user = config_data["db"]["user"];
