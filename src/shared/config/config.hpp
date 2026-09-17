@@ -4,62 +4,61 @@
 #include <memory>
 #include <vector>
 
-namespace ep
-{
-  struct NetConfig {
-    std::string ip_;
-    std::uint16_t port_;
-    std::uint8_t io_threads_;
-    std::uint8_t net_threads_;
-  };
+namespace ep {
+struct NetConfig {
+    std::string ip;
+    std::uint16_t port;
+    std::uint8_t io_threads;
+    std::uint8_t net_threads;
+};
 
-  struct PlayerConfig {
-    std::uint8_t width_;
-    std::uint8_t height_;
-    std::uint16_t player_start_x_;
-    std::uint16_t player_start_y_;
-    std::uint16_t player_offset_;
-  };
+struct PlayerConfig {
+    std::uint8_t width;
+    std::uint8_t height;
+    std::uint16_t player_start_x;
+    std::uint16_t player_start_y;
+    std::uint16_t player_offset;
+};
 
-  struct AccountsDBConfig {
-    std::string db_name_;
-    std::string host_;
-    std::string user_;
-    std::string password_;
-    std::string table_name_;
-  };
+struct AccountsDBConfig {
+    std::string db_name;
+    std::string host;
+    std::string user;
+    std::string password;
+    std::string table_name;
+};
 
-  struct GameConfig {
+struct GameConfig {
     // Game
-    std::uint8_t tick_rate_;
-    std::uint8_t game_threads_;
+    std::uint8_t tick_rate;
+    std::uint8_t game_threads;
 
     // Map
-    std::uint8_t tile_;
-    std::uint16_t grid_x_;
-    std::uint16_t grid_y_;
-    std::vector<std::uint8_t> map_;
+    std::uint8_t tile;
+    std::uint16_t grid_x;
+    std::uint16_t grid_y;
+    std::vector<std::uint8_t> map;
 
     // Player
-    PlayerConfig player_;
-  };
+    PlayerConfig player;
+};
 
-  class Config {
+class Config {
   public:
     // Filename is only used on the first call.
-    static std::shared_ptr<Config> GetInstance(std::string filename = "null");
+    static std::shared_ptr<Config> get_instance(std::string filename = "null");
     Config(const Config&) = delete;
     Config& operator=(const Config&) = delete;
     ~Config() = default;
 
-    NetConfig net_config_;
-    GameConfig game_config_;
-    AccountsDBConfig accounts_db_config_;
+    NetConfig net_config;
+    GameConfig game_config;
+    AccountsDBConfig accounts_db_config;
 
   private:
     explicit Config(std::string filename);
-    void InitNetConfig(const std::string& filename);
-    void InitGameConfig(const std::string& filename);
-    void InitAccountsDBConfig(const std::string& filename);
-  };
-}
+    void init_net_config(const std::string& filename);
+    void init_game_config(const std::string& filename);
+    void init_accounts_db_config(const std::string& filename);
+};
+}  // namespace ep

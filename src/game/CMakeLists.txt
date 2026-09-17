@@ -6,14 +6,13 @@ add_library(game
   tile/tile.cpp
 )
 
-target_include_directories(game PRIVATE
-  ${CMAKE_SOURCE_DIR}/third_party
-)
-
 target_include_directories(game PUBLIC
   ${CMAKE_SOURCE_DIR}/src/game
 )
 
 target_link_libraries(game PRIVATE
-  shared 
+  shared
+  third_party
+  project_options
+  project_warnings
 )

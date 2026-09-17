@@ -1,147 +1,136 @@
 #include "server.hpp"
 
+#include <spdlog/spdlog.h>
+
+#include <boost/asio/ssl/context.hpp>
+#include <boost/asio/strand.hpp>
+#include <boost/system/detail/error_code.hpp>
 #include <cstddef>
 #include <cstdint>
-
-#include <spdlog/spdlog.h>
-#include <boost/asio/ssl/context.hpp>
-#include <boost/system/detail/error_code.hpp>
-#include <boost/asio/strand.hpp>
 
 #include "protocol/opcodes.hpp"
 #include "protocol/server_packet.hpp"
 #include "session/session.hpp"
 #include "socket/ws_socket.hpp"
 
-namespace ep::net
-{
-  Server::Server(boost::asio::io_context& ioc, 
-                 ssl::context& ctx, 
-                 std::shared_ptr<NetworkSubsystem> net_susbsystem, 
-                 std::shared_ptr<GameSubsystem> game_subsystem) noexcept :
-    ioc_{ioc},
-    ctx_{ctx},
-    acceptor_{ioc},
-    new_session_id_{0},
-    net_susbsystem_(net_susbsystem),
-    game_susbsystem_(game_subsystem)
-  {}
+namespace ep::net {
+Server::Server(boost::asio::io_context& ioc, ssl::context& ctx,
+               std::shared_ptr<NetworkSubsystem> net_susbsystem,
+               std::shared_ptr<GameSubsystem> game_subsystem) noexcept
+    : ioc_{ioc},
+      ctx_{ctx},
+      acceptor_{ioc},
+      new_session_id_{0},
+      net_susbsystem_(net_susbsystem),
+      game_susbsystem_(game_subsystem) {}
 
-  bool Server::StartListen(tcp::endpoint endpoint) noexcept
-  {
+bool Server::start_listen(Tcp::endpoint endpoint) noexcept {
     boost::system::error_code ec;
 
     // Open the acceptor.
     ec = acceptor_.open(endpoint.protocol(), ec);
     if (ec) {
-      spdlog::error("open: {}", ec.what());
-      return false;
+        spdlog::error("open: {}", ec.what());
+        return false;
     }
 
     // Allow address reuse.
     ec = acceptor_.set_option(boost::asio::socket_base::reuse_address(true), ec);
     if (ec) {
-      spdlog::error("set_option: {}", ec.what());
-      return false;
+        spdlog::error("set_option: {}", ec.what());
+        return false;
     }
 
     // Bind to the server address.
     ec = acceptor_.bind(endpoint, ec);
     if (ec) {
-      spdlog::error("bind: {}", ec.what());
-      return false;
+        spdlog::error("bind: {}", ec.what());
+        return false;
     }
 
     // Start listening for connections.
     ec = acceptor_.listen(boost::asio::socket_base::max_listen_connections, ec);
     if (ec) {
-      spdlog::error("listen: {}", ec.what());
-      return false;
+        spdlog::error("listen: {}", ec.what());
+        return false;
     }
 
     return true;
-  }
+}
 
-  void Server::Run()
-  {
+void Server::run() {
     acceptor_.async_accept(
-      net::make_strand(ioc_),
-      [this](const boost::system::error_code& ec, tcp::socket socket)
-      {
-        if (!ec) {
-          // auto wsssocket = std::make_shared<WSSSocket>(std::move(socket), ctx_);
-          auto wssocket = std::make_shared<WSSocket>(std::move(socket));
-          std::size_t id = new_session_id_.fetch_add(1);
-          auto session = std::make_shared<Session>(shared_from_this(), wssocket, id);
-          session->Run();
-        } else {
-          spdlog::error("async_accept: {}", ec.what());
-        }
+        net::make_strand(ioc_), [this](const boost::system::error_code& ec, Tcp::socket socket) {
+            if (!ec) {
+                // auto wsssocket = std::make_shared<WSSSocket>(std::move(socket), ctx_);
+                auto wssocket = std::make_shared<WSSocket>(std::move(socket));
+                std::size_t id = new_session_id_.fetch_add(1);
+                auto session = std::make_shared<Session>(shared_from_this(), wssocket, id);
+                session->run();
+            } else {
+                spdlog::error("async_accept: {}", ec.what());
+            }
 
-        Run();
-      }
-    );
-  }
+            run();
+        });
+}
 
-  void Server::AddSession(std::shared_ptr<Session> session) noexcept
-  {
+void Server::add_session(std::shared_ptr<Session> session) noexcept {
     spdlog::info("Server::AddSession");
     {
-      std::lock_guard lock(sessions_mutex_);
-      sessions_[session->GetID()] = session;
+        std::lock_guard lock(sessions_mutex_);
+        sessions_[session->get_id()] = session;
     }
     // net_susbsystem_->in_queue_.Push(NetPacket(Opcodes::CreatePlayer, session->GetID()));
     spdlog::info("Push Opcodes::CreatePlayer\nfile: {} line: {}", __FILE__, __LINE__);
-    auto packet = std::make_unique<ServerPacket>(NetPacket(Opcodes::CreatePlayer), session->GetID());
-    net_susbsystem_->in_queue_.Push(std::move(packet));
-  }
- 
-  void Server::Sender()
-  {
+    auto packet =
+        std::make_unique<ServerPacket>(NetPacket(Opcodes::CreatePlayer), session->get_id());
+    net_susbsystem_->in_queue.push(std::move(packet));
+}
+
+void Server::sender() {
     spdlog::info("Server::Sender");
     for (;;) {
-      auto packet = net_susbsystem_->out_queue_.WaitAndPop();
-      // Make flat buffer from packet.
-      auto net_packet = packet->GetNetPacket();
-      auto buf = std::make_shared<std::vector<std::uint8_t>>(std::move(net_packet.MakeBuffer()));
+        auto packet = net_susbsystem_->out_queue.wait_and_pop();
+        // Make flat buffer from packet.
+        auto net_packet = packet->get_net_packet();
+        auto buf = std::make_shared<std::vector<std::uint8_t>>(net_packet.make_buffer());
 
-      switch (packet->GetType()) {
-        case PacketType::Rpc:
-          sessions_[packet->GetID()]->PushToSend(buf);
-          break;
-        case PacketType::Broadcast:
-          for (const auto& elem: sessions_) {
-            elem.second->PushToSend(buf);
-          }
-          break;
-        case PacketType::RpcOthers:
-          for (const auto& elem: sessions_) {
-            if (elem.first != packet->GetID()) {
-              elem.second->PushToSend(buf);
-            }
-          }
-          break;
-        default:
-          spdlog::error("unknown packet type");
-      }
+        switch (packet->get_type()) {
+            case PacketType::Rpc:
+                sessions_[packet->get_id()]->push_to_send(buf);
+                break;
+            case PacketType::Broadcast:
+                for (const auto& elem : sessions_) {
+                    elem.second->push_to_send(buf);
+                }
+                break;
+            case PacketType::RpcOthers:
+                for (const auto& elem : sessions_) {
+                    if (elem.first != packet->get_id()) {
+                        elem.second->push_to_send(buf);
+                    }
+                }
+                break;
+            default:
+                spdlog::error("unknown packet type");
+        }
     }
-  }
+}
 
-  void Server::PushPacket(std::unique_ptr<ServerPacket> packet) noexcept
-  {
-    net_susbsystem_->in_queue_.Push(std::move(packet));
-  }
+void Server::push_packet(std::unique_ptr<ServerPacket> packet) noexcept {
+    net_susbsystem_->in_queue.push(std::move(packet));
+}
 
-  void Server::CloseSession(std::size_t id)
-  {
+void Server::close_session(std::size_t id) {
     std::lock_guard lock(sessions_mutex_);
     if (sessions_.find(id) != sessions_.end()) {
-      sessions_.erase(id);
-      spdlog::info("Push Opcodes::RemovePlayer\nfile: {} line: {}", __FILE__, __LINE__);
-      auto packet = std::make_unique<ServerPacket>(NetPacket(Opcodes::RemovePlayer), id);
-      net_susbsystem_->in_queue_.Push(std::move(packet));
+        sessions_.erase(id);
+        spdlog::info("Push Opcodes::RemovePlayer\nfile: {} line: {}", __FILE__, __LINE__);
+        auto packet = std::make_unique<ServerPacket>(NetPacket(Opcodes::RemovePlayer), id);
+        net_susbsystem_->in_queue.push(std::move(packet));
     } else {
-      spdlog::error("Server::CloseSession errror id: {}", id);
+        spdlog::error("Server::CloseSession errror id: {}", id);
     }
-  }
 }
+}  // namespace ep::net

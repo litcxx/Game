@@ -1,15 +1,14 @@
 #pragma once
 
-#include <string>
-#include <optional>
-
 #include <mariadb/mysql.h>
+
+#include <optional>
+#include <string>
 
 #include "i_connection.hpp"
 
-namespace ep::db 
-{
-  class SQLConnection: public IConnection {
+namespace ep::db {
+class SQLConnection : public IConnection {
   public:
     ~SQLConnection();
     SQLConnection(const SQLConnection&) = delete;
@@ -17,17 +16,19 @@ namespace ep::db
     SQLConnection(SQLConnection&& other);
     SQLConnection& operator=(SQLConnection&& other);
 
-    static std::optional<SQLConnection> Load(const std::string& host, const std::string& user, 
-                                        const std::string& password, const std::string& db_name);
+    static std::optional<SQLConnection> load(const std::string& host, const std::string& user,
+                                             const std::string& password,
+                                             const std::string& db_name);
 
-    MYSQL* GetDB() { return db_; }
+    MYSQL* get_db() { return db_; }
+
   private:
     SQLConnection();
 
-    bool Init();
-    bool Connect(const std::string& host, const std::string& user, 
-                 const std::string& password, const std::string& db_name);
+    bool init();
+    bool connect(const std::string& host, const std::string& user, const std::string& password,
+                 const std::string& db_name);
 
     MYSQL* db_;
-  };
-}
+};
+}  // namespace ep::db

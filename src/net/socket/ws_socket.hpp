@@ -1,21 +1,19 @@
 #pragma once
 
 #include <atomic>
-#include <memory>
-
 #include <boost/asio/ip/tcp.hpp>
-#include "boost/asio/ssl/stream.hpp"
 #include <boost/beast/websocket/stream.hpp>
+#include <memory>
 
 #include "aliases/asio_aliases.hpp"
 #include "aliases/beast_aliases.hpp"
+#include "boost/asio/ssl/stream.hpp"
 #include "socket/i_socket.hpp"
 
-namespace ep::net
-{
-  class WSSocket : public ISocket, public std::enable_shared_from_this<WSSocket> {
+namespace ep::net {
+class WSSocket : public ISocket, public std::enable_shared_from_this<WSSocket> {
   public:
-    explicit WSSocket(tcp::socket&& socket);
+    explicit WSSocket(Tcp::socket&& socket);
     WSSocket(const WSSocket&) = delete;
     WSSocket& operator=(WSSocket&) = delete;
     ~WSSocket() = default;
@@ -28,13 +26,13 @@ namespace ep::net
     std::string string_address() override;
 
   private:
-    void Cancel();
-    void CloseWebSocket();
+    void cancel();
+    void close_web_socket();
 
-    [[maybe_unused]] bool IsClosed() const noexcept { return closed_.test_and_set(); }
+    [[maybe_unused]] bool is_closed() const noexcept { return closed_.test_and_set(); }
 
-    websocket::stream<tcp::socket> socket_;
+    websocket::stream<Tcp::socket> socket_;
     // Flag indicate socket closed state: true / false
     mutable std::atomic_flag closed_;
-  };
-}
+};
+}  // namespace ep::net
