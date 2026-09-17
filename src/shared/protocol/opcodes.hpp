@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <cstring>
 
 namespace lit {
 enum class Opcodes : std::uint16_t {
@@ -16,6 +15,5 @@ enum class Opcodes : std::uint16_t {
 };
 
 constexpr std::uint16_t to_uint16(Opcodes opcode) { return static_cast<std::uint16_t>(opcode); }
-
 constexpr Opcodes to_opcode(std::uint16_t opcode) { return static_cast<Opcodes>(opcode); }
 }  // namespace lit
