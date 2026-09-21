@@ -29,10 +29,9 @@ void Session::run() {
     // TODO set decorator
 
     auto self = shared_from_this();
+    // Accept websocket handshake
     socket_->async_accept([self](const beast::error_code& ec) {
-        // an error occured
         if (ec) {
-            // client close connection
             if (ec == websocket::error::closed)
                 spdlog::warn("WebSocket was closed cleanly");
             else
@@ -40,7 +39,6 @@ void Session::run() {
 
             self->set_disconnecting();
         } else {
-            // Finally connected
             self->set_connected();
         }
 
