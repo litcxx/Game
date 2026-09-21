@@ -167,7 +167,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     autonumber
-    participant loop as World::game_loop
+    participant gl as World::game_loop
     participant tick as World::tick
     participant netin as NetworkSubsystem.in_queue
     participant gin as GameSubsystem.in_queue
@@ -177,18 +177,18 @@ sequenceDiagram
     participant netout as NetworkSubsystem.out_queue
 
     loop каждый tick (1/tick_rate сек)
-        loop->>tick: tick(dt)
+        gl->>tick: tick(dt)
         tick->>netin: ts_swap(gin, netin)
         note over gin,netin: входящие пакеты попадают в игровую очередь
 
         loop по каждому пакету в gin
             tick->>tick: process_input(packet, dt)
             alt CreatePlayer
-                tick->>player: make_shared<Player>(...)
+                tick->>player: make_shared#lt;Player#gt;(...)
                 tick->>tick: add_player(player)
-                tick->>gout: push(CreatePlayer)  [Rpc]
-                tick->>gout: push(SpawnPlayers)  [Rpc]
-                tick->>gout: push(AddPlayer)     [RpcOthers]
+                tick->>gout: push(CreatePlayer) [Rpc]
+                tick->>gout: push(SpawnPlayers) [Rpc]
+                tick->>gout: push(AddPlayer) [RpcOthers]
             else RemovePlayer
                 tick->>tick: remove_player(id)
                 tick->>gout: push(RemovePlayer)
@@ -200,10 +200,10 @@ sequenceDiagram
         loop по каждому игроку
             tick->>tick: update(player, dt)
             note over tick: применяет гравитацию
-            tick->>col: swept_axis(player, map_, vel)  (X, затем Y)
+            tick->>col: swept_axis(player, map_, vel) (X, затем Y)
             col-->>tick: SweptData{entry_time, hit}
             tick->>player: move(...) / set_on_ground(...)
-            tick->>gout: push(MovePlayer)  [Broadcast]
+            tick->>gout: push(MovePlayer) [Broadcast]
         end
 
         loop по каждому пакету в gout
