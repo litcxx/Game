@@ -1,0 +1,259 @@
+// Протокол клиент ↔ сервер, версия 1 (MVP).
+//
+// Транспорт: WebSocket поверх TLS (wss://<host>/ws), только бинарные кадры.
+// Один кадр = одно сообщение: клиент шлёт ClientMessage, сервер — ServerMessage.
+// Границы сообщений даёт WebSocket, собственного фрейминга нет.
+//
+// Константы (меняются только вместе с версией протокола):
+//   PROTOCOL_VERSION = 1
+//   UNITS_PER_CELL   = 100   позиция в целых единицах, 1 клетка = 100 единиц
+//
+// Соглашения:
+//   * id = 0 означает «нет» (игрока, фракции, цели): в proto3 это значение
+//     по умолчанию, поэтому настоящие id начинаются с 1;
+//   * тик — шаг серверной симуляции, GameConfig.tick_rate в секунду (60);
+//   * индекс клетки = y * map_width + x;
+//   * enum-значение 0 = UNSPECIFIED и смысла не несёт.
+//
+// Номера полей 1–15 кодируются одним байтом тега: горячие сообщения
+// (Input, Snapshot) и их поля держим в этом диапазоне.
+
+syntax = "proto3";
+
+package game.v1;
+
+// ============================================================================
+// Конверты
+// ============================================================================
+
+message ClientMessage {
+  // Номер запроса, выбирает клиент (обычно счётчик). Если сообщение вызвало
+  // ошибку, сервер вернёт его в ServerError.request_id. 0 = не задан.
+  uint32 request_id = 1;
+
+  oneof payload {
+    Hello hello = 2;
+    SpawnRequest spawn = 3;
+    Input input = 4;
+    Ping ping = 5;
+  }
+}
+
+message ServerMessage {
+  oneof payload {
+    Welcome welcome = 1;
+    MapState map_state = 2;
+    Roster roster = 3;
+    Snapshot snapshot = 4;
+    Pong pong = 5;
+    ServerError error = 6;
+  }
+}
+
+// ============================================================================
+// Подключение
+// ============================================================================
+
+// Первое сообщение клиента в каждом соединении. До него сервер не принимает
+// ничего; повторный Hello в том же соединении — ошибка.
+message Hello {
+  uint32 protocol_version = 1;  // PROTOCOL_VERSION клиента
+  string name = 2;              // ник, 1–16 символов; сервер обрезает пробелы по краям
+  string session_token = 3;     // токен из прошлого Welcome; пусто = новая сессия
+  string client_build = 4;      // сборка клиента, только для логов
+}
+
+message Welcome {
+  uint32 player_id = 1;           // публичный id, ≥ 1, не переиспользуется
+  string session_token = 2;       // секрет для переподключения, другим не отправляется
+  bool resumed = 3;               // true = продолжена прежняя сессия, тот же player_id
+  uint32 server_tick = 4;         // текущий тик сервера
+  GameConfig config = 5;
+  repeated Faction factions = 6;
+}
+
+// Правила и темп игры. Клиент не хардкодит ни одно из этих чисел.
+message GameConfig {
+  uint32 tick_rate = 1;              // тиков симуляции в секунду: 60
+  uint32 snapshot_rate = 2;          // снапшотов в секунду: 20
+  uint32 map_width = 3;              // клеток: 100
+  uint32 map_height = 4;             // клеток: 100
+  uint32 move_speed = 5;             // единиц в секунду: 300 = 3 клетки/с
+  uint32 max_hp = 6;                 // 100
+  uint32 attack_range = 7;           // единиц между центрами игроков: 120
+  uint32 attack_cooldown_ticks = 8;  // 45 = 0,75 с
+  uint32 respawn_delay_ticks = 9;    // 300 = 5 с
+  uint32 reconnect_grace_ms = 10;    // сколько сервер держит сессию после разрыва: 30000
+}
+
+message Faction {
+  uint32 id = 1;     // 1..255; 0 = нейтральная клетка или фракция не выбрана
+  string name = 2;   // «Орда»
+  uint32 color = 3;  // 0xRRGGBB
+}
+
+// ============================================================================
+// Мир: территория и список игроков
+// ============================================================================
+
+// Полное состояние территории. Приходит сразу после Welcome; может прийти
+// снова в любой момент — тогда клиент заменяет карту целиком.
+message MapState {
+  uint32 tick = 1;
+  bytes owners = 2;                  // map_width * map_height байт по строкам; байт = faction id
+  repeated CellUpdate captures = 3;  // клетки, где сейчас идёт захват
+}
+
+// Полное (не разностное) состояние клетки: повторное применение ничего не ломает.
+message CellUpdate {
+  uint32 index = 1;             // y * map_width + x
+  uint32 owner = 2;             // faction id владельца; 0 = нейтральная
+  uint32 capture_faction = 3;   // кто захватывает; 0 = никто
+  uint32 capture_progress = 4;  // 0..100 — процент захвата в пользу capture_faction
+}
+
+// Редко меняющиеся данные игрока.
+message PlayerInfo {
+  uint32 id = 1;
+  string name = 2;
+  uint32 faction_id = 3;  // 0 = ещё ни разу не появлялся
+}
+
+// Изменения списка игроков в сети. Первый Roster после Welcome содержит всех,
+// включая самого получателя.
+message Roster {
+  repeated PlayerInfo upsert = 1;  // новые игроки и изменившиеся (смена фракции)
+  repeated uint32 removed = 2;     // сессия закончилась, игрок покинул мир
+}
+
+// ============================================================================
+// Клиент → сервер: игровой процесс
+// ============================================================================
+
+// Первое появление и респавн. Разрешено в NOT_SPAWNED и в DEAD после
+// SelfState.respawn_tick. Здесь же выбирается (или меняется) фракция.
+message SpawnRequest {
+  uint32 cell = 1;        // индекс клетки; игрок появится в её центре
+  uint32 faction_id = 2;  // фракция (цвет) на эту жизнь
+}
+
+// Намерение игрока на один тик симуляции. Позицию клиент не присылает:
+// только то, что игрок хочет сделать; результат считает сервер.
+message InputFrame {
+  uint32 seq = 1;            // 1, 2, 3… подряд в пределах соединения
+  sint32 move_x = 2;         // направление; длину сервер нормирует до 1,
+  sint32 move_y = 3;         //   (0, 0) = стоять
+  uint32 attack_target = 4;  // бить эту цель, как только позволят дистанция
+                             //   и перезарядка; 0 = не атаковать
+}
+
+// Кадры ввода по возрастанию seq: обычно один, после долгого кадра
+// отрисовки — несколько накопившихся, не больше 8.
+message Input {
+  repeated InputFrame frames = 1;
+}
+
+message Ping {
+  uint32 client_time_ms = 1;  // часы клиента (performance.now()); вернутся в Pong
+}
+
+// ============================================================================
+// Сервер → клиент: игровой процесс
+// ============================================================================
+
+// Мир на тике tick. 20 раз в секунду, отдельно каждому клиенту.
+message Snapshot {
+  uint32 tick = 1;
+  SelfState you = 2;                 // видно только получателю
+  repeated PlayerState players = 3;  // все видимые игроки, включая себя; нет в списке = не видно
+  repeated CellUpdate cells = 4;     // клетки, изменившиеся после предыдущего снапшота
+  repeated GameEvent events = 5;     // события после предыдущего снапшота
+}
+
+// Публичное состояние игрока: всё, что нужно для отрисовки.
+message PlayerState {
+  uint32 id = 1;
+  uint32 x = 2;   // единицы, 0 .. map_width * 100 - 1
+  uint32 y = 3;   // единицы, 0 .. map_height * 100 - 1
+  uint32 hp = 4;  // 0 = мёртв: тело лежит на месте смерти до респавна
+}
+
+// Приватное состояние получателя снапшота.
+message SelfState {
+  LifeState life = 1;
+  uint32 last_input_seq = 2;     // последний InputFrame.seq, который сервер обработал
+  uint32 respawn_tick = 3;       // при DEAD: с этого тика примут SpawnRequest
+  uint32 attack_ready_tick = 4;  // с этого тика возможна следующая атака
+}
+
+enum LifeState {
+  LIFE_STATE_UNSPECIFIED = 0;
+  LIFE_STATE_NOT_SPAWNED = 1;  // в сети, но ещё не выбрал точку появления
+  LIFE_STATE_ALIVE = 2;
+  LIFE_STATE_DEAD = 3;         // ждёт respawn_tick, затем SpawnRequest
+}
+
+// Разовые события для анимаций и ленты боя («TAG ранил SKAL −18»).
+// Правда о состоянии — в PlayerState и SelfState; потеря события ничего не ломает.
+message GameEvent {
+  uint32 tick = 1;
+  oneof kind {
+    HitEvent hit = 2;
+    DeathEvent death = 3;
+  }
+}
+
+message HitEvent {
+  uint32 attacker_id = 1;
+  uint32 target_id = 2;
+  uint32 damage = 3;
+}
+
+message DeathEvent {
+  uint32 victim_id = 1;
+  uint32 killer_id = 2;  // 0 = смерть не от игрока
+}
+
+message Pong {
+  uint32 client_time_ms = 1;  // эхо из Ping: RTT = сейчас − client_time_ms
+  uint32 server_tick = 2;
+}
+
+// ============================================================================
+// Ошибки
+// ============================================================================
+
+// fatal = true: сразу после этого сообщения сервер закрывает WebSocket
+// с кодом 4000 + code. fatal = false: запрос отклонён, соединение живёт.
+message ServerError {
+  ErrorCode code = 1;
+  bool fatal = 2;
+  uint32 request_id = 3;  // ClientMessage.request_id, вызвавший ошибку; 0 = не привязана
+  string detail = 4;      // для логов и отладки, игроку не показывать
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+
+  // 1–19: соединение и протокол, обычно fatal.
+  ERROR_CODE_PROTOCOL_VERSION = 1;    // версия клиента не поддерживается
+  ERROR_CODE_BAD_MESSAGE = 2;         // не декодируется, текстовый кадр, больше 1 КиБ
+  ERROR_CODE_UNEXPECTED_MESSAGE = 3;  // не в том состоянии: Input до Hello, второй Hello
+  ERROR_CODE_HANDSHAKE_TIMEOUT = 4;   // нет Hello за 5 с после открытия сокета
+  ERROR_CODE_IDLE_TIMEOUT = 5;        // от клиента ничего не приходило 20 с
+  ERROR_CODE_RATE_LIMITED = 6;        // превышен лимит сообщений
+  ERROR_CODE_INVALID_NAME = 7;
+  ERROR_CODE_SERVER_FULL = 8;
+  ERROR_CODE_SESSION_REPLACED = 9;    // эта сессия подключилась из другой вкладки
+  ERROR_CODE_SERVER_SHUTDOWN = 10;
+  ERROR_CODE_KICKED = 11;
+  ERROR_CODE_INTERNAL = 12;
+
+  // 20+: отказ в конкретном запросе, не fatal.
+  ERROR_CODE_UNSUPPORTED_MESSAGE = 20;  // пустой или неизвестный серверу payload
+  ERROR_CODE_SPAWN_INVALID_CELL = 21;   // клетка вне карты
+  ERROR_CODE_SPAWN_FORBIDDEN = 22;      // клетка запрещена правилами появления
+  ERROR_CODE_SPAWN_TOO_EARLY = 23;      // respawn_tick ещё не наступил
+  ERROR_CODE_ALREADY_SPAWNED = 24;      // игрок уже жив
+  ERROR_CODE_INVALID_FACTION = 25;      // нет такой фракции или смена сейчас запрещена
+}

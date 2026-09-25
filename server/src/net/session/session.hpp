@@ -1,89 +1,54 @@
 #pragma once
 
-#include <atomic>
+#include <boost/asio.hpp>
+#include <boost/asio/experimental/basic_concurrent_channel.hpp>
+#include <boost/asio/experimental/channel_traits.hpp>
+#include <boost/beast.hpp>
 #include <cstddef>
-#include <cstdint>
-#include <memory>
+#include <span>
+#include <vector>
 
-#include "packet_handler.hpp"
-#include "socket/i_socket.hpp"
-#include "utils/ts_queue.hpp"
+#include "game/v1/protocol.pb.h"
+
+namespace asio = boost::asio;
+namespace beast = boost::beast;
+namespace websocket = beast::websocket;
+using Socket = websocket::stream<beast::tcp_stream>;
+using Channel = asio::experimental::basic_concurrent_channel<
+    asio::any_io_executor, asio::experimental::channel_traits<>,
+    void(boost::system::error_code, std::vector<std::byte>)>;
 
 namespace lit::net {
 class Server;
 
-class Session : public std::enable_shared_from_this<Session> {
+class Session {
   public:
-    using SendBuffer = std::shared_ptr<std::vector<std::uint8_t>>;
-
-    enum class State : std::uint8_t {
-        Connecting,
-        Connected,
-        Disconnecting,
-        Disconnected,
-        User,
-    };
-
-    explicit Session(std::shared_ptr<Server> server, std::shared_ptr<ISocket> socket,
-                     std::size_t id);
-    ~Session() = default;
-
+    explicit Session(Server& server, Socket socket, std::size_t id);
     Session(const Session&) = delete;
     Session& operator=(const Session&) = delete;
+    ~Session() = default;
 
-    void run();
-    std::size_t get_id() const { return id_; }
-    void push_to_send(SendBuffer packet);
+    asio::awaitable<void> do_read();
+    asio::awaitable<void> do_send();
+
+    // Non-blocking enqueue of an outgoing frame; returns false if the send queue
+    // is full or closed (the frame is then dropped). Safe to call from any thread.
+    bool send(std::vector<std::byte> msg);
+
+    // Best-effort socket close, used by the supervisor during teardown.
+    void close() noexcept;
+
+    // Executor (strand) this session's I/O runs on; used to post strand-safe work.
+    asio::any_io_executor executor() { return socket_.get_executor(); }
+
+    std::size_t get_id() const noexcept { return id_; }
 
   private:
-    // main funciton processing session input state
-    void process_state();
+    void process_data(std::span<const char> buff);
 
-    // Read bytes untill read the full packet header
-    void read_packet_head();
-    void on_read_packet_head(std::size_t size);
-
-    // Read bytes untill read the full payload data
-    // and push to incoming queue
-    void read_packet_body();
-    void on_read_packet_body(std::size_t size);
-
-    void send();
-
-    // Session state
-    void set_connecting() const noexcept {
-        return state_.store(State::Connecting, std::memory_order_release);
-    }
-    void set_connected() const noexcept {
-        return state_.store(State::Connected, std::memory_order_release);
-    }
-    void set_disconnecting() const noexcept {
-        return state_.store(State::Disconnecting, std::memory_order_release);
-    }
-    void set_disconnected() const noexcept {
-        return state_.store(State::Disconnected, std::memory_order_release);
-    }
-    void set_user() const noexcept { return state_.store(State::User, std::memory_order_release); }
-
-    [[nodiscard]] State get_state() const noexcept {
-        return state_.load(std::memory_order_acquire);
-    }
-
-    [[nodiscard]] bool is_connected() const noexcept {
-        return state_.load(std::memory_order_acquire) != State::Disconnected;
-    }
-
-    // Sending state
-    [[maybe_unused]] bool start_sending() const noexcept { return sending_.test_and_set(); }
-    void stop_sending() const noexcept { return sending_.clear(); }
-
-    std::shared_ptr<Server> server_;
-    std::shared_ptr<ISocket> socket_;
+    Server& server_;
+    Socket socket_;
     std::size_t id_;
-    // Flag indicate session sending packet state: sending/not
-    mutable std::atomic_flag sending_;
-    mutable std::atomic<State> state_;
-    PacketHandler packet_handler_;
-    TSQueue<SendBuffer> out_queue_;
+    Channel send_queue_;
 };
 }  // namespace lit::net

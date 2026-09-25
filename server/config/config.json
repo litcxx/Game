@@ -2,22 +2,18 @@
   "server": {
     "ip": "0.0.0.0",
     "port": 27998,
-    "io_threads": 4,
-    "net_threads": 1
+    "io_threads": 4
   },
   "game": {
     "tick_rate": 60,
-    "game_threads": 4,
-    "map": "map.json",
-    "player": "player.json"
-  },
-  "db": {
-    "db_name": "EndlessPeak",
-    "host": "localhost",
-    "user": "user",
-    "password": "user123",
-    "tables": {
-      "accounts_table": "accounts"
-    }
+    "snapshot_rate": 20,
+    "map_width": 100,
+    "map_height": 100,
+    "move_speed": 300,
+    "max_hp": 100,
+    "attack_range": 120,
+    "attack_cooldown_ticks": 45,
+    "respawn_delay_ticks": 300,
+    "reconnect_grace_ms": 30000
   }
 }

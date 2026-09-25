@@ -1,44 +1,66 @@
 #pragma once
 
-#include <boost/asio/io_context.hpp>
-#include <boost/asio/ip/tcp.hpp>
-#include <boost/asio/ssl/context.hpp>
-#include <memory>
+#include <boost/asio.hpp>
+#include <boost/beast.hpp>
 #include <mutex>
 #include <unordered_map>
 
-#include "aliases/asio_aliases.hpp"
-#include "protocol/server_packet.hpp"
-#include "subsystems/game_subsystem.hpp"
-#include "subsystems/network_subsystem.hpp"
+#include "config/config.hpp"
+#include "game/v1/protocol.pb.h"
+#include "net/client_envelope.hpp"
+#include "net/i_client_gateway.hpp"
+#include "utils/ts_queue.hpp"
+
+namespace asio = boost::asio;
+using tcp = asio::ip::tcp;
+namespace beast = boost::beast;
+namespace websocket = beast::websocket;
+using Socket = websocket::stream<beast::tcp_stream>;
 
 namespace lit::net {
 class Session;
 
-class Server : public std::enable_shared_from_this<Server> {
+// Owns the acceptor and the session registry, and serves as the game loop's
+// gateway to clients (IClientGateway).
+class Server : public IClientGateway {
   public:
-    explicit Server(net::io_context& ioc, ssl::context& ctx,
-                    std::shared_ptr<NetworkSubsystem> net_susbsystem,
-                    std::shared_ptr<GameSubsystem> game_subsystem) noexcept;
-    ~Server() = default;
+    explicit Server(asio::io_context& io, const NetConfig& config,
+                    TSQueue<ClientEnvelope>& incoming_msgs);
+    Server(const Server&) = delete;
+    Server& operator=(const Server&) = delete;
+    // Defined out-of-line in server.cpp (sessions_ stores Session by value and
+    // needs the complete type; main.cpp only sees the forward declaration).
+    ~Server() override;
 
-    bool start_listen(Tcp::endpoint endpoint) noexcept;
-    // Async accept new client.
-    void run();
+    bool start_listen(tcp::endpoint endpoint) noexcept;
+    asio::awaitable<void> do_listen();
 
-    void push_packet(std::unique_ptr<ServerPacket> packet) noexcept;
-    void add_session(std::shared_ptr<Session> session) noexcept;
+    // Called by a session: hand a parsed client message (tagged with its session)
+    // to the game loop's inbound queue.
+    void push_packet(std::uint64_t session_id, ::game::v1::ClientMessage packet);
     void close_session(std::size_t id);
-    void sender();
+
+    // IClientGateway: the game loop hands us serialized frames to deliver.
+    void send_to(std::uint64_t session_id, std::vector<std::byte> bytes) override;
+    void broadcast(std::vector<std::byte> bytes) override;
 
   private:
-    net::io_context& ioc_;
-    ssl::context& ctx_;
-    Tcp::acceptor acceptor_;
+    asio::awaitable<void> add_session(Socket socket);
+    // Supervises one session: runs do_read and do_send together and erases the
+    // session from the map only after BOTH have finished.
+    asio::awaitable<void> run_session(std::uint64_t id);
+
+    // --- NETWORK ---
+    asio::io_context& io_;
+    tcp::acceptor acceptor_;
+    const NetConfig config_;
+
+    // --- SESSIONS ---
+    std::unordered_map<std::uint64_t, Session> sessions_;
+    std::atomic<std::uint64_t> sessions_id_{0};
     mutable std::mutex sessions_mutex_;
-    std::atomic<std::size_t> new_session_id_;
-    std::unordered_map<std::size_t, std::shared_ptr<Session>> sessions_;
-    std::shared_ptr<NetworkSubsystem> net_susbsystem_;
-    std::shared_ptr<GameSubsystem> game_susbsystem_;
+
+    // --- GAME LOOP INBOUND QUEUE ---
+    TSQueue<ClientEnvelope>& incoming_msgs_;
 };
 }  // namespace lit::net

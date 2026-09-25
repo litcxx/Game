@@ -20,5 +20,8 @@ function(add_db_integration_test name src)
   endif()
 endfunction()
 
-add_db_integration_test(sql_connection_tests db/connection/sql_connection_tests.cpp)
-add_db_integration_test(login_database_tests db/database/login_database_tests.cpp)
+# TEMP: the auth/DB module is parked for the MVP (no authorization yet) and the
+# accounts config was removed from Config. These tests reference the removed
+# accounts_db_config and no longer compile. Re-enable together with auth.
+# add_db_integration_test(sql_connection_tests db/connection/sql_connection_tests.cpp)
+# add_db_integration_test(login_database_tests db/database/login_database_tests.cpp)

@@ -3,258 +3,106 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
-#include <cmath>
-#include <cstdint>
-#include <memory>
 #include <thread>
-
-#include "player/player.hpp"
-#include "protocol/net_packet.hpp"
-#include "protocol/opcodes.hpp"
-#include "protocol/server_packet.hpp"
-#include "spdlog/common.h"
-#include "tile/tile.hpp"
-#include "utils/ts_queue.hpp"
+#include <vector>
 
 namespace lit::game {
-World::World(std::shared_ptr<NetworkSubsystem> net_subsystem,
-             std::shared_ptr<GameSubsystem> game_subsystem, const GameConfig& config)
-    : net_subsystem_(net_subsystem), game_subsystem_(game_subsystem), config_(config) {
-    // Initialzie map
-    map_.resize(config_.grid_x * config_.grid_y);
-    for (std::size_t y = 0; y < config_.grid_y; y++) {
-        for (std::size_t x = 0; x < config_.grid_x; x++) {
-            std::size_t index = y * config_.grid_x + x;
-            // Create tile
-            if (config_.map[index] != 0) {
-                map_[index] = Tile{static_cast<double>(x) * config_.tile,
-                                   static_cast<double>(y) * config_.tile, config_.tile,
-                                   config_.tile, TileType::Solid};
-            }
-        }
-    }
+World::World(TSQueue<ClientEnvelope>& incoming_msgs, IClientGateway& gateway,
+             const GameConfig& config)
+    : incoming_msgs_{incoming_msgs}, gateway_{gateway}, config_{config} {
+    // TODO: initialize map/territory state from config (later from persistence).
 }
 
-void World::game_loop() {
+void World::run(std::stop_token stop) {
     const double tick_seconds = 1.0 / config_.tick_rate;
-    auto tick_duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+    const auto tick_duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
         std::chrono::duration<double>(tick_seconds));
 
-    auto last = std::chrono::steady_clock::now();
-
-    for (;;) {
-        auto current = std::chrono::steady_clock::now();
-        std::chrono::duration<double> delta = current - last;
-        last = current;
-
-        // spdlog::info("delta = {}, actual Hz = {}", delta.count(), 1.0 / delta.count());
+    auto last_tick = std::chrono::steady_clock::now();
+    while (!stop.stop_requested()) {
+        const auto now = std::chrono::steady_clock::now();
+        const std::chrono::duration<double> delta = now - last_tick;
+        last_tick = now;
 
         tick(delta.count());
+        send_snapshots();
 
-        std::this_thread::sleep_until(current + tick_duration);
+        std::this_thread::sleep_until(now + tick_duration);
     }
 }
 
 void World::tick(double dt) {
-    // Double buffering incoming queue.
-    ts_swap(game_subsystem_->in_queue, net_subsystem_->in_queue);
+    (void)dt;  // no simulation yet
 
-    spdlog::info("queue length: {}", game_subsystem_->in_queue.size());
+    // Double buffer: move the whole inbound queue into a tick-local one in one shot,
+    // so we don't hold the shared queue's lock while processing messages.
+    swap(incoming_msgs_, game_incoming_msgs_);
 
-    spdlog::info("number of players: {}", players_.size());
-    for (auto item : players_) {
-        item.second->set_vel(0.0, item.second->get_vel_y());
-    }
-
-    // Handle player inputs
-    while (!game_subsystem_->in_queue.empty()) {
-        auto packet = game_subsystem_->in_queue.try_pop();
-        if (packet) process_input(std::move(packet.value()), dt);
-    }
-
-    // Update physics
-    spdlog::info("number of players: {}", players_.size());
-    for (auto item : players_) update(*item.second, dt);
-
-    // Push all packets to network queue for broadcast.
-    while (!game_subsystem_->out_queue.empty()) {
-        auto packet = game_subsystem_->out_queue.try_pop();
-        if (packet) net_subsystem_->out_queue.push(std::move(packet.value()));
+    while (!game_incoming_msgs_.empty()) {
+        auto env = game_incoming_msgs_.try_pop();
+        if (env) process_input(env.value());
     }
 }
 
-void World::process_input(std::unique_ptr<ServerPacket> packet, double dt) {
-    spdlog::info("(World::ProcessInput)");
-    // TODO check is this player exists
-    auto player = players_[packet->get_id()];
-    if (!player)
-        spdlog::info("player not found id: {}\nfile: {} line: {}", packet->get_id(), __FILE__,
-                     __LINE__);
-    auto net_packet = packet->get_net_packet();
-    std::uint16_t opcode = net_packet.get_head_opcode();
-
-    double speed = 100.0 * dt;
-    double jump_force = 400.0 * dt;
-
-    spdlog::info("Process packet:\nid: {}\nopcode:{}", packet->get_id(),
-                 net_packet.get_head_opcode());
-
-    switch (to_opcode(opcode)) {
-        case Opcodes::CreatePlayer: {
-            spdlog::info("Opcodes::CreatePlayer");
-            auto player = std::make_shared<Player>(
-                packet->get_id(),
-                config_.player.player_start_x * config_.tile + config_.player.player_offset,
-                config_.player.player_start_y * config_.tile + config_.player.player_offset, 0.0,
-                0.0, config_.player.width, config_.player.height);
-            add_player(player);
+void World::process_input(const ClientEnvelope& env) {
+    switch (env.msg.payload_case()) {
+        case ::game::v1::ClientMessage::kHello:
+            on_hello(env.session_id, env.msg.hello());
             break;
-        }
-        case Opcodes::RemovePlayer:
-            spdlog::info("Opcodes::RemovePlayer");
-            remove_player(packet->get_id());
+        case ::game::v1::ClientMessage::kSpawn:
+            on_spawn(env.session_id, env.msg.spawn());
             break;
-        case Opcodes::MoveLeft:
-            spdlog::info("Opcodes::MoveLeft");
-            player->set_vel(-speed, player->get_vel_y());
+        case ::game::v1::ClientMessage::kInput:
+            on_input(env.session_id, env.msg.input());
             break;
-        case Opcodes::MoveRight:
-            spdlog::info("Opcodes::MoveRight");
-            player->set_vel(speed, player->get_vel_y());
+        case ::game::v1::ClientMessage::kPing:
+            on_ping(env.session_id, env.msg.ping());
             break;
-        case Opcodes::Jump:
-            spdlog::info("Opcodes::Jump");
-            if (player->on_ground()) {
-                player->set_vel(player->get_vel_x(), -jump_force);
-                player->set_on_ground(false);
-                spdlog::info("JUMP!");
-            }
-            break;
+        case ::game::v1::ClientMessage::PAYLOAD_NOT_SET:
         default:
-            spdlog::warn("unknown opcode: {}", opcode);
+            spdlog::warn("World: empty/unknown payload from session={}", env.session_id);
+            break;
     }
 }
 
-void World::update(IPlayer& player, double dt) {
-    spdlog::info("(World::Update)");
-    const double g = 9.8;
-    double vel_y = player.get_vel_y() + g * dt;
-    player.set_vel(player.get_vel_x(), vel_y);
-    move_player(player);
-    // spdlog::info("vel_y: {}", player.GetVelY());
+// --- dispatch stubs (no mechanics yet) ---
 
-    spdlog::info("make move packet");
-    auto move_packet = std::make_unique<ServerPacket>(
-        move_player_packet(player.get_id(), player.get_x(), player.get_y()), player.get_id());
-    game_subsystem_->out_queue.push(std::move(move_packet));
+void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
+    spdlog::info("World::on_hello session={} name='{}' protocol_version={}", session_id,
+                 hello.name(), hello.protocol_version());
+    // TODO: assign player_id + session token, reply Welcome, then MapState + Roster.
 }
 
-void World::move_player(IPlayer& player) {
-    spdlog::info("(World::MovePlayer)");
-    double vel_x = player.get_vel_x();
-    double vel_y = player.get_vel_y();
+void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn) {
+    spdlog::info("World::on_spawn session={} cell={} faction_id={}", session_id, spawn.cell(),
+                 spawn.faction_id());
+    // TODO: validate cell/faction, place the player, mark ALIVE.
+}
 
-    /* ------ X Axis ------*/
-    if (vel_x != 0) {
-        spdlog::info("============== X AXIS ==============");
-        // calculate collision along x axis
-        SweptData swept =
-            collision_.swept_axis(player, config_.tile, config_.grid_x,
-                                  static_cast<std::uint8_t>(config_.grid_y), map_, vel_x, 0.0);
+void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
+    spdlog::info("World::on_input session={} frames={}", session_id, input.frames_size());
+    // TODO: apply movement/attack intents for this tick.
+}
 
-        vel_x *= swept.entry_time;
-        player.move(vel_x, 0.0);
-        if (swept.hit) {
-            player.set_vel(0.0, vel_y);
-            // spdlog::info("HIT SIDE WALL\n"
-            //              "x: {} y: {}", player.GetX(), player.GetY());
-        }
-        spdlog::info("============== X AXIS ==============");
+void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
+    // Transport keepalive: echo a Pong (server_tick is a stub until we count ticks).
+    ::game::v1::ServerMessage reply;
+    auto* pong = reply.mutable_pong();
+    pong->set_client_time_ms(ping.client_time_ms());
+    pong->set_server_tick(0);
+    send(session_id, reply);
+}
+
+void World::send_snapshots() {
+    // TODO: build a per-session Snapshot and broadcast at snapshot_rate. Stub for now.
+}
+
+void World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {
+    std::vector<std::byte> bytes(msg.ByteSizeLong());
+    if (!msg.SerializeToArray(bytes.data(), static_cast<int>(bytes.size()))) {
+        spdlog::error("World::send failed to serialize for session={}", session_id);
+        return;
     }
-
-    /* ------ Y Axis ------*/
-    if (vel_y != 0) {
-        spdlog::info("============== Y AXIS ==============");
-        // calculate collision along y axis
-        SweptData swept =
-            collision_.swept_axis(player, config_.tile, config_.grid_x,
-                                  static_cast<std::uint8_t>(config_.grid_y), map_, 0.0, vel_y);
-
-        vel_y *= swept.entry_time;
-        player.move(0.0, vel_y);
-        player.set_on_ground(false);
-        if (swept.hit) {
-            if (vel_y >= 0.0) {
-                player.set_on_ground(true);
-                // spdlog::info("HIT GROUND");
-            } else {
-                // spdlog::info("HIT WALL");
-            }
-            player.set_vel(vel_x, 0.0);
-        }
-        spdlog::info("============== Y AXIS ==============");
-    }
-}
-
-void World::add_player(std::shared_ptr<IPlayer> player) {
-    spdlog::info("(World::AddPlayer)");
-    {
-        std::lock_guard lock(players_mutex_);
-        // TODO check if this id already exists
-        // Otherwise it overwrite previous player
-        players_[player->get_id()] = player;
-
-        spdlog::info("CreatePlayerPacket:\nid: {}\nx: {}\ny: {}\nwidth: {}\nheight: {}",
-                     player->get_id(), player->get_x(), player->get_y(), player->get_width(),
-                     player->get_height());
-        // Create player on client side
-        auto create_packet = std::make_unique<ServerPacket>(
-            create_player_packet(player->get_id(), player->get_x(), player->get_y(),
-                                 player->get_width(), player->get_height()),
-            player->get_id(), PacketType::Rpc);
-
-        // spdlog::info("packet body size: {}", packet0.GetBodySize());
-        // TODO make it instance send
-        game_subsystem_->out_queue.push(std::move(create_packet));
-
-        // Send all players to new player
-        NetPacket spawn_packet;
-        spawn_packet.set_head_opcode(to_uint16(Opcodes::SpawnPlayers));
-        spawn_packet << players_.size() - 1;
-        for (const auto& elem : players_) {
-            if (elem.first != player->get_id()) {
-                spdlog::info("make spawn_packet id: {} x: {} y: {} width: {} height: {}",
-                             elem.second->get_id(), elem.second->get_x(), elem.second->get_y(),
-                             elem.second->get_width(), elem.second->get_height());
-
-                spawn_packet << elem.second->get_id() << elem.second->get_x()
-                             << elem.second->get_y() << elem.second->get_width()
-                             << elem.second->get_height();
-            }
-        }
-        game_subsystem_->out_queue.push(std::make_unique<ServerPacket>(
-            std::move(spawn_packet), player->get_id(), PacketType::Rpc));
-    }
-
-    // // Notify others
-    auto add_packet = std::make_unique<ServerPacket>(
-        add_player_packet(player->get_id(), player->get_x(), player->get_y(), player->get_width(),
-                          player->get_height()),
-        player->get_id(), PacketType::RpcOthers);
-    game_subsystem_->out_queue.push(std::move(add_packet));
-}
-
-void World::remove_player(std::size_t id) {
-    spdlog::info("(World::RemovePlayer)");
-    std::lock_guard lock(players_mutex_);
-    // TODO check if this id is exists
-    players_.erase(id);
-    auto remove_packet = std::make_unique<ServerPacket>(remove_player_packet(id), id);
-    game_subsystem_->out_queue.push(std::move(remove_packet));
-}
-
-std::size_t World::player_numbers() const {
-    std::lock_guard lock(players_mutex_);
-    return players_.size();
+    gateway_.send_to(session_id, std::move(bytes));
 }
 }  // namespace lit::game

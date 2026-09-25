@@ -1,64 +1,53 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
-#include <vector>
+#include <string>
 
 namespace lit {
+// Server runtime settings (deployment concern, not part of the wire protocol).
 struct NetConfig {
     std::string ip;
     std::uint16_t port;
     std::uint8_t io_threads;
-    std::uint8_t net_threads;
 };
 
-struct PlayerConfig {
-    std::uint8_t width;
-    std::uint8_t height;
-    std::uint16_t player_start_x;
-    std::uint16_t player_start_y;
-    std::uint16_t player_offset;
-};
-
-struct AccountsDBConfig {
-    std::string db_name;
-    std::string host;
-    std::string user;
-    std::string password;
-    std::string table_name;
-};
-
+// Mirrors game.v1.GameConfig from protocol.proto — the authoritative game rules
+// the server sends to clients in Welcome. All fields are uint32 to match the
+// protobuf message. Position units: 100 units = 1 cell (UNITS_PER_CELL).
 struct GameConfig {
-    // Game
-    std::uint8_t tick_rate;
-    std::uint8_t game_threads;
-
-    // Map
-    std::uint8_t tile;
-    std::uint16_t grid_x;
-    std::uint16_t grid_y;
-    std::vector<std::uint8_t> map;
-
-    // Player
-    PlayerConfig player;
+    std::uint32_t tick_rate;              // simulation ticks per second (60)
+    std::uint32_t snapshot_rate;          // snapshots per second (20)
+    std::uint32_t map_width;              // cells (100)
+    std::uint32_t map_height;             // cells (100)
+    std::uint32_t move_speed;             // units per second (300 = 3 cells/s)
+    std::uint32_t max_hp;                 // (100)
+    std::uint32_t attack_range;           // units between player centers (120)
+    std::uint32_t attack_cooldown_ticks;  // (45 = 0.75 s at 60 Hz)
+    std::uint32_t respawn_delay_ticks;    // (300 = 5 s at 60 Hz)
+    std::uint32_t reconnect_grace_ms;     // how long a dropped session is kept (30000)
 };
 
 class Config {
   public:
-    // Filename is only used on the first call.
-    static std::shared_ptr<Config> get_instance(std::string filename = "null");
     Config(const Config&) = delete;
     Config& operator=(const Config&) = delete;
     ~Config() = default;
 
-    NetConfig net_config;
-    GameConfig game_config;
-    AccountsDBConfig accounts_db_config;
+    static const Config& get_instance(const std::string& filename) {
+        static Config instance(filename);
+        return instance;
+    }
+
+    const NetConfig& net_config() const noexcept { return net_config_; }
+
+    const GameConfig& game_config() const noexcept { return game_config_; }
 
   private:
-    explicit Config(std::string filename);
+    explicit Config(const std::string& filename);
     void init_net_config(const std::string& filename);
     void init_game_config(const std::string& filename);
-    void init_accounts_db_config(const std::string& filename);
+
+    NetConfig net_config_{};
+    GameConfig game_config_{};
 };
 }  // namespace lit
