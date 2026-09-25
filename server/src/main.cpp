@@ -1,83 +1,56 @@
 #include <spdlog/spdlog.h>
 
-#include <boost/asio/ip/address.hpp>
-#include <boost/asio/ssl/context.hpp>
+#include <boost/asio.hpp>
 #include <cstdlib>
-#include <memory>
+#include <stop_token>
 #include <thread>
 #include <vector>
 
 #include "config/config.hpp"
+#include "net/client_envelope.hpp"
 #include "server/server.hpp"
 #include "spdlog/common.h"
-#include "subsystems/game_subsystem.hpp"
-#include "subsystems/network_subsystem.hpp"
 #include "world/world.hpp"
 
-int main(int argc, char* argv[]) {
-    // Clear project namespaces for readability.
-    using namespace lit::net;
-    using namespace lit::game;
+namespace asio = boost::asio;
 
-    // Check command line arguments.
+// Fully qualified (no `using namespace lit`): unqualified `game` would be
+// ambiguous between lit::game and the protobuf ::game namespace.
+int main(int argc, char* argv[]) {
     if (argc != 2) {
         spdlog::error("Usage: {} <config>", argv[0]);
         return EXIT_FAILURE;
     }
 
-    // Set spdlog level
     spdlog::set_level(spdlog::level::debug);
 
-    // Initialize config.
-    auto config = lit::Config::get_instance(argv[1]);
+    const lit::Config& config = lit::Config::get_instance(argv[1]);
+    const auto io_threads = std::max<int>(1, config.net_config().io_threads);
 
-    // Initialize subsystems
-    auto net_subsystem = std::make_shared<lit::NetworkSubsystem>();
-    auto game_subsystem = std::make_shared<lit::GameSubsystem>();
+    // BOOST
+    asio::io_context io(io_threads);
+    asio::signal_set signals(io, SIGINT, SIGTERM);
+    signals.async_wait([&io](auto, auto) { io.stop(); });
 
-    // Initialize the world
-    auto world = std::make_shared<World>(net_subsystem, game_subsystem, config->game_config);
-    const auto io_threads = std::max<int>(1, config->net_config.io_threads);
-    const auto net_threads = std::max<int>(1, config->net_config.net_threads);
+    // Inbound client messages (tagged with their session): produced by the network,
+    // consumed by the game loop.
+    lit::TSQueue<lit::ClientEnvelope> incoming_msgs;
 
-    // The io_context is required for all I/O.
-    net::io_context ioc{io_threads};
+    // --- I/O SERVER (also the game loop's gateway back to clients) ---
+    lit::net::Server server(io, config.net_config(), incoming_msgs);
 
-    // The SSL context is required, and holds certificates.
-    ssl::context ctx(ssl::context::tlsv12_server);
-    ctx.set_options(ssl::context::default_workarounds | ssl::context::no_sslv2 |
-                    ssl::context::no_sslv3 | ssl::context::single_dh_use);
-    ctx.use_certificate_chain_file("certs/server.crt");
-    ctx.use_private_key_file("certs/server.key", ssl::context::pem);
-    ctx.set_verify_mode(ssl::verify_none);
+    // --- GAME LOOP ---
+    lit::game::World world(incoming_msgs, server, config.game_config());
+    std::jthread game_thread([&world](std::stop_token stop) { world.run(stop); });
 
-    // Start server
-    auto server = std::make_shared<Server>(ioc, ctx, net_subsystem, game_subsystem);
+    asio::co_spawn(io, server.do_listen(), asio::detached);
 
-    const auto address = net::ip::make_address(config->net_config.ip);
-    const auto port = config->net_config.port;
-    if (!server->start_listen(Tcp::endpoint{address, port})) {
-        return EXIT_FAILURE;
-    }
-
-    // Run server
-    server->run();
-
-    // Run game
-    std::jthread game_thread([&world] { world->game_loop(); });
-
-    // Server send packets to clients
-    std::vector<std::jthread> net_thread_pool;
-    for (auto i = 0; i < net_threads; i++) {
-        net_thread_pool.emplace_back([server] { server->sender(); });
-    }
-
-    // Run the I/O service on the requested number of threads.
+    // Run the I/O service on the configured number of threads.
     std::vector<std::jthread> io_thread_pool;
     for (auto i = 0; i < io_threads - 1; i++) {
-        io_thread_pool.emplace_back([&ioc] { ioc.run(); });
+        io_thread_pool.emplace_back([&io] { io.run(); });
     }
-    ioc.run();
+    io.run();
 
     return EXIT_SUCCESS;
 }

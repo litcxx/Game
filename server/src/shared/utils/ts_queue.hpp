@@ -13,7 +13,7 @@ concept MovableType = std::movable<T>;
 template <MovableType T>
 class TSQueue {
     template <MovableType U>
-    friend void ts_swap(TSQueue<U>& lhs, TSQueue<U>& rhs);
+    friend void swap(TSQueue<U>& lhs, TSQueue<U>& rhs);
 
   public:
     TSQueue() = default;
@@ -36,7 +36,7 @@ class TSQueue {
 };
 
 template <MovableType U>
-void ts_swap(TSQueue<U>& lhs, TSQueue<U>& rhs) {
+void swap(TSQueue<U>& lhs, TSQueue<U>& rhs) {
     if (&lhs == &rhs) return;
     std::scoped_lock lock(lhs.data_mutex_, rhs.data_mutex_);
     auto tmp = std::move(lhs.data_);

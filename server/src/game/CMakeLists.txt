@@ -1,9 +1,6 @@
 add_library(game
   player/player.cpp
   world/world.cpp
-  physics/collision.cpp
-  physics/swept_math.cpp
-  tile/tile.cpp
 )
 
 target_include_directories(game PUBLIC

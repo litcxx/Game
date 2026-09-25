@@ -1,189 +1,85 @@
 #include "session.hpp"
 
 #include <spdlog/spdlog.h>
-#include <sys/types.h>
 
-#include <atomic>
-#include <boost/asio/buffer.hpp>
-#include <boost/asio/ssl/error.hpp>
-#include <boost/asio/ssl/stream_base.hpp>
-#include <boost/beast/core/error.hpp>
-#include <boost/beast/websocket/error.hpp>
-#include <boost/beast/websocket/ssl.hpp>
-
-#include "aliases/beast_aliases.hpp"
-#include "protocol/server_packet.hpp"
 #include "server/server.hpp"
 
+namespace {
+constexpr int kChannelMax = 10;
+// Per protocol.proto a client frame larger than ~1 KiB is a protocol error;
+// cap reads so an oversized frame can't allocate unbounded memory.
+constexpr std::size_t kMaxIncomingMessage = 1024;
+}  // namespace
+
 namespace lit::net {
-Session::Session(std::shared_ptr<Server> server, std::shared_ptr<ISocket> socket, std::size_t id)
+Session::Session(Server& server, Socket socket, std::size_t id)
     : server_(server),
-      socket_(socket),
+      socket_(std::move(socket)),
       id_(id),
-      sending_(ATOMIC_FLAG_INIT),
-      state_(State::Connecting) {}
-
-void Session::run() {
-    spdlog::info("Session::Accept");
-    // TODO set timeout
-    // TODO set decorator
-
-    auto self = shared_from_this();
-    // Accept websocket handshake
-    socket_->async_accept([self](const beast::error_code& ec) {
-        if (ec) {
-            if (ec == websocket::error::closed)
-                spdlog::warn("WebSocket was closed cleanly");
-            else
-                spdlog::error("Accept error: {}", ec.what());
-
-            self->set_disconnecting();
-        } else {
-            self->set_connected();
-        }
-
-        self->process_state();
-    });
+      send_queue_(socket_.get_executor(), kChannelMax) {
+    socket_.binary(true);  // protocol uses binary frames only
 }
 
-void Session::process_state() {
-    switch (get_state()) {
-        case State::Connecting:
-            break;
-        case State::Connected:
-            // Add client to server and game
-            server_->add_session(shared_from_this());
+asio::awaitable<void> Session::do_read() {
+    spdlog::info("Session::do_read id={}", id_);
+    // One WebSocket message == one ClientMessage (see protocol.proto): read whole
+    // messages via async_read, no manual header/body framing. Cap the size so an
+    // oversized frame can't exhaust memory.
+    socket_.read_message_max(kMaxIncomingMessage);
 
-            // Start reading client inputs
-            read_packet_head();
+    beast::flat_buffer buffer;
+    for (;;) {
+        auto [ec, n] = co_await socket_.async_read(buffer, asio::as_tuple(asio::use_awaitable));
+        if (ec) {
+            // Client closed the connection or a read error occurred: stop reading.
+            // The supervisor (Server::run_session) then tears the session down.
+            if (ec != websocket::error::closed)
+                spdlog::warn("Session::do_read error id={}: {}", id_, ec.message());
             break;
-        case State::Disconnecting:
-            socket_->close();
-            server_->close_session(id_);
-            set_disconnected();
-            break;
-        case State::Disconnected:
-            break;
-        case State::User:
-            break;
-        default:
-            spdlog::error("Unknown session state");
+        }
+
+        // The protocol uses binary frames only.
+        if (!socket_.got_binary()) {
+            spdlog::warn("Session::do_read dropping non-binary frame id={}", id_);
+            buffer.consume(buffer.size());
+            continue;
+        }
+
+        const auto bytes = buffer.data();
+        process_data({static_cast<const char*>(bytes.data()), bytes.size()});
+        buffer.consume(buffer.size());
     }
 }
 
-void Session::read_packet_head() {
-    spdlog::info("Session::ReadPacketHead");
-    auto self = shared_from_this();
-    socket_->async_read_some(packet_handler_.head_current_data(), packet_handler_.head_size_left(),
-                             [self](const beast::error_code& ec, std::size_t size) {
-                                 // an error occured
-                                 if (ec) {
-                                     // client close connection
-                                     if (ec == websocket::error::closed)
-                                         spdlog::warn("WebSocket was closed cleanly");
-                                     else
-                                         spdlog::error("Read header error: {}", ec.what());
-
-                                     // Close session process
-                                     self->set_disconnecting();
-                                     self->process_state();
-                                     return;
-                                 }
-
-                                 // Continue reading the header, untill the complete PacketHead is
-                                 // recived.
-                                 if (!self->packet_handler_.update_head_size(size))
-                                     return self->read_packet_head();
-
-                                 // Check if packet contains payload data, then read the data
-                                 if (self->packet_handler_.body_size_left())
-                                     return self->read_packet_body();
-
-                                 // Packet does not contain payload data, push to handler
-                                 auto packet = std::make_unique<ServerPacket>(
-                                     self->packet_handler_.extract_packet(), self->id_);
-                                 self->server_->push_packet(std::move(packet));
-
-                                 // Continue reading next packet
-                                 self->read_packet_head();
-                             });
+void Session::process_data(std::span<const char> buff) {
+    // Session is pure transport: parse one frame and forward it (tagged with our
+    // id) to the game loop. All dispatch and validation live in World.
+    ::game::v1::ClientMessage message;
+    if (!message.ParseFromArray(buff.data(), static_cast<int>(buff.size()))) {
+        spdlog::warn("Session::process_data parse failed id={}", id_);
+        return;
+    }
+    server_.push_packet(id_, std::move(message));
 }
 
-void Session::read_packet_body() {
-    spdlog::info("Session::ReadPacketBody");
-    auto self = shared_from_this();
-    socket_->async_read_some(packet_handler_.body_current_data(), packet_handler_.body_size_left(),
-                             [self](const beast::error_code& ec, std::size_t size) {
-                                 // an error occured
-                                 if (ec) {
-                                     // client close connection
-                                     if (ec == websocket::error::closed)
-                                         spdlog::warn("WebSocket was closed cleanly");
-                                     else
-                                         spdlog::error("Read body error: {}", ec.what());
+asio::awaitable<void> Session::do_send() {
+    spdlog::info("Session::do_send id={}", id_);
+    for (;;) {
+        auto [rec, buff] = co_await send_queue_.async_receive(asio::as_tuple(asio::use_awaitable));
+        if (rec) break;  // channel closed or cancelled -> stop.
 
-                                     // Close session process
-                                     self->set_disconnecting();
-                                     self->process_state();
-                                     return;
-                                 }
-
-                                 // Continue reading payload data untill all data has been received.
-                                 if (!self->packet_handler_.update_body_size(size))
-                                     return self->read_packet_body();
-
-                                 // All payload data has been received, push to handler
-                                 auto packet = std::make_unique<ServerPacket>(
-                                     self->packet_handler_.extract_packet(), self->id_);
-                                 self->server_->push_packet(std::move(packet));
-
-                                 // Continue reading next packet
-                                 self->read_packet_head();
-                             });
+        auto [wec, n] =
+            co_await socket_.async_write(asio::buffer(buff), asio::as_tuple(asio::use_awaitable));
+        if (wec) break;  // write failed or cancelled -> stop.
+    }
 }
 
-void Session::push_to_send(SendBuffer packet) {
-    out_queue_.push(packet);
-    send();
+bool Session::send(std::vector<std::byte> msg) {
+    return send_queue_.try_send(boost::system::error_code{}, std::move(msg));
 }
 
-void Session::send() {
-    // Check if session is disconnected
-    if (!is_connected()) return spdlog::info("Return from send operation, client is disconneted");
-
-    // Check if send queue is empty
-    if (out_queue_.empty()) return spdlog::info("Return from send, queue is empty");
-
-    // Check if previous sending finished
-    if (start_sending())
-        return spdlog::info("Return from send operation, previous send is not finished");
-
-    auto buf = out_queue_.try_pop();
-    // This check should never pass
-    if (!buf) return spdlog::error("buffer is nullopt:\nfile: {} line: {}", __FILE__, __LINE__);
-
-    auto self = shared_from_this();
-    socket_->async_write(
-        (*buf)->data(), (*buf)->size(),
-        [self, buf](const beast::error_code& ec, [[maybe_unused]] std::size_t size) {
-            // an error occured
-            if (ec) {
-                // client close connection
-                if (ec == websocket::error::closed)
-                    spdlog::warn("WebSocket was closed cleanly");
-                else
-                    spdlog::error("Write error: {}", ec.what());
-
-                // Close session process
-                self->set_disconnecting();
-                self->process_state();
-                return;
-            }
-            // spdlog::info("write {} bytes to client", size);
-
-            self->sending_.clear();
-            // If out queue is not empty send again
-            if (!self->out_queue_.empty()) self->send();
-        });
+void Session::close() noexcept {
+    boost::system::error_code ec;
+    beast::get_lowest_layer(socket_).socket().close(ec);
 }
 }  // namespace lit::net

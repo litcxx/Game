@@ -58,6 +58,7 @@ target_compile_options(project_warnings INTERFACE
 
 # --- SUBDIRECTORIES ---
 add_subdirectory(third_party)
+add_subdirectory(proto)
 add_subdirectory(src)
 add_subdirectory(src/cryptography)
 add_subdirectory(src/db)

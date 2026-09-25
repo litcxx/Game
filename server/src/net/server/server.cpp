@@ -2,135 +2,125 @@
 
 #include <spdlog/spdlog.h>
 
-#include <boost/asio/ssl/context.hpp>
-#include <boost/asio/strand.hpp>
-#include <boost/system/detail/error_code.hpp>
-#include <cstddef>
+#include <boost/asio/experimental/awaitable_operators.hpp>
 #include <cstdint>
+#include <unordered_map>
 
-#include "protocol/opcodes.hpp"
-#include "protocol/server_packet.hpp"
+#include "config/config.hpp"
 #include "session/session.hpp"
-#include "socket/ws_socket.hpp"
+
+namespace ip = asio::ip;
 
 namespace lit::net {
-Server::Server(boost::asio::io_context& ioc, ssl::context& ctx,
-               std::shared_ptr<NetworkSubsystem> net_susbsystem,
-               std::shared_ptr<GameSubsystem> game_subsystem) noexcept
-    : ioc_{ioc},
-      ctx_{ctx},
-      acceptor_{ioc},
-      new_session_id_{0},
-      net_susbsystem_(net_susbsystem),
-      game_susbsystem_(game_subsystem) {}
-
-bool Server::start_listen(Tcp::endpoint endpoint) noexcept {
-    boost::system::error_code ec;
-
-    // Open the acceptor.
-    ec = acceptor_.open(endpoint.protocol(), ec);
-    if (ec) {
-        spdlog::error("open: {}", ec.what());
-        return false;
-    }
-
-    // Allow address reuse.
-    ec = acceptor_.set_option(boost::asio::socket_base::reuse_address(true), ec);
-    if (ec) {
-        spdlog::error("set_option: {}", ec.what());
-        return false;
-    }
-
-    // Bind to the server address.
-    ec = acceptor_.bind(endpoint, ec);
-    if (ec) {
-        spdlog::error("bind: {}", ec.what());
-        return false;
-    }
-
-    // Start listening for connections.
-    ec = acceptor_.listen(boost::asio::socket_base::max_listen_connections, ec);
-    if (ec) {
-        spdlog::error("listen: {}", ec.what());
-        return false;
-    }
-
-    return true;
+Server::Server(asio::io_context& io, const NetConfig& config,
+               TSQueue<ClientEnvelope>& incoming_msgs)
+    : io_{io}, acceptor_{io}, config_{config}, incoming_msgs_{incoming_msgs} {
+    const ip::address address = ip::make_address(config_.ip);
+    const std::uint16_t port = config_.port;
+    const tcp::endpoint endpoint{address, port};
+    acceptor_.open(endpoint.protocol());
+    acceptor_.set_option(boost::asio::socket_base::reuse_address(true));
+    acceptor_.bind(endpoint);
+    acceptor_.listen(boost::asio::socket_base::max_listen_connections);
 }
 
-void Server::run() {
-    acceptor_.async_accept(
-        net::make_strand(ioc_), [this](const boost::system::error_code& ec, Tcp::socket socket) {
-            if (!ec) {
-                // auto wsssocket = std::make_shared<WSSSocket>(std::move(socket), ctx_);
-                auto wssocket = std::make_shared<WSSocket>(std::move(socket));
-                std::size_t id = new_session_id_.fetch_add(1);
-                auto session = std::make_shared<Session>(shared_from_this(), wssocket, id);
-                session->run();
-            } else {
-                spdlog::error("async_accept: {}", ec.what());
-            }
+Server::~Server() = default;
 
-            run();
-        });
+asio::awaitable<void> Server::do_listen() {
+    for (;;) {
+        auto socket =
+            Socket(co_await acceptor_.async_accept(asio::make_strand(io_), asio::use_awaitable));
+
+        // Capture the executor before moving `socket`: function-argument evaluation
+        // order is unspecified, so reading it inside the co_spawn(...) call could run
+        // after the move and dereference a moved-from (empty) stream.
+        auto executor = socket.get_executor();
+        asio::co_spawn(executor, add_session(std::move(socket)), asio::detached);
+    }
 }
 
-void Server::add_session(std::shared_ptr<Session> session) noexcept {
-    spdlog::info("Server::AddSession");
+asio::awaitable<void> Server::add_session(Socket socket) {
+    const std::uint64_t id = sessions_id_.fetch_add(1);
+    auto executor = socket.get_executor();
+    try {
+        // WebSocket handshake
+        co_await socket.async_accept(asio::use_awaitable);
+
+        // Store the session by value in the map. Node addresses are stable, so
+        // references survive other insert/erase and rehash (only erasing this very
+        // entry invalidates them) — this is what makes by-value storage safe.
+        {
+            std::lock_guard lock(sessions_mutex_);
+            auto [it, success] = sessions_.try_emplace(id, *this, std::move(socket), id);
+            assert(success);
+        }
+
+        // One supervisor per session runs both I/O coroutines and removes the
+        // session only after BOTH have finished (see run_session).
+        co_spawn(executor, run_session(id), asio::detached);
+    } catch (const std::exception& e) {
+        spdlog::error("Server::add_session error id={}: {}", id, e.what());
+    }
+}
+
+asio::awaitable<void> Server::run_session(std::uint64_t id) {
+    using namespace asio::experimental::awaitable_operators;
+
+    Session* session = nullptr;
     {
         std::lock_guard lock(sessions_mutex_);
-        sessions_[session->get_id()] = session;
+        auto it = sessions_.find(id);
+        if (it == sessions_.end()) co_return;
+        session = &it->second;  // stays valid until this id is erased below
     }
-    // net_susbsystem_->in_queue_.Push(NetPacket(Opcodes::CreatePlayer, session->GetID()));
-    spdlog::info("Push Opcodes::CreatePlayer\nfile: {} line: {}", __FILE__, __LINE__);
-    auto packet =
-        std::make_unique<ServerPacket>(NetPacket(Opcodes::CreatePlayer), session->get_id());
-    net_susbsystem_->in_queue.push(std::move(packet));
+
+    try {
+        // Resumes only after BOTH coroutines finish: when one returns (EOF/error),
+        // `||` cancels the other and waits for it to unwind. After this line no
+        // coroutine frame holds `session`, so the erase below is safe.
+        co_await (session->do_read() || session->do_send());
+    } catch (const std::exception& e) {
+        spdlog::warn("Server::run_session id={} ended with exception: {}", id, e.what());
+    }
+
+    session->close();  // session still alive here; releases the OS socket
+
+    std::lock_guard lock(sessions_mutex_);
+    sessions_.erase(id);
+    spdlog::info("Server::run_session id={} removed, sessions={}", id, sessions_.size());
 }
 
-void Server::sender() {
-    spdlog::info("Server::Sender");
-    for (;;) {
-        auto packet = net_susbsystem_->out_queue.wait_and_pop();
-        // Make flat buffer from packet.
-        auto net_packet = packet->get_net_packet();
-        auto buf = std::make_shared<std::vector<std::uint8_t>>(net_packet.make_buffer());
-
-        switch (packet->get_type()) {
-            case PacketType::Rpc:
-                sessions_[packet->get_id()]->push_to_send(buf);
-                break;
-            case PacketType::Broadcast:
-                for (const auto& elem : sessions_) {
-                    elem.second->push_to_send(buf);
-                }
-                break;
-            case PacketType::RpcOthers:
-                for (const auto& elem : sessions_) {
-                    if (elem.first != packet->get_id()) {
-                        elem.second->push_to_send(buf);
-                    }
-                }
-                break;
-            default:
-                spdlog::error("unknown packet type");
-        }
-    }
+void Server::push_packet(std::uint64_t session_id, ::game::v1::ClientMessage packet) {
+    incoming_msgs_.push(ClientEnvelope{session_id, std::move(packet)});
 }
 
-void Server::push_packet(std::unique_ptr<ServerPacket> packet) noexcept {
-    net_susbsystem_->in_queue.push(std::move(packet));
+void Server::send_to(std::uint64_t session_id, std::vector<std::byte> bytes) {
+    std::lock_guard lock(sessions_mutex_);
+    auto it = sessions_.find(session_id);
+    if (it != sessions_.end()) it->second.send(std::move(bytes));
+}
+
+void Server::broadcast(std::vector<std::byte> bytes) {
+    std::lock_guard lock(sessions_mutex_);
+    for (auto& [id, session] : sessions_) session.send(bytes);  // one copy per session
 }
 
 void Server::close_session(std::size_t id) {
-    std::lock_guard lock(sessions_mutex_);
-    if (sessions_.find(id) != sessions_.end()) {
-        sessions_.erase(id);
-        spdlog::info("Push Opcodes::RemovePlayer\nfile: {} line: {}", __FILE__, __LINE__);
-        auto packet = std::make_unique<ServerPacket>(NetPacket(Opcodes::RemovePlayer), id);
-        net_susbsystem_->in_queue.push(std::move(packet));
-    } else {
-        spdlog::error("Server::CloseSession errror id: {}", id);
+    // Grab the session's executor under the lock, then ask it to close on its own
+    // strand. Closing the socket unblocks do_read/do_send; the supervisor
+    // (run_session) then erases the entry. We never erase here — run_session is
+    // the single eraser.
+    asio::any_io_executor ex;
+    {
+        std::lock_guard lock(sessions_mutex_);
+        auto it = sessions_.find(id);
+        if (it == sessions_.end()) return;
+        ex = it->second.executor();
     }
+    asio::post(ex, [this, id] {
+        std::lock_guard lock(sessions_mutex_);
+        auto it = sessions_.find(id);
+        if (it != sessions_.end()) it->second.close();
+    });
 }
 }  // namespace lit::net

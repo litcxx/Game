@@ -57,7 +57,7 @@ TEST(TSQueueTest, Swap) {
     lit::TSQueue<int> tmp;
     EXPECT_EQ(tmp.size(), 0);
 
-    ts_swap(tmp, data);
+    swap(tmp, data);
 
     EXPECT_EQ(data.size(), 0);
     EXPECT_EQ(tmp.size(), 5);

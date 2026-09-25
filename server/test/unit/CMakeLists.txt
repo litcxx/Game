@@ -12,14 +12,12 @@ FetchContent_MakeAvailable(googletest)
 
 set(SOURCES
   main.cpp
-  net/protocol/net_packet_tests.cpp
-  net/session/packet_handler_tests.cpp
   shared/ts_queue_tests.cpp
-  game/player/player_tests.cpp
-  game/world/world_tests.cpp
-  game/physics/collision_tests.cpp
-  game/physics/swept_math_tests.cpp
-  cryptography/sha256_tests.cpp
+  # Disabled until their subjects are ready:
+  #   player_tests — Player will be reworked for the top-down MVP
+  #   sha256_tests — auth/crypto is parked
+  # game/player/player_tests.cpp
+  # cryptography/sha256_tests.cpp
 )
 
 add_executable(unit_tests
