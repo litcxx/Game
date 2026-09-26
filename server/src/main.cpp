@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "config/config.hpp"
-#include "net/client_envelope.hpp"
+#include "net/client_event.hpp"
 #include "server/server.hpp"
 #include "spdlog/common.h"
 #include "world/world.hpp"
@@ -32,15 +32,15 @@ int main(int argc, char* argv[]) {
     asio::signal_set signals(io, SIGINT, SIGTERM);
     signals.async_wait([&io](auto, auto) { io.stop(); });
 
-    // Inbound client messages (tagged with their session): produced by the network,
+    // Ordered net→game events (messages + disconnects), produced by the network,
     // consumed by the game loop.
-    lit::TSQueue<lit::ClientEnvelope> incoming_msgs;
+    lit::TSQueue<lit::ClientEvent> incoming_events;
 
     // --- I/O SERVER (also the game loop's gateway back to clients) ---
-    lit::net::Server server(io, config.net_config(), incoming_msgs);
+    lit::net::Server server(io, config.net_config(), incoming_events);
 
     // --- GAME LOOP ---
-    lit::game::World world(incoming_msgs, server, config.game_config());
+    lit::game::World world(incoming_events, server, config.game_config());
     std::jthread game_thread([&world](std::stop_token stop) { world.run(stop); });
 
     asio::co_spawn(io, server.do_listen(), asio::detached);

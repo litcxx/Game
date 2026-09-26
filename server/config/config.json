@@ -14,6 +14,12 @@
     "attack_range": 120,
     "attack_cooldown_ticks": 45,
     "respawn_delay_ticks": 300,
-    "reconnect_grace_ms": 30000
+    "reconnect_grace_ms": 30000,
+    "factions": [
+      { "id": 1, "name": "Red",   "color": 16711680 },
+      { "id": 2, "name": "Green", "color": 65280 },
+      { "id": 3, "name": "Blue",  "color": 255 },
+      { "id": 4, "name": "Gold",  "color": 16766720 }
+    ]
   }
 }

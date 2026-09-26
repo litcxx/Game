@@ -42,12 +42,18 @@ void Config::init_game_config(const std::string& filename) {
     game_config_.respawn_delay_ticks = game.at("respawn_delay_ticks");
     game_config_.reconnect_grace_ms = game.at("reconnect_grace_ms");
 
+    game_config_.factions.clear();
+    for (const auto& f : game.at("factions")) {
+        game_config_.factions.push_back(FactionConfig{f.at("id"), f.at("name"), f.at("color")});
+    }
+
     spdlog::info("Game tick_rate={} snapshot_rate={} map={}x{}", game_config_.tick_rate,
                  game_config_.snapshot_rate, game_config_.map_width, game_config_.map_height);
     spdlog::info("Game move_speed={} max_hp={} attack_range={} attack_cooldown_ticks={}",
                  game_config_.move_speed, game_config_.max_hp, game_config_.attack_range,
                  game_config_.attack_cooldown_ticks);
-    spdlog::info("Game respawn_delay_ticks={} reconnect_grace_ms={}",
-                 game_config_.respawn_delay_ticks, game_config_.reconnect_grace_ms);
+    spdlog::info("Game respawn_delay_ticks={} reconnect_grace_ms={} factions={}",
+                 game_config_.respawn_delay_ticks, game_config_.reconnect_grace_ms,
+                 game_config_.factions.size());
 }
 }  // namespace lit

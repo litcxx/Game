@@ -12,9 +12,8 @@
 namespace ip = asio::ip;
 
 namespace lit::net {
-Server::Server(asio::io_context& io, const NetConfig& config,
-               TSQueue<ClientEnvelope>& incoming_msgs)
-    : io_{io}, acceptor_{io}, config_{config}, incoming_msgs_{incoming_msgs} {
+Server::Server(asio::io_context& io, const NetConfig& config, TSQueue<ClientEvent>& incoming_events)
+    : io_{io}, acceptor_{io}, config_{config}, incoming_events_{incoming_events} {
     const ip::address address = ip::make_address(config_.ip);
     const std::uint16_t port = config_.port;
     const tcp::endpoint endpoint{address, port};
@@ -40,7 +39,7 @@ asio::awaitable<void> Server::do_listen() {
 }
 
 asio::awaitable<void> Server::add_session(Socket socket) {
-    const std::uint64_t id = sessions_id_.fetch_add(1);
+    const std::uint64_t id = next_sessions_id_.fetch_add(1);
     auto executor = socket.get_executor();
     try {
         // WebSocket handshake
@@ -85,24 +84,34 @@ asio::awaitable<void> Server::run_session(std::uint64_t id) {
 
     session->close();  // session still alive here; releases the OS socket
 
-    std::lock_guard lock(sessions_mutex_);
-    sessions_.erase(id);
-    spdlog::info("Server::run_session id={} removed, sessions={}", id, sessions_.size());
+    {
+        std::lock_guard lock(sessions_mutex_);
+        sessions_.erase(id);
+        spdlog::info("Server::run_session id={} removed, sessions={}", id, sessions_.size());
+    }
+
+    // Tell the game loop the player is gone (processed after this session's
+    // earlier messages, which are already ahead in the queue).
+    incoming_events_.push(ClientEvent{id, ClientEvent::Kind::Disconnected, {}});
 }
 
 void Server::push_packet(std::uint64_t session_id, ::game::v1::ClientMessage packet) {
-    incoming_msgs_.push(ClientEnvelope{session_id, std::move(packet)});
+    incoming_events_.push(ClientEvent{session_id, ClientEvent::Kind::Message, std::move(packet)});
 }
 
 void Server::send_to(std::uint64_t session_id, std::vector<std::byte> bytes) {
     std::lock_guard lock(sessions_mutex_);
     auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) it->second.send(std::move(bytes));
+    if (it != sessions_.end()) {
+        it->second.try_send(std::move(bytes));
+    }
 }
 
 void Server::broadcast(std::vector<std::byte> bytes) {
     std::lock_guard lock(sessions_mutex_);
-    for (auto& [id, session] : sessions_) session.send(bytes);  // one copy per session
+    for (auto& [id, session] : sessions_) {
+        session.try_send(bytes);  // one copy per session
+    }
 }
 
 void Server::close_session(std::size_t id) {
@@ -114,13 +123,17 @@ void Server::close_session(std::size_t id) {
     {
         std::lock_guard lock(sessions_mutex_);
         auto it = sessions_.find(id);
-        if (it == sessions_.end()) return;
+        if (it == sessions_.end()) {
+            return;
+        }
         ex = it->second.executor();
     }
     asio::post(ex, [this, id] {
         std::lock_guard lock(sessions_mutex_);
         auto it = sessions_.find(id);
-        if (it != sessions_.end()) it->second.close();
+        if (it != sessions_.end()) {
+            it->second.close();
+        }
     });
 }
 }  // namespace lit::net

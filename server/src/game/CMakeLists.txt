@@ -1,5 +1,4 @@
 add_library(game
-  player/player.cpp
   world/world.cpp
 )
 

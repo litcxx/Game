@@ -7,7 +7,7 @@
 
 #include "config/config.hpp"
 #include "game/v1/protocol.pb.h"
-#include "net/client_envelope.hpp"
+#include "net/client_event.hpp"
 #include "net/i_client_gateway.hpp"
 #include "utils/ts_queue.hpp"
 
@@ -25,7 +25,7 @@ class Session;
 class Server : public IClientGateway {
   public:
     explicit Server(asio::io_context& io, const NetConfig& config,
-                    TSQueue<ClientEnvelope>& incoming_msgs);
+                    TSQueue<ClientEvent>& incoming_events);
     Server(const Server&) = delete;
     Server& operator=(const Server&) = delete;
     // Defined out-of-line in server.cpp (sessions_ stores Session by value and
@@ -36,7 +36,7 @@ class Server : public IClientGateway {
     asio::awaitable<void> do_listen();
 
     // Called by a session: hand a parsed client message (tagged with its session)
-    // to the game loop's inbound queue.
+    // to the game loop's inbound event queue.
     void push_packet(std::uint64_t session_id, ::game::v1::ClientMessage packet);
     void close_session(std::size_t id);
 
@@ -46,8 +46,8 @@ class Server : public IClientGateway {
 
   private:
     asio::awaitable<void> add_session(Socket socket);
-    // Supervises one session: runs do_read and do_send together and erases the
-    // session from the map only after BOTH have finished.
+    // Supervises one session: runs do_read and do_send together and removes the
+    // session (and emits a Disconnected event) only after BOTH have finished.
     asio::awaitable<void> run_session(std::uint64_t id);
 
     // --- NETWORK ---
@@ -57,10 +57,10 @@ class Server : public IClientGateway {
 
     // --- SESSIONS ---
     std::unordered_map<std::uint64_t, Session> sessions_;
-    std::atomic<std::uint64_t> sessions_id_{0};
+    std::atomic<std::uint64_t> next_sessions_id_{1};
     mutable std::mutex sessions_mutex_;
 
-    // --- GAME LOOP INBOUND QUEUE ---
-    TSQueue<ClientEnvelope>& incoming_msgs_;
+    // --- GAME LOOP INBOUND EVENTS ---
+    TSQueue<ClientEvent>& incoming_events_;
 };
 }  // namespace lit::net
