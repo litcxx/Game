@@ -116,7 +116,9 @@ void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
 
 void World::on_disconnect(std::uint64_t session_id) {
     auto it = players_.find(session_id);
-    if (it == players_.end()) return;  // connected but never sent Hello, or already gone
+    if (it == players_.end()) {
+        return;  // connected but never sent Hello, or already gone
+    }
 
     const std::uint32_t player_id = it->second.id;
     players_.erase(it);
