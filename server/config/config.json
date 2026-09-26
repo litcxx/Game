@@ -15,6 +15,7 @@
     "attack_cooldown_ticks": 45,
     "respawn_delay_ticks": 300,
     "reconnect_grace_ms": 30000,
+    "capture_ticks": 60,
     "factions": [
       { "id": 1, "name": "Red",   "color": 16711680 },
       { "id": 2, "name": "Green", "color": 65280 },

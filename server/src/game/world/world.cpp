@@ -6,6 +6,8 @@
 #include <chrono>
 #include <cmath>
 #include <thread>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace lit::game {
@@ -21,7 +23,10 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
 
 World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config)
     : incoming_{incoming}, gateway_{gateway}, config_{config} {
-    owners_.assign(static_cast<std::size_t>(config_.map_width) * config_.map_height, 0);
+    const std::size_t cell_count = static_cast<std::size_t>(config_.map_width) * config_.map_height;
+    owners_.assign(cell_count, 0);
+    capture_faction_.assign(cell_count, 0);
+    capture_progress_.assign(cell_count, 0.0);
 
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
     snapshot_interval_ = config_.tick_rate / rate;
@@ -59,6 +64,7 @@ void World::tick(double dt) {
     }
 
     update(dt);
+    update_captures();
     send_snapshots();
 }
 
@@ -164,6 +170,7 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
     const auto& frame = input.frames(input.frames_size() - 1);
     player.move_x = frame.move_x();
     player.move_y = frame.move_y();
+    player.capturing = frame.capturing();
     player.last_input_seq = frame.seq();
 }
 
@@ -189,6 +196,57 @@ void World::update(double dt) {
         p.x = std::clamp(p.x, 0.0, bound_x - 1.0);
         p.y = std::clamp(p.y, 0.0, bound_y - 1.0);
     }
+}
+
+void World::update_captures() {
+    // Each alive, holding player claims the cell under its center. First iteration:
+    // one faction per cell; mixed factions -> contested (0) -> no progress.
+    std::unordered_map<std::uint32_t, std::uint32_t> claim;  // cell index -> faction
+    for (const auto& [session_id, p] : players_) {
+        if (p.life != ::game::v1::LIFE_STATE_ALIVE || !p.capturing) {
+            continue;
+        }
+        const auto col =
+            std::min(static_cast<std::uint32_t>(p.x / kUnitsPerCell), config_.map_width - 1);
+        const auto row =
+            std::min(static_cast<std::uint32_t>(p.y / kUnitsPerCell), config_.map_height - 1);
+        const std::uint32_t index = row * config_.map_width + col;
+        auto [it, inserted] = claim.try_emplace(index, p.faction_id);
+        if (!inserted && it->second != p.faction_id) it->second = 0;  // contested
+    }
+
+    const double step = config_.capture_ticks == 0 ? 100.0 : 100.0 / config_.capture_ticks;
+    std::unordered_set<std::uint32_t> still_active;
+
+    for (const auto& [index, faction] : claim) {
+        if (faction == 0 || owners_[index] == faction) {
+            continue;  // contested, or already ours
+        }
+        if (capture_faction_[index] != faction) {  // a different faction takes over
+            capture_faction_[index] = static_cast<std::uint8_t>(faction);
+            capture_progress_[index] = 0.0;
+        }
+        capture_progress_[index] += step;
+        dirty_cells_.insert(index);
+        if (capture_progress_[index] >= 100.0) {
+            owners_[index] = static_cast<std::uint8_t>(faction);
+            capture_faction_[index] = 0;
+            capture_progress_[index] = 0.0;
+        } else {
+            still_active.insert(index);
+        }
+    }
+
+    // Reset any in-progress cell whose capturer stopped this tick.
+    for (std::uint32_t index : active_captures_) {
+        if (still_active.count(index) != 0) continue;
+        if (capture_progress_[index] != 0.0 || capture_faction_[index] != 0) {
+            capture_progress_[index] = 0.0;
+            capture_faction_[index] = 0;
+            dirty_cells_.insert(index);
+        }
+    }
+    active_captures_ = std::move(still_active);
 }
 
 void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
@@ -248,6 +306,13 @@ void World::on_disconnect(std::uint64_t session_id) {
     auto* map = msg.mutable_map_state();
     map->set_tick(tick_);
     map->set_owners(owners_.data(), owners_.size());
+    for (std::uint32_t index : active_captures_) {
+        auto* cu = map->add_captures();
+        cu->set_index(index);
+        cu->set_owner(owners_[index]);
+        cu->set_capture_faction(capture_faction_[index]);
+        cu->set_capture_progress(static_cast<std::uint32_t>(capture_progress_[index]));
+    }
     return msg;
 }
 
@@ -292,8 +357,16 @@ void World::send_snapshots() {
             ps->set_y(static_cast<std::uint32_t>(p.y));
             ps->set_hp(p.hp);
         }
+        for (std::uint32_t index : dirty_cells_) {
+            auto* cu = snap->add_cells();
+            cu->set_index(index);
+            cu->set_owner(owners_[index]);
+            cu->set_capture_faction(capture_faction_[index]);
+            cu->set_capture_progress(static_cast<std::uint32_t>(capture_progress_[index]));
+        }
         send(session_id, msg);
     }
+    dirty_cells_.clear();
 }
 
 void World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {

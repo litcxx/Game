@@ -26,6 +26,7 @@ lit::GameConfig test_config() {
     c.attack_cooldown_ticks = 45;
     c.respawn_delay_ticks = 300;
     c.reconnect_grace_ms = 30000;
+    c.capture_ticks = 5;  // small so capture tests flip quickly
     c.factions = {{1, "Red", 0xFF0000}, {2, "Blue", 0x0000FF}};
     return c;
 }
@@ -221,8 +222,8 @@ namespace {
     return ev;
 }
 
-[[maybe_unused]] lit::ClientEvent input_event(std::uint64_t session_id, std::int32_t move_x,
-                                              std::int32_t move_y, std::uint32_t seq) {
+lit::ClientEvent input_event(std::uint64_t session_id, std::int32_t move_x, std::int32_t move_y,
+                             std::uint32_t seq, bool capturing = false) {
     lit::ClientEvent ev;
     ev.session_id = session_id;
     ev.kind = lit::ClientEvent::Kind::Message;
@@ -230,6 +231,7 @@ namespace {
     frame->set_seq(seq);
     frame->set_move_x(move_x);
     frame->set_move_y(move_y);
+    frame->set_capturing(capturing);
     return ev;
 }
 
@@ -240,6 +242,18 @@ std::optional<::game::v1::Snapshot> last_snapshot_to(const lit::test::MockClient
     for (const auto& m : messages_to(gw, session_id))
         if (m.has_snapshot()) snap = m.snapshot();
     return snap;
+}
+
+// The last CellUpdate seen for a given cell across snapshots to a session.
+std::optional<::game::v1::CellUpdate> last_cell_update(const lit::test::MockClientGateway& gw,
+                                                      std::uint64_t session_id,
+                                                      std::uint32_t index) {
+    std::optional<::game::v1::CellUpdate> out;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_snapshot())
+            for (const auto& c : m.snapshot().cells())
+                if (c.index() == index) out = c;
+    return out;
 }
 
 void run_ticks(lit::game::World& world, int n, double dt) {
@@ -383,4 +397,52 @@ TEST(WorldMovement, IgnoresInputWhenNotSpawned) {
     ASSERT_TRUE(snap.has_value());
     EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_NOT_SPAWNED);
     EXPECT_EQ(snap->players_size(), 0);
+}
+
+TEST(WorldCapture, HoldingCaptureFlipsCellOwner) {
+  lit::TSQueue<lit::ClientEvent> incoming;
+  lit::test::MockClientGateway gw;
+  auto config = test_config();  // capture_ticks = 5
+  lit::game::World world(incoming, gw, config);
+
+  incoming.push(hello_event(7, "p"));
+  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // center (150,150) -> cell 5
+  incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
+  run_ticks(world, 6, 0.016);  // 5 ticks * 20% -> flips by tick 5
+
+  auto cu = last_cell_update(gw, 7, /*index=*/5);
+  ASSERT_TRUE(cu.has_value());
+  EXPECT_EQ(cu->owner(), 1u);  // cell now owned by faction 1
+}
+
+TEST(WorldCapture, ReleasingCaptureResetsProgress) {
+  lit::TSQueue<lit::ClientEvent> incoming;
+  lit::test::MockClientGateway gw;
+  auto config = test_config();
+  lit::game::World world(incoming, gw, config);
+
+  incoming.push(hello_event(7, "p"));
+  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
+  incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
+  run_ticks(world, 3, 0.016);  // partial (~60%), not yet captured
+  incoming.push(input_event(7, 0, 0, /*seq=*/2, /*capturing=*/false));  // release
+  run_ticks(world, 3, 0.016);
+
+  auto cu = last_cell_update(gw, 7, /*index=*/5);
+  ASSERT_TRUE(cu.has_value());
+  EXPECT_EQ(cu->owner(), 0u);             // never captured
+  EXPECT_EQ(cu->capture_progress(), 0u);  // progress reset
+}
+
+TEST(WorldCapture, NoCaptureWithoutHoldingKey) {
+  lit::TSQueue<lit::ClientEvent> incoming;
+  lit::test::MockClientGateway gw;
+  auto config = test_config();
+  lit::game::World world(incoming, gw, config);
+
+  incoming.push(hello_event(7, "p"));
+  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // spawned, but not capturing
+  run_ticks(world, 6, 0.016);
+
+  EXPECT_FALSE(last_cell_update(gw, 7, /*index=*/5).has_value());  // cell never changed
 }

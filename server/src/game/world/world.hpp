@@ -4,6 +4,7 @@
 #include <stop_token>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "config/config.hpp"
@@ -28,6 +29,7 @@ struct Player {
     std::uint32_t last_input_seq{0};
     std::int32_t move_x{0};  // last input direction (intent); integrated in update()
     std::int32_t move_y{0};
+    bool capturing{false};   // holding the capture key: captures the cell under the center
 };
 
 // Authoritative game loop. Drains net→game events each tick, updates state, and
@@ -57,6 +59,8 @@ class World {
 
     // Per-tick simulation: integrate movement from each alive player's intent.
     void update(double dt);
+    // Per-tick territory capture: advance/flip cells under holding capturers.
+    void update_captures();
 
     // Message builders.
     ::game::v1::ServerMessage make_welcome(const Player& player) const;
@@ -78,6 +82,13 @@ class World {
     std::uint32_t snapshot_interval_{1};  // ticks between snapshots (tick_rate / snapshot_rate)
     std::uint32_t next_player_id_{1};
     std::unordered_map<std::uint64_t, Player> players_;  // key: session_id
-    std::vector<std::uint8_t> owners_;                   // map_w*map_h, 0 = neutral
+
+    // Territory grid (all map_w*map_h cells). owners_ = current owner; the rest
+    // track in-progress capture. Changed cells go out as CellUpdate in snapshots.
+    std::vector<std::uint8_t> owners_;                   // 0 = neutral
+    std::vector<std::uint8_t> capture_faction_;          // who is capturing (0 = none)
+    std::vector<double> capture_progress_;               // 0..100
+    std::unordered_set<std::uint32_t> active_captures_;  // cells with progress > 0
+    std::unordered_set<std::uint32_t> dirty_cells_;      // changed since last snapshot
 };
 }  // namespace lit::game

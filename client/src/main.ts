@@ -1,6 +1,6 @@
 import { Application, Text } from "pixi.js";
 
-import { installMovementKeys } from "./input/keyboard.js";
+import { installInput } from "./input/keyboard.js";
 import { GameClient } from "./net/client.js";
 import { Scene } from "./render/scene.js";
 
@@ -37,6 +37,9 @@ async function main(): Promise<void> {
         scene.setFactions(w.factions.map((f) => ({ id: f.id, color: f.color })));
         break;
       }
+      case "mapState":
+        scene.setMapState(msg.payload.value.owners, msg.payload.value.captures);
+        break;
       case "roster":
         scene.upsertRoster(msg.payload.value.upsert);
         scene.removeFromRoster(msg.payload.value.removed);
@@ -44,9 +47,10 @@ async function main(): Promise<void> {
       case "snapshot": {
         const s = msg.payload.value;
         scene.applySnapshot(s.players);
+        scene.applyCellUpdates(s.cells);
         const me = s.players.find((p) => p.id === myId);
         status.text = me
-          ? `id=${myId} · hp=${me.hp} · pos=(${me.x},${me.y}) · WASD to move`
+          ? `id=${myId} · hp=${me.hp} · pos=(${me.x},${me.y}) · WASD move · hold E to capture`
           : `id=${myId} · not spawned · keys 1-${factionCount} pick faction (${selectedFaction}), click a cell to spawn`;
         break;
       }
@@ -71,8 +75,8 @@ async function main(): Promise<void> {
     client.sendSpawn(row * mapWidth + col, selectedFaction);
   });
 
-  // Movement.
-  installMovementKeys((moveX, moveY) => client.sendInput(moveX, moveY));
+  // Movement + capture ('e').
+  installInput((moveX, moveY, capturing) => client.sendInput(moveX, moveY, capturing));
 }
 
 void main();
