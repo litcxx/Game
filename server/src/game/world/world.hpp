@@ -29,7 +29,10 @@ struct Player {
     std::uint32_t last_input_seq{0};
     std::int32_t move_x{0};  // last input direction (intent); integrated in update()
     std::int32_t move_y{0};
-    bool capturing{false};   // holding the capture key: captures the cell under the center
+    bool capturing{false};  // holding the capture key: captures the cell under the center
+    bool attack{false};     // holding the attack key: area hit around the player when ready
+    std::uint32_t attack_ready_tick{0};  // next tick this player may attack
+    std::uint32_t respawn_tick{0};       // when DEAD: tick from which respawn is allowed
 };
 
 // Authoritative game loop. Drains net→game events each tick, updates state, and
@@ -59,6 +62,8 @@ class World {
 
     // Per-tick simulation: integrate movement from each alive player's intent.
     void update(double dt);
+    // Per-tick combat: alive attackers hit their target when in range and off cooldown.
+    void update_combat();
     // Per-tick territory capture: advance/flip cells under holding capturers.
     void update_captures();
 
@@ -90,5 +95,9 @@ class World {
     std::vector<double> capture_progress_;               // 0..100
     std::unordered_set<std::uint32_t> active_captures_;  // cells with progress > 0
     std::unordered_set<std::uint32_t> dirty_cells_;      // changed since last snapshot
+
+    // Combat events (hits/deaths) accumulated since the last snapshot; flushed to
+    // every recipient's Snapshot.events, then cleared.
+    std::vector<::game::v1::GameEvent> events_;
 };
 }  // namespace lit::game

@@ -21,6 +21,9 @@ export class Scene {
   private captureProgress: Uint8Array = new Uint8Array(0);  // 0..100
   private scale = 1;
   private selfId = 0;
+  private maxHp = 100;
+  private attackRange = 0;          // world units; shown as a ring around self
+  private attackCooldownTicks = 1;  // ticks between swings, for the self cooldown bar
 
   constructor(private readonly app: Application) {
     app.stage.addChild(this.field);
@@ -37,9 +40,18 @@ export class Scene {
     for (const f of factions) this.factionColors.set(f.id, f.color);
   }
 
-  setConfig(mapWidth: number, mapHeight: number): void {
+  setConfig(
+    mapWidth: number,
+    mapHeight: number,
+    maxHp: number,
+    attackRange: number,
+    attackCooldownTicks: number,
+  ): void {
     this.mapCols = Math.max(1, mapWidth);
     this.mapRows = Math.max(1, mapHeight);
+    this.maxHp = Math.max(1, maxHp);
+    this.attackRange = Math.max(0, attackRange);
+    this.attackCooldownTicks = Math.max(1, attackCooldownTicks);
     this.layout();
   }
 
@@ -70,7 +82,8 @@ export class Scene {
     for (const id of ids) this.playerFaction.delete(id);
   }
 
-  applySnapshot(players: readonly PlayerState[]): void {
+  // `selfReadyTick`/`serverTick` drive the self cooldown bar.
+  applySnapshot(players: readonly PlayerState[], selfReadyTick = 0, serverTick = 0): void {
     const seen = new Set<number>();
     for (const p of players) {
       seen.add(p.id);
@@ -80,10 +93,23 @@ export class Scene {
         this.playersLayer.addChild(g);
         this.sprites.set(p.id, g);
       }
-      const color = this.factionColors.get(this.playerFaction.get(p.id) ?? 0) ?? 0xaaaaaa;
+      const isSelf = p.id === this.selfId;
       g.clear();
-      g.circle(0, 0, 5).fill(color);
-      if (p.id === this.selfId) g.circle(0, 0, 8).stroke({ width: 2, color: 0xffffff });
+      if (p.hp <= 0) {
+        // Dead body: a faded, crossed-out marker with no bars until respawn.
+        g.circle(0, 0, 5).fill({ color: 0x555555, alpha: 0.6 });
+        g.moveTo(-4, -4).lineTo(4, 4).moveTo(-4, 4).lineTo(4, -4).stroke({ width: 1.5, color: 0x1a1a1a });
+      } else {
+        const color = this.factionColors.get(this.playerFaction.get(p.id) ?? 0) ?? 0xaaaaaa;
+        if (isSelf && this.attackRange > 0) {
+          // Own attack area (drawn under the dot).
+          g.circle(0, 0, this.attackRange * this.scale).stroke({ width: 1, color: 0xffffff, alpha: 0.22 });
+        }
+        g.circle(0, 0, 5).fill(color);
+        if (isSelf) g.circle(0, 0, 8).stroke({ width: 2, color: 0xffffff });
+        this.drawHpBar(g, p.hp);
+        if (isSelf) this.drawCooldownBar(g, selfReadyTick, serverTick);
+      }
       g.position.set(p.x * this.scale, p.y * this.scale);
     }
     for (const [id, g] of this.sprites) {
@@ -91,6 +117,34 @@ export class Scene {
         g.destroy();
         this.sprites.delete(id);
       }
+    }
+  }
+
+  // Small HP bar above the head, green -> amber -> red as hp drops.
+  private drawHpBar(g: Graphics, hp: number): void {
+    const frac = Math.max(0, Math.min(1, hp / this.maxHp));
+    const w = 16;
+    const h = 3;
+    const y = -12;
+    g.rect(-w / 2, y, w, h).fill({ color: 0x000000, alpha: 0.6 });
+    if (frac > 0) {
+      const color = frac > 0.5 ? 0x37c837 : frac > 0.25 ? 0xd8a038 : 0xd83838;
+      g.rect(-w / 2, y, w * frac, h).fill(color);
+    }
+  }
+
+  // Cooldown bar under the head: fills up as the next attack recharges
+  // (blue while charging, green when ready).
+  private drawCooldownBar(g: Graphics, readyTick: number, serverTick: number): void {
+    const remaining = Math.max(0, readyTick - serverTick);
+    const frac = Math.max(0, Math.min(1, 1 - remaining / this.attackCooldownTicks));
+    const w = 16;
+    const h = 3;
+    const y = 9;
+    g.rect(-w / 2, y, w, h).fill({ color: 0x000000, alpha: 0.6 });
+    if (frac > 0) {
+      const color = frac >= 1 ? 0x37c837 : 0x4a90d8;
+      g.rect(-w / 2, y, w * frac, h).fill(color);
     }
   }
 

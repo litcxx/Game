@@ -48,12 +48,12 @@ export class GameClient {
     );
   }
 
-  sendInput(moveX: number, moveY: number, capturing: boolean): void {
+  sendInput(moveX: number, moveY: number, capturing: boolean, attack = false): void {
     this.dispatch(
       create(ClientMessageSchema, {
         payload: {
           case: "input",
-          value: { frames: [{ seq: ++this.inputSeq, moveX, moveY, capturing }] },
+          value: { frames: [{ seq: ++this.inputSeq, moveX, moveY, capturing, attack }] },
         },
       }),
     );

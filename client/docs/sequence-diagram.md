@@ -46,12 +46,14 @@ sequenceDiagram
     participant net as GameClient
     participant ws as WebSocket
 
-    app->>net: sendHello(name) / (позже) sendSpawn / sendInput
+    app->>net: sendHello / sendSpawn / sendInput(move, capturing, attack)
     net->>net: create(ClientMessageSchema, {payload:{case, value}})
     net->>net: toBinary(ClientMessageSchema, msg)
     net->>ws: ws.send(bytes)
 ```
 
-> Статус: реализовано подключение + `Hello` и декодирование ответа
-> (`Welcome`/`MapState`/`Roster`). Спавн, ввод и рендер карты/игроков — дальше
-> (серверные M2–M4).
+> Статус: реализован весь цикл MVP — спавн по клику, движение (**WASD**), захват
+> клетки (удержание **E**), атака по площади (удержание **ЛКМ**), смерть/респавн.
+> Клиент рендерит сетку территорий, игроков (с HP-баром над головой), радиус
+> атаки и шкалу кулдауна вокруг своего игрока; `Snapshot` обновляет позиции, hp,
+> клетки и события боя (`HitEvent` / `DeathEvent`).

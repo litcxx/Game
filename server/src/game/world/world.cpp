@@ -64,6 +64,7 @@ void World::tick(double dt) {
     }
 
     update(dt);
+    update_combat();
     update_captures();
     send_snapshots();
 }
@@ -119,9 +120,14 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
     }
     Player& player = it->second;
 
-    if (player.life != ::game::v1::LIFE_STATE_NOT_SPAWNED) {
-        spdlog::warn("World::on_spawn ignored (already spawned) session={}", session_id);
-        return;  // respawn from DEAD comes in M3
+    if (player.life == ::game::v1::LIFE_STATE_ALIVE) {
+        spdlog::warn("World::on_spawn ignored (already alive) session={}", session_id);
+        return;
+    }
+    if (player.life == ::game::v1::LIFE_STATE_DEAD && tick_ < player.respawn_tick) {
+        spdlog::warn("World::on_spawn ignored (respawning) session={} respawn_tick={}", session_id,
+                     player.respawn_tick);
+        return;  // still waiting out the respawn delay
     }
     if (spawn.cell() >= config_.map_width * config_.map_height) {
         spdlog::warn("World::on_spawn invalid cell={} session={}", spawn.cell(), session_id);
@@ -146,6 +152,10 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
     player.life = ::game::v1::LIFE_STATE_ALIVE;
     player.move_x = 0;
     player.move_y = 0;
+    player.capturing = false;
+    player.attack = false;
+    player.attack_ready_tick = 0;
+    player.respawn_tick = 0;
 
     // Faction (colour) chosen -> tell everyone else.
     broadcast_except(session_id, make_roster_upsert(player));
@@ -171,6 +181,7 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
     player.move_x = frame.move_x();
     player.move_y = frame.move_y();
     player.capturing = frame.capturing();
+    player.attack = frame.attack();
     player.last_input_seq = frame.seq();
 }
 
@@ -247,6 +258,63 @@ void World::update_captures() {
         }
     }
     active_captures_ = std::move(still_active);
+}
+
+void World::update_combat() {
+    const double range = static_cast<double>(config_.attack_range);
+    const double range_sq = range * range;
+
+    for (auto& [attacker_sid, attacker] : players_) {
+        if (attacker.life != ::game::v1::LIFE_STATE_ALIVE) continue;
+        if (!attacker.attack) continue;                    // attack key not held
+        if (tick_ < attacker.attack_ready_tick) continue;  // on cooldown
+
+        // A swing fires: it consumes the cooldown even if nothing is in range.
+        attacker.attack_ready_tick = tick_ + config_.attack_cooldown_ticks;
+        const double ax = attacker.x;
+        const double ay = attacker.y;
+        const std::uint32_t attacker_id = attacker.id;
+        const std::uint32_t attacker_faction = attacker.faction_id;
+
+        // Area hit: every alive enemy within attack_range of the attacker is struck.
+        for (auto& [target_sid, target] : players_) {
+            if (target_sid == attacker_sid) continue;
+            if (target.life != ::game::v1::LIFE_STATE_ALIVE) continue;
+            if (target.faction_id == attacker_faction) continue;  // no friendly fire
+
+            const double dx = target.x - ax;
+            const double dy = target.y - ay;
+            if (dx * dx + dy * dy > range_sq) continue;  // outside the area
+
+            const std::uint32_t dmg = std::min(config_.attack_damage, target.hp);
+            target.hp -= dmg;
+
+            auto& hit_ev = events_.emplace_back();
+            hit_ev.set_tick(tick_);
+            auto* hit = hit_ev.mutable_hit();
+            hit->set_attacker_id(attacker_id);
+            hit->set_target_id(target.id);
+            hit->set_damage(dmg);
+
+            if (target.hp == 0) {
+                target.life = ::game::v1::LIFE_STATE_DEAD;
+                target.respawn_tick = tick_ + config_.respawn_delay_ticks;
+                target.move_x = 0;
+                target.move_y = 0;
+                target.capturing = false;
+                target.attack = false;
+
+                auto& death_ev = events_.emplace_back();
+                death_ev.set_tick(tick_);
+                auto* death = death_ev.mutable_death();
+                death->set_victim_id(target.id);
+                death->set_killer_id(attacker_id);
+
+                spdlog::info("World::update_combat player_id={} killed player_id={}", attacker_id,
+                             target.id);
+            }
+        }
+    }
 }
 
 void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
@@ -346,16 +414,18 @@ void World::send_snapshots() {
         auto* you = snap->mutable_you();
         you->set_life(self.life);
         you->set_last_input_seq(self.last_input_seq);
+        you->set_respawn_tick(self.respawn_tick);
+        you->set_attack_ready_tick(self.attack_ready_tick);
 
         for (const auto& [sid, p] : players_) {
-            if (p.life != ::game::v1::LIFE_STATE_ALIVE) {
-                continue;
+            if (p.life == ::game::v1::LIFE_STATE_NOT_SPAWNED) {
+                continue;  // no body yet; alive players and dead bodies are both shown
             }
             auto* ps = snap->add_players();
             ps->set_id(p.id);
             ps->set_x(static_cast<std::uint32_t>(p.x));
             ps->set_y(static_cast<std::uint32_t>(p.y));
-            ps->set_hp(p.hp);
+            ps->set_hp(p.hp);  // 0 for a dead body
         }
         for (std::uint32_t index : dirty_cells_) {
             auto* cu = snap->add_cells();
@@ -364,9 +434,13 @@ void World::send_snapshots() {
             cu->set_capture_faction(capture_faction_[index]);
             cu->set_capture_progress(static_cast<std::uint32_t>(capture_progress_[index]));
         }
+        for (const auto& ev : events_) {
+            *snap->add_events() = ev;
+        }
         send(session_id, msg);
     }
     dirty_cells_.clear();
+    events_.clear();
 }
 
 void World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {

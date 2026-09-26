@@ -4,10 +4,12 @@ Authoritative server for a minimalist multiplayer browser game: players move on 
 shared 100×100 grid, fight, and paint territory in their faction's colour. State
 lives on the server; the browser client is a thin renderer.
 
-> **Status: MVP, work in progress.** The network layer (WebSocket + Protobuf +
-> Asio coroutines) and the game-loop skeleton are in place. Game mechanics
-> (movement, combat, respawn, territory capture) are still stubs. Authentication
-> is intentionally parked, and the browser client is not started yet.
+> **Status: MVP, work in progress.** Transport (WebSocket + Protobuf + Asio
+> coroutines) and the authoritative game loop are in place, with movement,
+> area-attack combat, death/respawn, and territory capture implemented and
+> covered by unit tests. A thin TypeScript + PixiJS client renders the map and
+> players (with HP bars) and drives spawn / movement / capture / attack.
+> Authentication is intentionally parked.
 
 ## Tech stack
 
@@ -24,8 +26,8 @@ lives on the server; the browser client is a thin renderer.
   client ──ws──▶ Session.do_read ─┐                    ┌─▶ World.tick
                                   │  push_packet        │     dispatch on payload type
                                   ▼                     │     (on_hello/spawn/input/ping)
-                   TSQueue<ClientEnvelope> ──swap──────▶┘            │
-                        {session_id, ClientMessage}                 │ send()
+                   TSQueue<ClientEvent> ──swap─────────▶┘            │
+                     {session_id, kind, ClientMessage}              │ send()
                                                                     ▼
   client ◀─ws── Session.do_send ◀─ per-session channel ◀── IClientGateway.send_to
 ```
@@ -34,16 +36,18 @@ lives on the server; the browser client is a thin renderer.
   message** — no hand-rolled length/opcode framing (the WebSocket layer already
   delimits messages).
 - **Session** (`src/net/session`) is pure transport: read a whole message, parse
-  a `ClientMessage`, and forward it tagged with its session id
-  (`ClientEnvelope`). Outgoing frames go through a per-session concurrent channel
-  drained by `do_send`.
+  a `ClientMessage`, and forward it tagged with its session id (`ClientEvent`).
+  Outgoing frames go through a per-session concurrent channel drained by
+  `do_send`.
 - **Server** (`src/net/server`) owns the acceptor and the session registry, and
   implements `IClientGateway` (the game loop's way back to clients). Each session
   is supervised by one coroutine that runs `do_read` and `do_send` together
   (`co_await (a || b)`) and removes the session only after **both** finish — so
   teardown never frees a session out from under a live coroutine.
-- **World** (`src/game/world`) is the authoritative loop: it drains the inbound
-  queue each tick and dispatches by message type. Handlers are currently stubs.
+- **World** (`src/game/world`) is the authoritative loop. Each tick it drains the
+  inbound queue, dispatches by message type, then simulates: integrate movement,
+  resolve area-attack combat (death → respawn timer), advance territory capture,
+  and emit a per-recipient snapshot.
 - **Seam.** `World` depends only on the abstract `IClientGateway`
   (`src/shared/net`), not on the network layer — so the game code stays testable
   (mockable gateway) and free of transport details.
@@ -54,7 +58,7 @@ lives on the server; the browser client is a thin renderer.
 ../protocol/game/v1/protocol.proto   wire protocol (shared with the client)
 src/net/       server, session — WebSocket transport + coroutines
 src/game/      world — the game loop (+ player/tile entities)
-src/shared/    config, net (IClientGateway, ClientEnvelope), utils (TSQueue)
+src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue)
 config/        config.json (runtime settings + game rules)
 test/          unit + integration (GoogleTest)
 docs/          sequence + ownership diagrams (being updated for the refactor)
@@ -93,9 +97,9 @@ ctest --preset debug-asan      # or run the binary directly:
 ./build/bin/unit_tests
 ```
 
-Some suites tied to modules under active refactoring (the old binary protocol,
-`World`, and the parked auth/DB integration tests) are temporarily disabled in the
-CMake test lists and will be re-enabled as those modules land.
+The `World` suite (presence, spawn, movement, combat, capture) runs by default.
+Some legacy suites (the old binary protocol and the parked auth/DB integration
+tests) remain disabled in the CMake test lists.
 
 ## Code style
 
