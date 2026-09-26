@@ -30,7 +30,6 @@ int main(int argc, char* argv[]) {
     // BOOST
     asio::io_context io(io_threads);
     asio::signal_set signals(io, SIGINT, SIGTERM);
-    signals.async_wait([&io](auto, auto) { io.stop(); });
 
     // Ordered net→game events (messages + disconnects), produced by the network,
     // consumed by the game loop.
@@ -43,7 +42,15 @@ int main(int argc, char* argv[]) {
     lit::game::World world(incoming_events, server, config.game_config());
     std::jthread game_thread([&world](std::stop_token stop) { world.run(stop); });
 
-    asio::co_spawn(io, server.do_listen(), asio::detached);
+    // Graceful shutdown: stop accepting and close sessions so their coroutines
+    // finish; io.run() then drains on its own. (io.stop() would abandon in-flight
+    // session coroutines and crash during teardown.)
+    signals.async_wait([&server](auto, auto) {
+        spdlog::info("Shutdown signal received");
+        server.stop();
+    });
+
+    server.listen();
 
     // Run the I/O service on the configured number of threads.
     std::vector<std::jthread> io_thread_pool;

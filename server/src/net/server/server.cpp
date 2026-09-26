@@ -5,6 +5,8 @@
 #include <boost/asio/experimental/awaitable_operators.hpp>
 #include <cstdint>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "config/config.hpp"
 #include "session/session.hpp"
@@ -13,7 +15,11 @@ namespace ip = asio::ip;
 
 namespace lit::net {
 Server::Server(asio::io_context& io, const NetConfig& config, TSQueue<ClientEvent>& incoming_events)
-    : io_{io}, acceptor_{io}, config_{config}, incoming_events_{incoming_events} {
+    : io_{io},
+      acceptor_{io},
+      acceptor_strand_{asio::make_strand(io)},
+      config_{config},
+      incoming_events_{incoming_events} {
     const ip::address address = ip::make_address(config_.ip);
     const std::uint16_t port = config_.port;
     const tcp::endpoint endpoint{address, port};
@@ -25,16 +31,54 @@ Server::Server(asio::io_context& io, const NetConfig& config, TSQueue<ClientEven
 
 Server::~Server() = default;
 
+void Server::listen() { asio::co_spawn(acceptor_strand_, do_listen(), asio::detached); }
+
 asio::awaitable<void> Server::do_listen() {
     for (;;) {
-        auto socket =
-            Socket(co_await acceptor_.async_accept(asio::make_strand(io_), asio::use_awaitable));
+        auto [ec, socket] = co_await acceptor_.async_accept(asio::make_strand(io_),
+                                                            asio::as_tuple(asio::use_awaitable));
+        if (ec) {
+            // acceptor_.close() during graceful shutdown cancels the pending accept.
+            if (ec != asio::error::operation_aborted) {
+                spdlog::error("Server::do_listen accept error: {}", ec.message());
+            }
+            break;
+        }
 
-        // Capture the executor before moving `socket`: function-argument evaluation
-        // order is unspecified, so reading it inside the co_spawn(...) call could run
-        // after the move and dereference a moved-from (empty) stream.
-        auto executor = socket.get_executor();
-        asio::co_spawn(executor, add_session(std::move(socket)), asio::detached);
+        auto ws = Socket(std::move(socket));
+        // Capture the executor before moving `ws` into add_session (function-argument
+        // evaluation order is unspecified).
+        auto executor = ws.get_executor();
+        asio::co_spawn(executor, add_session(std::move(ws)), asio::detached);
+    }
+}
+
+void Server::stop() {
+    // Stop accepting (on the acceptor strand), then ask each session to close on
+    // its own strand. Closing a socket ends its do_read; the `||` cancels do_send;
+    // run_session then erases the session. Once all coroutines finish and no work
+    // remains, io.run() returns on its own.
+    asio::post(acceptor_strand_, [this] {
+        boost::system::error_code ec;
+        acceptor_.close(ec);
+    });
+
+    std::vector<std::pair<std::uint64_t, asio::any_io_executor>> targets;
+    {
+        std::lock_guard lock(sessions_mutex_);
+        targets.reserve(sessions_.size());
+        for (auto& [id, session] : sessions_) {
+            targets.emplace_back(id, session.executor());
+        }
+    }
+    for (auto& [id, ex] : targets) {
+        asio::post(ex, [this, id] {
+            std::lock_guard lock(sessions_mutex_);
+            auto it = sessions_.find(id);
+            if (it != sessions_.end()) {
+                it->second.close();
+            }
+        });
     }
 }
 

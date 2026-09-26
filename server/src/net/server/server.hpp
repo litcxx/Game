@@ -32,8 +32,12 @@ class Server : public IClientGateway {
     // needs the complete type; main.cpp only sees the forward declaration).
     ~Server() override;
 
-    bool start_listen(tcp::endpoint endpoint) noexcept;
-    asio::awaitable<void> do_listen();
+    // Start accepting connections (runs do_listen on the acceptor strand).
+    void listen();
+    // Graceful shutdown: stop accepting and close all sessions so their coroutines
+    // finish; the io_context then drains on its own (no io.stop(), which would
+    // abandon in-flight coroutines and corrupt their teardown).
+    void stop();
 
     // Called by a session: hand a parsed client message (tagged with its session)
     // to the game loop's inbound event queue.
@@ -45,6 +49,7 @@ class Server : public IClientGateway {
     void broadcast(std::vector<std::byte> bytes) override;
 
   private:
+    asio::awaitable<void> do_listen();
     asio::awaitable<void> add_session(Socket socket);
     // Supervises one session: runs do_read and do_send together and removes the
     // session (and emits a Disconnected event) only after BOTH have finished.
@@ -53,6 +58,9 @@ class Server : public IClientGateway {
     // --- NETWORK ---
     asio::io_context& io_;
     tcp::acceptor acceptor_;
+    // The acceptor is touched only from this strand (do_listen + stop's close),
+    // so acceptor access stays single-threaded even with multiple io threads.
+    asio::strand<asio::io_context::executor_type> acceptor_strand_;
     const NetConfig config_;
 
     // --- SESSIONS ---
