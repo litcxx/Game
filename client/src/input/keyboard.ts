@@ -1,8 +1,10 @@
-// WASD / arrow keys -> movement direction. Calls `onChange` only when the
-// direction actually changes (the server holds the intent until the next input).
-export function installMovementKeys(onChange: (moveX: number, moveY: number) => void): void {
+// WASD / arrows -> movement direction; 'e' -> capture. Calls `onChange` only
+// when the intent changes (the server holds it until the next input).
+export function installInput(
+  onChange: (moveX: number, moveY: number, capturing: boolean) => void,
+): void {
   const pressed = new Set<string>();
-  let last: [number, number] = [0, 0];
+  let last = { moveX: 0, moveY: 0, capturing: false };
 
   const axis = (positive: boolean, negative: boolean) => (positive ? 1 : 0) - (negative ? 1 : 0);
 
@@ -15,9 +17,10 @@ export function installMovementKeys(onChange: (moveX: number, moveY: number) => 
       pressed.has("s") || pressed.has("arrowdown"),
       pressed.has("w") || pressed.has("arrowup"),
     );
-    if (moveX !== last[0] || moveY !== last[1]) {
-      last = [moveX, moveY];
-      onChange(moveX, moveY);
+    const capturing = pressed.has("e");
+    if (moveX !== last.moveX || moveY !== last.moveY || capturing !== last.capturing) {
+      last = { moveX, moveY, capturing };
+      onChange(moveX, moveY, capturing);
     }
   };
 

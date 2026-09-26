@@ -41,6 +41,7 @@ void Config::init_game_config(const std::string& filename) {
     game_config_.attack_cooldown_ticks = game.at("attack_cooldown_ticks");
     game_config_.respawn_delay_ticks = game.at("respawn_delay_ticks");
     game_config_.reconnect_grace_ms = game.at("reconnect_grace_ms");
+    game_config_.capture_ticks = game.at("capture_ticks");
 
     game_config_.factions.clear();
     for (const auto& f : game.at("factions")) {

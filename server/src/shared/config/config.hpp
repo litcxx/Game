@@ -34,6 +34,7 @@ struct GameConfig {
     std::uint32_t attack_cooldown_ticks;  // (45 = 0.75 s at 60 Hz)
     std::uint32_t respawn_delay_ticks;    // (300 = 5 s at 60 Hz)
     std::uint32_t reconnect_grace_ms;     // how long a dropped session is kept (30000)
+    std::uint32_t capture_ticks;          // ticks for one player to capture a cell (60 = 1 s)
     std::vector<FactionConfig> factions;  // selectable factions (colours)
 };
 
