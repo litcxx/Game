@@ -20,7 +20,14 @@ struct Player {
     std::string name;
     std::uint32_t faction_id{0};  // 0 until spawned
     ::game::v1::LifeState life{::game::v1::LIFE_STATE_NOT_SPAWNED};
-    // M2+: position (x, y), hp, last_input_seq, cooldown/respawn ticks...
+
+    // Set on spawn, advanced by input + simulation (M2).
+    double x{0.0};  // position in units (100 units = 1 cell)
+    double y{0.0};
+    std::uint32_t hp{0};
+    std::uint32_t last_input_seq{0};
+    std::int32_t move_x{0};  // last input direction (intent); integrated in update()
+    std::int32_t move_y{0};
 };
 
 // Authoritative game loop. Drains net→game events each tick, updates state, and
@@ -48,6 +55,9 @@ class World {
     void on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping);
     void on_disconnect(std::uint64_t session_id);
 
+    // Per-tick simulation: integrate movement from each alive player's intent.
+    void update(double dt);
+
     // Message builders.
     ::game::v1::ServerMessage make_welcome(const Player& player) const;
     ::game::v1::ServerMessage make_map_state() const;
@@ -65,6 +75,7 @@ class World {
     const GameConfig config_;
 
     std::uint32_t tick_{0};
+    std::uint32_t snapshot_interval_{1};  // ticks between snapshots (tick_rate / snapshot_rate)
     std::uint32_t next_player_id_{1};
     std::unordered_map<std::uint64_t, Player> players_;  // key: session_id
     std::vector<std::uint8_t> owners_;                   // map_w*map_h, 0 = neutral
