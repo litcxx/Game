@@ -2,6 +2,10 @@
 
 #include <spdlog/spdlog.h>
 
+#include <cstddef>
+#include <vector>
+
+#include "game/v1/protocol.pb.h"
 #include "server/server.hpp"
 
 namespace {
@@ -33,8 +37,9 @@ asio::awaitable<void> Session::do_read() {
         if (ec) {
             // Client closed the connection or a read error occurred: stop reading.
             // The supervisor (Server::run_session) then tears the session down.
-            if (ec != websocket::error::closed)
+            if (ec != websocket::error::closed) {
                 spdlog::warn("Session::do_read error id={}: {}", id_, ec.message());
+            }
             break;
         }
 
@@ -66,15 +71,19 @@ asio::awaitable<void> Session::do_send() {
     spdlog::info("Session::do_send id={}", id_);
     for (;;) {
         auto [rec, buff] = co_await send_queue_.async_receive(asio::as_tuple(asio::use_awaitable));
-        if (rec) break;  // channel closed or cancelled -> stop.
+        if (rec) {
+            break;  // channel closed or cancelled -> stop.
+        }
 
         auto [wec, n] =
             co_await socket_.async_write(asio::buffer(buff), asio::as_tuple(asio::use_awaitable));
-        if (wec) break;  // write failed or cancelled -> stop.
+        if (wec) {
+            break;  // write failed or cancelled -> stop.
+        }
     }
 }
 
-bool Session::send(std::vector<std::byte> msg) {
+bool Session::try_send(std::vector<std::byte> msg) {
     return send_queue_.try_send(boost::system::error_code{}, std::move(msg));
 }
 

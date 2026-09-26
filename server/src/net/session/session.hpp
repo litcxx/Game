@@ -8,8 +8,6 @@
 #include <span>
 #include <vector>
 
-#include "game/v1/protocol.pb.h"
-
 namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace websocket = beast::websocket;
@@ -33,7 +31,7 @@ class Session {
 
     // Non-blocking enqueue of an outgoing frame; returns false if the send queue
     // is full or closed (the frame is then dropped). Safe to call from any thread.
-    bool send(std::vector<std::byte> msg);
+    bool try_send(std::vector<std::byte> msg);
 
     // Best-effort socket close, used by the supervisor during teardown.
     void close() noexcept;

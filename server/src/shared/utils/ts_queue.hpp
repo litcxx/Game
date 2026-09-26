@@ -19,6 +19,7 @@ class TSQueue {
     TSQueue() = default;
     TSQueue(const TSQueue&) = delete;
     TSQueue& operator=(const TSQueue&) = delete;
+    ~TSQueue() = default;
 
     void swap(TSQueue<T>& other);
 

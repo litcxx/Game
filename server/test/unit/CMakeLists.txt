@@ -13,6 +13,7 @@ FetchContent_MakeAvailable(googletest)
 set(SOURCES
   main.cpp
   shared/ts_queue_tests.cpp
+  game/world/world_tests.cpp
   # Disabled until their subjects are ready:
   #   player_tests — Player will be reworked for the top-down MVP
   #   sha256_tests — auth/crypto is parked

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace lit {
 // Server runtime settings (deployment concern, not part of the wire protocol).
@@ -11,9 +12,17 @@ struct NetConfig {
     std::uint8_t io_threads;
 };
 
+// A playable faction (colour). Server-defined; sent to clients in Welcome.
+struct FactionConfig {
+    std::uint32_t id;  // 1..255; 0 = neutral / not chosen
+    std::string name;
+    std::uint32_t color;  // 0xRRGGBB
+};
+
 // Mirrors game.v1.GameConfig from protocol.proto — the authoritative game rules
-// the server sends to clients in Welcome. All fields are uint32 to match the
-// protobuf message. Position units: 100 units = 1 cell (UNITS_PER_CELL).
+// the server sends to clients in Welcome. Scalar fields are uint32 to match the
+// protobuf message; factions are sent as Welcome.factions. Position units: 100
+// units = 1 cell (UNITS_PER_CELL).
 struct GameConfig {
     std::uint32_t tick_rate;              // simulation ticks per second (60)
     std::uint32_t snapshot_rate;          // snapshots per second (20)
@@ -25,6 +34,7 @@ struct GameConfig {
     std::uint32_t attack_cooldown_ticks;  // (45 = 0.75 s at 60 Hz)
     std::uint32_t respawn_delay_ticks;    // (300 = 5 s at 60 Hz)
     std::uint32_t reconnect_grace_ms;     // how long a dropped session is kept (30000)
+    std::vector<FactionConfig> factions;  // selectable factions (colours)
 };
 
 class Config {
