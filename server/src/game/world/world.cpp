@@ -2,12 +2,16 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <thread>
 #include <vector>
 
 namespace lit::game {
 namespace {
+constexpr std::uint32_t kUnitsPerCell = 100;  // matches protocol UNITS_PER_CELL
+
 void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
     info->set_id(player.id);
     info->set_name(player.name);
@@ -18,6 +22,10 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
 World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config)
     : incoming_{incoming}, gateway_{gateway}, config_{config} {
     owners_.assign(static_cast<std::size_t>(config_.map_width) * config_.map_height, 0);
+
+    const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
+    snapshot_interval_ = config_.tick_rate / rate;
+    if (snapshot_interval_ == 0) snapshot_interval_ = 1;
 }
 
 void World::run(std::stop_token stop) {
@@ -32,14 +40,12 @@ void World::run(std::stop_token stop) {
         last = now;
 
         tick(delta.count());
-        send_snapshots();
 
         std::this_thread::sleep_until(now + tick_duration);
     }
 }
 
 void World::tick(double dt) {
-    (void)dt;  // no simulation yet
     ++tick_;
 
     // Move the whole inbound queue into a tick-local one in one shot.
@@ -51,6 +57,9 @@ void World::tick(double dt) {
             process_event(ev.value());
         }
     }
+
+    update(dt);
+    send_snapshots();
 }
 
 void World::process_event(const ClientEvent& ev) {
@@ -98,12 +107,88 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
 }
 
 void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn) {
-    spdlog::info("World::on_spawn session={} cell={} faction_id={}", session_id, spawn.cell(),
-                 spawn.faction_id());
+    auto it = players_.find(session_id);
+    if (it == players_.end()) {
+        return;  // never sent Hello
+    }
+    Player& player = it->second;
+
+    if (player.life != ::game::v1::LIFE_STATE_NOT_SPAWNED) {
+        spdlog::warn("World::on_spawn ignored (already spawned) session={}", session_id);
+        return;  // respawn from DEAD comes in M3
+    }
+    if (spawn.cell() >= config_.map_width * config_.map_height) {
+        spdlog::warn("World::on_spawn invalid cell={} session={}", spawn.cell(), session_id);
+        return;
+    }
+    bool valid_faction = false;
+    for (const auto& f : config_.factions) {
+        if (f.id == spawn.faction_id()) valid_faction = true;
+    }
+    if (!valid_faction) {
+        spdlog::warn("World::on_spawn invalid faction={} session={}", spawn.faction_id(),
+                     session_id);
+        return;
+    }
+
+    const std::uint32_t col = spawn.cell() % config_.map_width;
+    const std::uint32_t row = spawn.cell() / config_.map_width;
+    player.faction_id = spawn.faction_id();
+    player.x = col * kUnitsPerCell + kUnitsPerCell / 2.0;
+    player.y = row * kUnitsPerCell + kUnitsPerCell / 2.0;
+    player.hp = config_.max_hp;
+    player.life = ::game::v1::LIFE_STATE_ALIVE;
+    player.move_x = 0;
+    player.move_y = 0;
+
+    // Faction (colour) chosen -> tell everyone else.
+    broadcast_except(session_id, make_roster_upsert(player));
+    spdlog::info("World::on_spawn session={} player_id={} cell={} faction={}", session_id,
+                 player.id, spawn.cell(), player.faction_id);
 }
 
 void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
-    spdlog::info("World::on_input session={} frames={}", session_id, input.frames_size());
+    auto it = players_.find(session_id);
+    if (it == players_.end()) {
+        return;
+    }
+    Player& player = it->second;
+    if (player.life != ::game::v1::LIFE_STATE_ALIVE) {
+        return;  // only alive players act
+    }
+    if (input.frames_size() == 0) {
+        return;
+    }
+
+    // Latest frame wins as the current movement intent; update() integrates it.
+    const auto& frame = input.frames(input.frames_size() - 1);
+    player.move_x = frame.move_x();
+    player.move_y = frame.move_y();
+    player.last_input_seq = frame.seq();
+}
+
+void World::update(double dt) {
+    const double bound_x = static_cast<double>(config_.map_width) * kUnitsPerCell;
+    const double bound_y = static_cast<double>(config_.map_height) * kUnitsPerCell;
+
+    for (auto& [session_id, p] : players_) {
+        if (p.life != ::game::v1::LIFE_STATE_ALIVE) {
+            continue;
+        }
+        if (p.move_x == 0 && p.move_y == 0) {
+            continue;  // standing still
+        }
+        const double mx = static_cast<double>(p.move_x);
+        const double my = static_cast<double>(p.move_y);
+        const double len = std::sqrt(mx * mx + my * my);
+        if (len <= 0.0) {
+            continue;
+        }
+        p.x += (mx / len) * config_.move_speed * dt;
+        p.y += (my / len) * config_.move_speed * dt;
+        p.x = std::clamp(p.x, 0.0, bound_x - 1.0);
+        p.y = std::clamp(p.y, 0.0, bound_y - 1.0);
+    }
 }
 
 void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
@@ -182,7 +267,33 @@ void World::on_disconnect(std::uint64_t session_id) {
 }
 
 void World::send_snapshots() {
-    // TODO (M2): build per-session Snapshot and deliver at snapshot_rate.
+    if (snapshot_interval_ == 0 || tick_ % snapshot_interval_ != 0) {
+        return;
+    }
+
+    // Every connected player gets a Snapshot (they need to see the world even
+    // before spawning); `players` lists everyone alive, `you` is per-recipient.
+    for (const auto& [session_id, self] : players_) {
+        ::game::v1::ServerMessage msg;
+        auto* snap = msg.mutable_snapshot();
+        snap->set_tick(tick_);
+
+        auto* you = snap->mutable_you();
+        you->set_life(self.life);
+        you->set_last_input_seq(self.last_input_seq);
+
+        for (const auto& [sid, p] : players_) {
+            if (p.life != ::game::v1::LIFE_STATE_ALIVE) {
+                continue;
+            }
+            auto* ps = snap->add_players();
+            ps->set_id(p.id);
+            ps->set_x(static_cast<std::uint32_t>(p.x));
+            ps->set_y(static_cast<std::uint32_t>(p.y));
+            ps->set_hp(p.hp);
+        }
+        send(session_id, msg);
+    }
 }
 
 void World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {

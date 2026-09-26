@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -205,4 +206,181 @@ TEST(WorldRoster, DisconnectRemovesPlayerAndNotifiesOthers) {
                 if (removed_id == bob_id) bob_removed = true;
 
     EXPECT_TRUE(bob_removed);
+}
+
+namespace {
+
+[[maybe_unused]] lit::ClientEvent spawn_event(std::uint64_t session_id, std::uint32_t cell,
+                                              std::uint32_t faction_id) {
+    lit::ClientEvent ev;
+    ev.session_id = session_id;
+    ev.kind = lit::ClientEvent::Kind::Message;
+    auto* spawn = ev.msg.mutable_spawn();
+    spawn->set_cell(cell);
+    spawn->set_faction_id(faction_id);
+    return ev;
+}
+
+[[maybe_unused]] lit::ClientEvent input_event(std::uint64_t session_id, std::int32_t move_x,
+                                              std::int32_t move_y, std::uint32_t seq) {
+    lit::ClientEvent ev;
+    ev.session_id = session_id;
+    ev.kind = lit::ClientEvent::Kind::Message;
+    auto* frame = ev.msg.mutable_input()->add_frames();
+    frame->set_seq(seq);
+    frame->set_move_x(move_x);
+    frame->set_move_y(move_y);
+    return ev;
+}
+
+// The last Snapshot delivered to a session (snapshots are periodic).
+std::optional<::game::v1::Snapshot> last_snapshot_to(const lit::test::MockClientGateway& gw,
+                                                    std::uint64_t session_id) {
+    std::optional<::game::v1::Snapshot> snap;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_snapshot()) snap = m.snapshot();
+    return snap;
+}
+
+void run_ticks(lit::game::World& world, int n, double dt) {
+    for (int i = 0; i < n; ++i) world.tick(dt);
+}
+
+}  // namespace
+
+TEST(WorldSnapshot, SendsSnapshotWithSelfStateToConnectedPlayer) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(7, "p"));
+    run_ticks(world, 3, 0.016);  // tick_rate / snapshot_rate = 3 -> one snapshot
+
+    auto snap = last_snapshot_to(gw, 7);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_NOT_SPAWNED);
+    EXPECT_EQ(snap->players_size(), 0);  // nobody has spawned yet
+}
+
+TEST(WorldSpawn, PlacesPlayerAliveAtCellCenterWithFullHp) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // 4-wide map: col 1, row 1
+    run_ticks(world, 3, 0.05);
+
+    auto snap = last_snapshot_to(gw, 7);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_ALIVE);
+    ASSERT_EQ(snap->players_size(), 1);
+    const auto& ps = snap->players(0);
+    EXPECT_EQ(ps.x(), 150u);  // 1 * 100 + 50
+    EXPECT_EQ(ps.y(), 150u);
+    EXPECT_EQ(ps.hp(), config.max_hp);
+}
+
+TEST(WorldSpawn, RejectsOutOfBoundsCell) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/9999, /*faction=*/1));
+    run_ticks(world, 3, 0.05);
+
+    auto snap = last_snapshot_to(gw, 7);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_NOT_SPAWNED);
+    EXPECT_EQ(snap->players_size(), 0);
+}
+
+TEST(WorldSpawn, RejectsUnknownFaction) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/99));  // not in config
+    run_ticks(world, 3, 0.05);
+
+    auto snap = last_snapshot_to(gw, 7);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_NOT_SPAWNED);
+}
+
+TEST(WorldSpawn, NotifiesOthersOfChosenFaction) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/2));
+    world.tick(0.05);
+
+    bool told = false;
+    for (const auto& m : messages_to(gw, 2))
+        if (m.has_roster())
+            for (const auto& info : m.roster().upsert())
+                if (info.name() == "a" && info.faction_id() == 2) told = true;
+    EXPECT_TRUE(told);
+}
+
+TEST(WorldMovement, InputMovesAlivePlayer) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // center (150,150)
+    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));
+    run_ticks(world, 3, 0.1);  // move_speed 300 * 0.1 = 30 units/tick
+
+    auto snap = last_snapshot_to(gw, 7);
+    ASSERT_TRUE(snap.has_value());
+    ASSERT_EQ(snap->players_size(), 1);
+    EXPECT_GT(snap->players(0).x(), 150u);
+    EXPECT_EQ(snap->players(0).y(), 150u);
+    EXPECT_EQ(snap->you().last_input_seq(), 1u);
+}
+
+TEST(WorldMovement, StandsStillWithoutInput) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
+    run_ticks(world, 3, 0.1);
+
+    auto snap = last_snapshot_to(gw, 7);
+    ASSERT_TRUE(snap.has_value());
+    ASSERT_EQ(snap->players_size(), 1);
+    EXPECT_EQ(snap->players(0).x(), 150u);
+    EXPECT_EQ(snap->players(0).y(), 150u);
+}
+
+TEST(WorldMovement, IgnoresInputWhenNotSpawned) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(7, "p"));
+    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));
+    run_ticks(world, 3, 0.1);
+
+    auto snap = last_snapshot_to(gw, 7);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_NOT_SPAWNED);
+    EXPECT_EQ(snap->players_size(), 0);
 }
