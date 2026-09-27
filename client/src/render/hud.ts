@@ -27,8 +27,8 @@ export class Hud {
     this.fps.anchor.set(1, 0);
     this.hint.anchor.set(0.5, 1);
 
-    this.hp = this.makeGauge(51, "ЗДОРОВЬЕ", "#c88868");
-    this.cell = this.makeGauge(30, "", "#9a9a88");
+    this.hp = this.makeGauge(50, "ЗДОРОВЬЕ", "#c88868");
+    this.cell = this.makeGauge(50, "", "#9a9a88");
 
     app.stage.addChild(
       this.factionBadge,
@@ -110,19 +110,19 @@ export class Hud {
     const fill = new Graphics();
     const maskG = new Graphics().circle(0, 0, radius).fill(0xffffff);
     fill.mask = maskG;
-    const border = new Graphics().circle(0, 0, radius).stroke({ width: 2, color: 0x3a3a46 });
+    const border = new Graphics().circle(0, 0, radius).stroke({ width: 3, color: 0x3a3a46 });
     const value = new Text({
       text: "",
       style: {
         fill: "#f4f4ec",
         fontFamily: "monospace",
         fontWeight: "bold",
-        fontSize: Math.round(radius * 0.55),
+        fontSize: 20,
         stroke: { color: 0x14141a, width: 3 }, // dark outline -> readable over the fill
       },
     });
     value.anchor.set(0.5);
-    const labelText = new Text({ text: label, style: mono(11, labelColor) });
+    const labelText = new Text({ text: label, style: mono(13, labelColor) });
     labelText.anchor.set(0.5, 1);
     labelText.position.set(0, -radius - 5);
     root.addChild(bg, fill, maskG, border, value, labelText);
