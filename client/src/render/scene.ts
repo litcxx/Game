@@ -33,6 +33,7 @@ export class Scene {
   private owners: Uint8Array = new Uint8Array(0);           // owner faction id (0 = neutral)
   private captureFaction: Uint8Array = new Uint8Array(0);   // who is capturing (0 = none)
   private captureProgress: Uint8Array = new Uint8Array(0);  // 0..100
+  private readonly ownedCount = new Map<number, number>();  // faction id -> owned cell count
   private selfId = 0;
   private maxHp = 100;
   private attackRange = 0;          // world units; ring around self
@@ -111,6 +112,11 @@ export class Scene {
     this.owners = owners;
     this.captureFaction = new Uint8Array(owners.length);
     this.captureProgress = new Uint8Array(owners.length);
+    this.ownedCount.clear();
+    for (let i = 0; i < owners.length; i++) {
+      const o = owners[i]!;
+      if (o !== 0) this.ownedCount.set(o, (this.ownedCount.get(o) ?? 0) + 1);
+    }
     for (const c of captures) this.setCapture(c);
     this.worldDirty = true;
   }
@@ -119,10 +125,33 @@ export class Scene {
   applyCellUpdates(cells: readonly CellUpdate[]): void {
     if (cells.length === 0) return;
     for (const c of cells) {
-      if (c.index < this.owners.length) this.owners[c.index] = c.owner;
+      if (c.index < this.owners.length) {
+        const old = this.owners[c.index]!;
+        if (old !== c.owner) {
+          if (old !== 0) this.ownedCount.set(old, (this.ownedCount.get(old) ?? 1) - 1);
+          if (c.owner !== 0) this.ownedCount.set(c.owner, (this.ownedCount.get(c.owner) ?? 0) + 1);
+          this.owners[c.index] = c.owner;
+        }
+      }
       this.setCapture(c);
     }
     this.worldDirty = true;
+  }
+
+  // --- HUD data accessors ---------------------------------------------------
+  onlineCount(): number {
+    return this.playerFaction.size;
+  }
+
+  factionStats(factionId: number): { cells: number; percent: number } {
+    const cells = this.ownedCount.get(factionId) ?? 0;
+    const total = this.mapCols * this.mapRows;
+    return { cells, percent: total > 0 ? Math.round((cells / total) * 100) : 0 };
+  }
+
+  captureProgressAt(col: number, row: number): number {
+    if (col < 0 || row < 0 || col >= this.mapCols || row >= this.mapRows) return 0;
+    return this.captureProgress[row * this.mapCols + col] ?? 0;
   }
 
   upsertRoster(players: readonly PlayerInfo[]): void {

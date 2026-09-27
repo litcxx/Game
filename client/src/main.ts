@@ -1,10 +1,11 @@
-import { Application, Graphics, Text } from "pixi.js";
+import { Application } from "pixi.js";
 
 import { LifeState } from "./gen/game/v1/protocol_pb.js";
 import { installInput } from "./input/keyboard.js";
 import { GameClient } from "./net/client.js";
 import { InterpolationBuffer, type RemoteState } from "./net/interpolation.js";
 import { Predictor, type PendingInput } from "./net/prediction.js";
+import { Hud } from "./render/hud.js";
 import { Scene } from "./render/scene.js";
 
 const FIXED_DT = 1 / 60;
@@ -17,38 +18,23 @@ async function main(): Promise<void> {
     resizeTo: window,
     background: "#101015",
     antialias: true,
-    resolution: window.devicePixelRatio || 1, // crisp on HiDPI (fixes blurry text)
+    resolution: window.devicePixelRatio || 1, // crisp on HiDPI
     autoDensity: true,
   });
   document.getElementById("app")!.appendChild(app.canvas);
 
   const scene = new Scene(app);
-
-  // HUD: a faction-colour swatch + a status line.
-  const swatch = new Graphics();
-  swatch.position.set(12, 14);
-  app.stage.addChild(swatch);
-  const status = new Text({
-    text: "connecting…",
-    style: { fill: "#e6e6e6", fontFamily: "monospace", fontSize: 16 },
-  });
-  status.position.set(34, 12);
-  app.stage.addChild(status);
-  const fps = new Text({
-    text: "FPS —",
-    style: { fill: "#8fce8f", fontFamily: "monospace", fontSize: 14 },
-  });
-  fps.anchor.set(1, 0);
-  app.stage.addChild(fps);
+  const hud = new Hud(app);
 
   let myId = 0;
   let mapWidth = 0;
   let mapHeight = 0;
+  let maxHp = 100;
   let factionCount = 0;
   let selectedFaction = 1;
   let myFaction = 0;
   let tickRate = 60;
-  const factionColors = new Map<number, number>();
+  const factionInfo = new Map<number, { name: string; color: number }>();
 
   const readKeys = installInput();
   let attacking = false;
@@ -63,11 +49,35 @@ async function main(): Promise<void> {
   let fpsAccum = 0;
   const outbox: PendingInput[] = [];
 
-  const drawSwatch = (factionId: number): void => {
-    const color = factionColors.get(factionId);
-    swatch.clear();
-    if (color !== undefined) {
-      swatch.roundRect(0, 0, 14, 14, 3).fill(color).stroke({ width: 1, color: 0xffffff, alpha: 0.5 });
+  const updateHud = (life: LifeState, hp: number): void => {
+    const shownFaction = myFaction || selectedFaction;
+    const fi = factionInfo.get(shownFaction);
+    if (fi) hud.setFaction(fi.name, fi.color);
+    hud.setOnline(scene.onlineCount());
+    const st = scene.factionStats(shownFaction);
+    hud.setTerritory(st.cells, st.percent);
+    hud.setHp(hp, maxHp, alive);
+
+    if (alive && predictor) {
+      const col = Math.floor(predictor.position.x / 100);
+      const row = Math.floor(predictor.position.y / 100);
+      hud.setCapture(col, row, scene.captureProgressAt(col, row));
+    } else {
+      hud.setCapture(0, 0, 0);
+    }
+
+    const mapHint = `M — ${scene.mapMode ? "к игроку" : "вся карта"}`;
+    if (alive) {
+      hud.setHint("");
+    } else if (life === LifeState.DEAD) {
+      const left = Math.max(0, Math.ceil((respawnTick - serverTick) / tickRate));
+      hud.setHint(
+        left > 0
+          ? `Убит · возрождение через ${left}с · ${mapHint}`
+          : `Убит · клик по клетке — возрождение (фракция ${selectedFaction}) · ${mapHint}`,
+      );
+    } else {
+      hud.setHint(`Не в игре · 1-${factionCount} фракция (${selectedFaction}) · клик — старт · ${mapHint}`);
     }
   };
 
@@ -78,10 +88,11 @@ async function main(): Promise<void> {
         myId = w.playerId;
         mapWidth = w.config?.mapWidth ?? 0;
         mapHeight = w.config?.mapHeight ?? 0;
+        maxHp = w.config?.maxHp ?? 100;
         tickRate = w.config?.tickRate || 60;
         factionCount = w.factions.length;
         selectedFaction = w.factions[0]?.id ?? 1;
-        for (const f of w.factions) factionColors.set(f.id, f.color);
+        for (const f of w.factions) factionInfo.set(f.id, { name: f.name, color: f.color });
         scene.setSelf(myId);
         if (w.config) {
           scene.setConfig(
@@ -99,7 +110,7 @@ async function main(): Promise<void> {
           maxX: mapWidth * 100 - 1,
           maxY: mapHeight * 100 - 1,
         });
-        predictor.reset({ x: (mapWidth * 100) / 2, y: (mapHeight * 100) / 2 }); // centre pre-spawn
+        predictor.reset({ x: (mapWidth * 100) / 2, y: (mapHeight * 100) / 2 });
         break;
       }
       case "mapState":
@@ -121,9 +132,9 @@ async function main(): Promise<void> {
         if (predictor) {
           if (alive && self) {
             if (wasAlive) predictor.reconcile({ x: self.x, y: self.y }, s.you?.lastInputSeq ?? 0);
-            else predictor.reset({ x: self.x, y: self.y }); // just (re)spawned -> snap
+            else predictor.reset({ x: self.x, y: self.y });
           } else if (self) {
-            predictor.reset({ x: self.x, y: self.y }); // dead body -> snap, stop predicting
+            predictor.reset({ x: self.x, y: self.y });
           }
         }
         scene.updateMeta(s.players, s.you?.attackReadyTick ?? 0, serverTick);
@@ -132,21 +143,7 @@ async function main(): Promise<void> {
         for (const p of s.players) if (p.id !== myId) remoteStates.set(p.id, { x: p.x, y: p.y });
         interp.push(performance.now(), remoteStates);
 
-        const mapHint = `M — ${scene.mapMode ? "к игроку" : "вся карта"}`;
-        if (alive && self) {
-          drawSwatch(myFaction);
-          status.text = `id=${myId} · hp=${self.hp} · фракция ${myFaction} · WASD ход · E захват · ЛКМ атака · ${mapHint}`;
-        } else if (life === LifeState.DEAD) {
-          drawSwatch(myFaction);
-          const left = Math.max(0, Math.ceil((respawnTick - serverTick) / tickRate));
-          status.text =
-            left > 0
-              ? `id=${myId} · DEAD · respawn in ${left}s · ${mapHint}`
-              : `id=${myId} · DEAD · click a cell to respawn (фракция ${selectedFaction}) · ${mapHint}`;
-        } else {
-          drawSwatch(selectedFaction);
-          status.text = `id=${myId} · not spawned · 1-${factionCount} фракция (${selectedFaction}), клик — спавн · ${mapHint}`;
-        }
+        updateHud(life, self?.hp ?? 0);
         break;
       }
       default:
@@ -166,8 +163,8 @@ async function main(): Promise<void> {
     if (Number.isInteger(n) && n >= 1 && n <= factionCount) selectedFaction = n;
   });
 
-  // Attack: hold the left mouse button while alive. The fixed-step loop samples
-  // `attacking`; a min-hold keeps a quick click alive long enough to be sampled.
+  // Attack: hold the left mouse button while alive. A min-hold keeps a quick
+  // click's attack alive long enough to be sampled by a fixed step.
   const MIN_ATTACK_HOLD_MS = 60;
   let attackDownAt = 0;
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
@@ -193,25 +190,23 @@ async function main(): Promise<void> {
 
   // Click a cell to spawn / respawn — only when not alive (alive clicks attack).
   app.canvas.addEventListener("click", (e) => {
-    if (alive || respawnTick > serverTick) return; // still fighting, or waiting out respawn
+    if (alive || respawnTick > serverTick) return;
     const rect = app.canvas.getBoundingClientRect();
     const [col, row] = scene.screenToCell(e.clientX - rect.left, e.clientY - rect.top);
     if (col < 0 || row < 0 || col >= mapWidth || row >= mapHeight) return;
     myFaction = selectedFaction;
     scene.setSelfFaction(myFaction);
-    predictor?.reset({ x: col * 100 + 50, y: row * 100 + 50 }); // snap to the chosen cell centre
+    predictor?.reset({ x: col * 100 + 50, y: row * 100 + 50 });
     client.sendSpawn(row * mapWidth + col, selectedFaction);
   });
 
-  // Fixed-step input + local prediction, then render every frame.
+  // Fixed-step input + prediction; interpolate remotes; render every frame.
   app.ticker.add((ticker) => {
     fpsAccum += ticker.deltaMS;
     if (fpsAccum >= 250) {
       fpsAccum = 0;
-      fps.text = `FPS ${Math.round(ticker.FPS)}`;
+      hud.setFps(Math.round(ticker.FPS));
     }
-    fps.position.set(app.screen.width - 12, 12);
-
     if (predictor) {
       acc = Math.min(acc + ticker.deltaMS / 1000, MAX_ACCUM);
       while (acc >= FIXED_DT) {
@@ -226,7 +221,7 @@ async function main(): Promise<void> {
           }),
         );
       }
-      while (outbox.length > 0) client.sendInputFrames(outbox.splice(0, 8)); // protocol caps at 8
+      while (outbox.length > 0) client.sendInputFrames(outbox.splice(0, 8));
       predictor.decayError(ticker.deltaMS / 1000);
       scene.setSelfPredicted(predictor.renderPosition.x, predictor.renderPosition.y);
     }
