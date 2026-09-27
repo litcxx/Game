@@ -49,3 +49,12 @@ export function aimVector(from: { x: number; y: number }, to: { x: number; y: nu
   if (len < 1) return { x: 0, y: 0 }; // cursor on the player: no direction
   return { x: Math.round((dx / len) * 1000), y: Math.round((dy / len) * 1000) };
 }
+
+// Progress of the shared cooldown, for the ring's arc: 0 right after an ability was
+// used, rising to 1 when the next use is ready. `lengthTicks` is the cooldown of the
+// ability used last (0 before any attack: ready).
+export function cooldownProgress(readyTick: number, nowTick: number, lengthTicks: number): number {
+  if (lengthTicks <= 0) return 1;
+  const remaining = Math.max(0, readyTick - nowTick);
+  return Math.max(0, Math.min(1, 1 - remaining / lengthTicks));
+}

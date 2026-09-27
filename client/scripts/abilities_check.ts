@@ -2,7 +2,7 @@
 // aim vector sent in InputFrame. Run: npx tsx scripts/abilities_check.ts
 import { create } from "@bufbuild/protobuf";
 
-import { abilitiesFromWelcome, aimVector, selectSlot } from "../src/abilities.js";
+import { abilitiesFromWelcome, aimVector, cooldownProgress, selectSlot } from "../src/abilities.js";
 import { AbilityKind, AbilitySchema } from "../src/gen/game/v1/protocol_pb.js";
 
 let failures = 0;
@@ -44,6 +44,13 @@ check("aim right", same(aimVector({ x: 100, y: 100 }, { x: 200, y: 100 }), { x: 
 check("aim up-left", same(aimVector({ x: 0, y: 0 }, { x: -30, y: 40 }), { x: -600, y: 800 }));
 check("aim diagonal rounds", same(aimVector({ x: 0, y: 0 }, { x: 1, y: 1 }), { x: 707, y: 707 }));
 check("cursor on the player -> no aim", same(aimVector({ x: 50, y: 50 }, { x: 50.5, y: 50 }), { x: 0, y: 0 }));
+
+// cooldownProgress: 0 right after use -> 1 when ready; the length comes from the ability used.
+check("just used -> 0", cooldownProgress(130, 40, 90) === 0);
+check("halfway through a 90-tick cooldown", cooldownProgress(130, 85, 90) === 0.5);
+check("ready -> 1", cooldownProgress(130, 130, 90) === 1);
+check("past ready stays 1", cooldownProgress(130, 500, 90) === 1);
+check("never attacked (length 0) -> ready", cooldownProgress(0, 10, 0) === 1);
 
 console.log(failures === 0 ? "VERDICT: PASS" : `VERDICT: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);

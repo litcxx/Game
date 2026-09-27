@@ -1,12 +1,13 @@
 import { Application } from "pixi.js";
 
-import { abilitiesFromWelcome, aimVector, type AbilityInfo } from "./abilities.js";
+import { abilitiesFromWelcome, aimVector, selectSlot, type AbilityInfo } from "./abilities.js";
 import { LifeState } from "./gen/game/v1/protocol_pb.js";
 import { installInput } from "./input/keyboard.js";
 import { installMouse } from "./input/mouse.js";
 import { GameClient } from "./net/client.js";
 import { InterpolationBuffer, type RemoteState } from "./net/interpolation.js";
 import { Predictor, type PendingInput } from "./net/prediction.js";
+import { AbilityBar } from "./render/abilityBar.js";
 import { Hud } from "./render/hud.js";
 import { Scene } from "./render/scene.js";
 
@@ -27,12 +28,12 @@ async function main(): Promise<void> {
 
   const scene = new Scene(app);
   const hud = new Hud(app);
+  const bar = new AbilityBar(app);
 
   let myId = 0;
   let mapWidth = 0;
   let mapHeight = 0;
   let maxHp = 100;
-  let factionCount = 0;
   let selectedFaction = 1;
   let myFaction = 0;
   let tickRate = 60;
@@ -40,7 +41,7 @@ async function main(): Promise<void> {
 
   const readKeys = installInput();
   let abilities: AbilityInfo[] = [];
-  const activeSlot = 0; // bar slot in use (keys 1–5 arrive with the ability bar)
+  let activeSlot = 0; // bar slot in use, picked with keys 1–5
 
   let alive = false;
   let serverTick = 0;
@@ -55,7 +56,11 @@ async function main(): Promise<void> {
   const updateHud = (life: LifeState, hp: number): void => {
     const shownFaction = myFaction || selectedFaction;
     const fi = factionInfo.get(shownFaction);
-    if (fi) hud.setFaction(fi.name, fi.color);
+    if (fi) {
+      hud.setFaction(fi.name, fi.color);
+      bar.setAccent(fi.color);
+    }
+    bar.setVisible(alive);
     hud.setOnline(scene.onlineCount());
     const st = scene.factionStats(shownFaction);
     hud.setTerritory(st.cells, st.percent);
@@ -78,10 +83,10 @@ async function main(): Promise<void> {
       hud.setHint(
         left > 0
           ? `Убит · возрождение через ${left}с · ${mapHint}`
-          : `Убит · клик по клетке — возрождение (фракция ${selectedFaction}) · ${mapHint}`,
+          : `Убит · клик по клетке — возрождение · ${mapHint}`,
       );
     } else {
-      hud.setHint(`Не в игре · 1-${factionCount} фракция (${selectedFaction}) · клик — старт · ${mapHint}`);
+      hud.setHint(`Не в игре · клик по клетке — старт · ${mapHint}`);
     }
   };
 
@@ -94,22 +99,15 @@ async function main(): Promise<void> {
         mapHeight = w.config?.mapHeight ?? 0;
         maxHp = w.config?.maxHp ?? 100;
         tickRate = w.config?.tickRate || 60;
-        factionCount = w.factions.length;
         selectedFaction = w.factions[0]?.id ?? 1;
         for (const f of w.factions) factionInfo.set(f.id, { name: f.name, color: f.color });
         abilities = abilitiesFromWelcome(w.abilities);
+        activeSlot = 0;
+        bar.setAbilities(abilities);
+        bar.setActive(activeSlot);
+        scene.setActiveAbility(abilities[activeSlot]);
         scene.setSelf(myId);
-        if (w.config) {
-          const first = w.abilities[0]; // bar slot 1 (melee) until the ability bar lands
-          scene.setConfig(
-            w.config.mapWidth,
-            w.config.mapHeight,
-            w.config.maxHp,
-            first?.range ?? 0,
-            first?.cooldownTicks ?? 1,
-            w.config.tickRate,
-          );
-        }
+        if (w.config) scene.setConfig(w.config.mapWidth, w.config.mapHeight, w.config.maxHp, w.config.tickRate);
         scene.setFactions(w.factions.map((f) => ({ id: f.id, color: f.color })));
         const speed = w.config?.moveSpeed ?? 300;
         predictor = new Predictor(speed, FIXED_DT, {
@@ -143,7 +141,7 @@ async function main(): Promise<void> {
             predictor.reset({ x: self.x, y: self.y });
           }
         }
-        scene.updateMeta(s.players, s.you?.attackReadyTick ?? 0, serverTick);
+        scene.updateMeta(s.players, s.you?.attackReadyTick ?? 0, s.you?.attackCooldownTicks ?? 0, serverTick);
         scene.applyCellUpdates(s.cells);
         const remoteStates = new Map<number, RemoteState>();
         for (const p of s.players) if (p.id !== myId) remoteStates.set(p.id, { x: p.x, y: p.y });
@@ -165,8 +163,13 @@ async function main(): Promise<void> {
       scene.toggleMap();
       return;
     }
-    const n = Number(e.key);
-    if (Number.isInteger(n) && n >= 1 && n <= factionCount) selectedFaction = n;
+    // 1–5: the active ability bar slot (instant switch; empty slots are ignored).
+    const slot = selectSlot(abilities, activeSlot, e.key);
+    if (slot !== activeSlot) {
+      activeSlot = slot;
+      bar.setActive(slot);
+      scene.setActiveAbility(abilities[slot]);
+    }
   });
 
   // Attack: hold the left mouse button while alive; aim follows the cursor.
@@ -222,6 +225,11 @@ async function main(): Promise<void> {
       if (r) remotes.set(id, r);
     }
     scene.setRemotePositions(remotes);
+    const cur = mouse.cursor();
+    if (cur) {
+      const [wx, wy] = scene.screenToWorld(cur.x, cur.y);
+      scene.setAimTarget({ x: wx, y: wy });
+    }
     scene.frame();
   });
 }

@@ -1,5 +1,6 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 
+import { cooldownProgress, type AbilityInfo } from "../abilities.js";
 import type { CellUpdate, PlayerInfo, PlayerState } from "../gen/game/v1/protocol_pb.js";
 import { Camera, UNITS_PER_CELL } from "./camera.js";
 
@@ -45,8 +46,9 @@ export class Scene {
   private readonly ownedCount = new Map<number, number>();  // faction id -> owned cell count
   private selfId = 0;
   private maxHp = 100;
-  private attackRange = 0;          // world units; ring around self
-  private attackCooldownTicks = 1;  // for the self cooldown ring
+  private activeAbility: AbilityInfo | undefined; // its range is the ring around self
+  private aimTarget: { x: number; y: number } | undefined; // cursor in world units
+  private selfCooldownTicks = 0; // length of the current cooldown (SelfState)
   private tickRate = 60;            // to interpolate the current server tick between snapshots
   private serverTickAtMs = 0;       // performance.now() when serverTick was last set
 
@@ -92,23 +94,24 @@ export class Scene {
     for (const f of factions) this.factionColors.set(f.id, f.color);
   }
 
-  setConfig(
-    mapWidth: number,
-    mapHeight: number,
-    maxHp: number,
-    attackRange: number,
-    attackCooldownTicks: number,
-    tickRate: number,
-  ): void {
+  setConfig(mapWidth: number, mapHeight: number, maxHp: number, tickRate: number): void {
     this.mapCols = Math.max(1, mapWidth);
     this.mapRows = Math.max(1, mapHeight);
     this.maxHp = Math.max(1, maxHp);
-    this.attackRange = Math.max(0, attackRange);
-    this.attackCooldownTicks = Math.max(1, attackCooldownTicks);
     this.tickRate = Math.max(1, tickRate);
     this.camera.setWorld(this.mapCols, this.mapRows);
     this.camera.setScreen(this.app.screen.width, this.app.screen.height);
     this.worldDirty = true;
+  }
+
+  // The ability in the active bar slot: the ring around self shows its range.
+  setActiveAbility(ability: AbilityInfo | undefined): void {
+    this.activeAbility = ability;
+  }
+
+  // Cursor position in world units (aim line for projectile abilities).
+  setAimTarget(target: { x: number; y: number } | undefined): void {
+    this.aimTarget = target;
   }
 
   // Toggle between following the player and the full-map overview (M key).
@@ -203,9 +206,16 @@ export class Scene {
     this.remotePositions = positions;
   }
 
-  // Snapshot meta: hp + fallback position per player, and the self cooldown.
-  updateMeta(players: readonly PlayerState[], selfReadyTick: number, serverTick: number): void {
+  // Snapshot meta: hp + fallback position per player, and the self cooldown
+  // (ready tick + the length of the ability used last).
+  updateMeta(
+    players: readonly PlayerState[],
+    selfReadyTick: number,
+    selfCooldownTicks: number,
+    serverTick: number,
+  ): void {
     this.selfReadyTick = selfReadyTick;
+    this.selfCooldownTicks = selfCooldownTicks;
     this.serverTick = serverTick;
     this.serverTickAtMs = performance.now();
     const seen = new Set<number>();
@@ -386,11 +396,14 @@ export class Scene {
         // Soft glow (layered translucent discs — cheaper than a blur filter).
         gfx.circle(0, 0, 11).fill({ color, alpha: 0.06 });
         gfx.circle(0, 0, 8).fill({ color, alpha: 0.1 });
-        // Own attack area (faint) + the cooldown arc sweeping around it.
-        if (isSelf && this.attackRange > 0) {
-          const rr = this.attackRange * cam.scale;
+        // Active ability's reach (faint) + the cooldown arc sweeping around it;
+        // a projectile ability also shows the aim line toward the cursor.
+        const ability = this.activeAbility;
+        if (isSelf && ability !== undefined && ability.range > 0) {
+          const rr = ability.range * cam.scale;
           gfx.circle(0, 0, rr).stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
           this.drawCooldownRing(gfx, rr, color);
+          if (ability.kind === "projectile") this.drawAimLine(gfx, pos, rr, color);
         }
         // Grounding shadow: over the glow (so it isn't washed out) and under the
         // token; darker/larger so it reads against the dark map.
@@ -446,11 +459,11 @@ export class Scene {
     return this.serverTick + ((performance.now() - this.serverTickAtMs) / 1000) * this.tickRate;
   }
 
-  // Cooldown as an arc sweeping clockwise from the top around the attack-range
-  // ring; a full ring means the next attack is ready.
+  // Cooldown as an arc sweeping clockwise from the top around the ability's range
+  // ring; a full ring means the next attack is ready. The length is the cooldown
+  // of the ability used last (shared cooldown).
   private drawCooldownRing(gfx: Graphics, radius: number, color: number): void {
-    const remaining = Math.max(0, this.selfReadyTick - this.currentTick());
-    const frac = Math.max(0, Math.min(1, 1 - remaining / this.attackCooldownTicks));
+    const frac = cooldownProgress(this.selfReadyTick, this.currentTick(), this.selfCooldownTicks);
     if (frac <= 0) return; // just attacked -> empty
     const start = -Math.PI / 2; // top (12 o'clock)
     const arcColor = this.lighten(color, 0.4);
@@ -460,6 +473,25 @@ export class Scene {
       gfx.moveTo(0, -radius); // begin at the arc's start -> no line from the centre
       gfx.arc(0, 0, radius, start, start + frac * Math.PI * 2).stroke({ width: 2, color: arcColor, alpha: 0.76 });
     }
+  }
+
+  // Thin line from the token toward the cursor, out to the projectile's range.
+  private drawAimLine(gfx: Graphics, self: { x: number; y: number }, rangePx: number, color: number): void {
+    const t = this.aimTarget;
+    if (t === undefined) return;
+    const dx = t.x - self.x;
+    const dy = t.y - self.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return;
+    const ux = dx / len;
+    const uy = dy / len;
+    const start = 12; // px: clear of the token and its glow
+    if (rangePx <= start) return;
+    gfx
+      .moveTo(ux * start, uy * start)
+      .lineTo(ux * rangePx, uy * rangePx)
+      .stroke({ width: 1.5, color: this.lighten(color, 0.4), alpha: 0.45 });
+    gfx.circle(ux * rangePx, uy * rangePx, 2.5).fill({ color: this.lighten(color, 0.4), alpha: 0.7 });
   }
 
   private layoutMinimap(): void {
