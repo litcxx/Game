@@ -46,11 +46,22 @@ lives on the server; the browser client predicts, interpolates, and renders.
   (`co_await (a || b)`) and removes the session only after **both** finish — so
   teardown never frees a session out from under a live coroutine.
 - **World** (`src/game/world`) is the authoritative loop, run at a **fixed
-  timestep** (accumulator). Each tick it drains the inbound queue and enqueues
-  input frames, then simulates in order: consume one input command per player,
-  integrate movement, resolve area-attack combat (death → respawn timer), advance
-  territory capture, and emit a per-recipient snapshot. `SelfState.last_input_seq`
-  acks the consumed command so the client can reconcile its prediction.
+  timestep** (accumulator). It only orchestrates: each tick it drains the inbound
+  queue (dispatch → handlers, input frames → per-player queue), then runs the
+  systems in order — consume one input command per player, integrate movement,
+  rebuild the spatial index, resolve melee (death → respawn timer), advance
+  territory capture — and sends a per-recipient snapshot.
+  `SelfState.last_input_seq` acks the consumed command so the client can
+  reconcile its prediction.
+- **Systems over plain data.** All simulation state is one plain struct,
+  `WorldState` (`src/game/state`: players, territory grid, pending events). The
+  per-tick logic lives in free functions over it (`src/game/systems`), so each
+  rule is small and testable on its own. Every hp loss goes through a single
+  choke point, `apply_damage()` (hit/death events, respawn timer). A uniform-grid
+  `SpatialIndex` (`src/game/spatial`) answers "who is within r of here" without
+  scanning every pair. Outbound messages are pure builders in `src/game/sync`;
+  the snapshot is built per recipient — the seam for interest management / fog
+  of war.
 - **Seam.** `World` depends only on the abstract `IClientGateway`
   (`src/shared/net`), not on the network layer — so the game code stays testable
   (mockable gateway) and free of transport details.
@@ -60,7 +71,12 @@ lives on the server; the browser client predicts, interpolates, and renders.
 ```
 ../protocol/game/v1/protocol.proto   wire protocol (shared with the client)
 src/net/       server, session — WebSocket transport + coroutines
-src/game/      world — the game loop (+ player/tile entities)
+src/game/      the simulation:
+  world/         World — tick orchestration, event dispatch, delivery; fixed step
+  state/         WorldState, Player, Territory — plain data
+  systems/       input, movement, combat (melee), damage, capture, spawn
+  spatial/       SpatialIndex — uniform-grid broad phase over player positions
+  sync/          ServerMessage builders + per-recipient snapshot
 src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue)
 config/        config.json (runtime settings + game rules)
 test/          unit + integration (GoogleTest)
@@ -100,7 +116,9 @@ ctest --preset debug-asan      # or run the binary directly:
 ./build/bin/unit_tests
 ```
 
-The `World` suite (presence, spawn, movement, combat, capture) runs by default.
+The `World` suites (presence, spawn, movement, combat, capture, input) test the
+game end to end through a mock gateway; `Damage` and `SpatialIndex` test those
+units directly. They all run by default.
 Some legacy suites (the old binary protocol and the parked auth/DB integration
 tests) remain disabled in the CMake test lists.
 

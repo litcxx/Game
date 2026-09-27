@@ -112,23 +112,31 @@ sequenceDiagram
 **одну команду за тик** и выставляет `last_input_seq` (ack для реконсиляции на
 клиенте). Снапшоты — по кадансу (`tick_rate / snapshot_rate`).
 
+`World` только оркестрирует: всё состояние симуляции — простая структура
+`WorldState` (`src/game/state`), а правила — свободные функции-системы над ней
+(`src/game/systems`). После движения `World` перестраивает `SpatialIndex` живых
+игроков — бой спрашивает у него «кто в радиусе», а не перебирает все пары.
+
 ```mermaid
 flowchart LR
-    drain["drain: process_event<br/>hello / spawn / input(→очередь) / ping / disconnect"]
-    consume["consume_inputs()<br/>одна команда/тик на игрока"]
-    move["update(dt)<br/>движение живых по интенту"]
-    combat["update_combat()<br/>удар по площади"]
-    cap["update_captures()<br/>захват клетки под центром"]
-    snap["send_snapshots()<br/>you + players + cells + events"]
-    drain --> consume --> move --> combat --> cap --> snap
+    drain["drain: process_event<br/>hello / spawn(try_spawn) / input(enqueue_frames) / ping / disconnect"]
+    consume["consume_inputs(state)<br/>одна команда/тик на игрока"]
+    move["integrate_movement(state, dt)<br/>движение живых по интенту"]
+    index["index_alive_players()<br/>SpatialIndex живых"]
+    combat["resolve_melee(state, index)<br/>удар по площади → apply_damage"]
+    cap["update_captures(state)<br/>захват клетки под центром"]
+    snap["send_snapshots()<br/>build_snapshot(state, получатель)"]
+    drain --> consume --> move --> index --> combat --> cap --> snap
 ```
 
 **Бой (area attack).** Пока игрок держит клавишу атаки (`InputFrame.attack`), раз
 в `attack_cooldown_ticks` он бьёт по площади: урон `attack_damage` получают все
-живые враги (иной фракции) в радиусе `attack_range`. hp → 0 → `DEAD`, тело
-остаётся на месте, `respawn_tick = tick + respawn_delay_ticks`; `SpawnRequest`
+живые враги (иной фракции) в радиусе `attack_range` — кандидатов даёт запрос к
+`SpatialIndex`. Любая потеря hp идёт через единую точку `apply_damage()`: только
+по живым, урон не больше остатка hp, `HitEvent`; hp → 0 → `DEAD`, тело остаётся на
+месте, `respawn_tick = tick + respawn_delay_ticks`, `DeathEvent`. `SpawnRequest`
 из `DEAD` принимается после `respawn_tick`. Удары и смерти уходят в
-`Snapshot.events` (`HitEvent` / `DeathEvent`) — для анимаций и ленты боя.
+`Snapshot.events` — для анимаций и ленты боя.
 
 ```mermaid
 sequenceDiagram
@@ -159,7 +167,11 @@ sequenceDiagram
 | `main` | `src/main.cpp` | Bootstrap, запуск потоков и корутин |
 | `Server` (`IClientGateway`) | `src/net/server/server.cpp` | Acceptor, реестр сессий, супервизоры, `send_to` / `broadcast` |
 | `Session` | `src/net/session/session.cpp` | Транспорт: чтение/парсинг кадра, запись из канала |
-| `World` | `src/game/world/world.cpp` | Игровой цикл: диспатч, движение, бой, захват, снапшоты |
+| `World` | `src/game/world/world.cpp` | Игровой цикл: диспатч событий, порядок систем в тике, доставка сообщений |
+| `WorldState` | `src/game/state/*` | Всё состояние симуляции как данные: игроки, сетка территорий, события |
+| системы | `src/game/systems/*` | Правила тика: ввод, движение, бой (melee), урон (`apply_damage`), захват, спавн |
+| `SpatialIndex` | `src/game/spatial/*` | Равномерная сетка корзин: запросы «кто в радиусе r» |
+| sync | `src/game/sync/*` | Сборка `ServerMessage`; снапшот — на каждого получателя (шов для тумана войны) |
 | `IClientGateway` / `ClientEvent` | `src/shared/net/*` | Шов game↔net: отправка байт и событие `{session_id, kind, msg}` |
 | `TSQueue` | `src/shared/utils/ts_queue.hpp` | Потокобезопасная очередь входящих |
 | протокол | `../protocol/game/v1/protocol.proto` | `ClientMessage` / `ServerMessage` |
