@@ -378,8 +378,6 @@ export class Scene {
         label.visible = false;
       } else {
         const color = this.factionColors.get(this.playerFaction.get(id) ?? 0) ?? 0xaaaaaa;
-        // Grounding shadow.
-        gfx.ellipse(0, 7, 8, 3).fill({ color: 0x000000, alpha: 0.35 });
         // Soft glow (layered translucent discs — cheaper than a blur filter).
         gfx.circle(0, 0, 11).fill({ color, alpha: 0.06 });
         gfx.circle(0, 0, 8).fill({ color, alpha: 0.1 });
@@ -389,6 +387,9 @@ export class Scene {
           gfx.circle(0, 0, rr).stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
           this.drawCooldownRing(gfx, rr, color);
         }
+        // Grounding shadow: over the glow (so it isn't washed out) and under the
+        // token; darker/larger so it reads against the dark map.
+        gfx.ellipse(0, 8, 9, 3.5).fill({ color: 0x000000, alpha: 0.5 });
         // Token.
         gfx.circle(0, 0, 6).fill(color).stroke({ width: 1, color: this.lighten(color, 0.45), alpha: 0.9 });
         if (isSelf) gfx.circle(0, 0, 9).stroke({ width: 1.5, color: 0xffffff, alpha: 0.85 });
