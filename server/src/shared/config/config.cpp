@@ -33,6 +33,7 @@ namespace {
 AbilityKind parse_ability_kind(const std::string& kind) {
     if (kind == "melee") return AbilityKind::Melee;
     if (kind == "projectile") return AbilityKind::Projectile;
+    if (kind == "block") return AbilityKind::Block;
     throw std::runtime_error("config: unknown ability kind '" + kind + "'");
 }
 
@@ -42,16 +43,23 @@ AbilityConfig parse_ability(const nlohmann::json& a) {
     ability.kind = parse_ability_kind(a.at("kind").get<std::string>());
     ability.name = a.at("name");
     ability.cooldown_ticks = a.at("cooldown_ticks");
-    ability.damage = a.at("damage");
-    ability.range = a.at("range");
+    // Attacks must state their damage and reach; a block has neither.
+    const bool attack = ability.kind != AbilityKind::Block;
+    ability.damage = attack ? a.at("damage").get<std::uint32_t>() : a.value("damage", 0U);
+    ability.range = attack ? a.at("range").get<std::uint32_t>() : a.value("range", 0U);
     ability.projectile_speed = a.value("projectile_speed", 0U);
     ability.projectile_radius = a.value("projectile_radius", 0U);
+    ability.duration_ticks = a.value("duration_ticks", 0U);
 
     if (ability.id == 0) throw std::runtime_error("config: ability id must be >= 1");
     if (ability.kind == AbilityKind::Projectile &&
         (ability.projectile_speed == 0 || ability.range == 0)) {
         throw std::runtime_error("config: projectile ability '" + ability.name +
                                  "' needs projectile_speed > 0 and range > 0");
+    }
+    if (ability.kind == AbilityKind::Block && ability.duration_ticks == 0) {
+        throw std::runtime_error("config: block ability '" + ability.name +
+                                 "' needs duration_ticks > 0");
     }
     return ability;
 }

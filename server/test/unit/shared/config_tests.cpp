@@ -82,3 +82,29 @@ TEST(GameConfigParse, RejectsProjectileThatCannotFly) {
                            "projectile_radius": 8 }])")),
                  std::exception);
 }
+
+TEST(GameConfigParse, ReadsBlockAbility) {
+    const auto c = lit::parse_game_config(config_json("[" + kMelee + R"(,
+        { "id": 3, "kind": "block", "name": "Блок", "cooldown_ticks": 45, "duration_ticks": 9 } ])"));
+
+    ASSERT_EQ(c.abilities.size(), 2u);
+    const auto& block = c.abilities[1];
+    EXPECT_EQ(block.id, 3u);
+    EXPECT_EQ(block.kind, lit::AbilityKind::Block);
+    EXPECT_EQ(block.name, "Блок");
+    EXPECT_EQ(block.cooldown_ticks, 45u);
+    EXPECT_EQ(block.duration_ticks, 9u);
+    EXPECT_EQ(block.damage, 0u);  // a block needs no damage or range
+    EXPECT_EQ(block.range, 0u);
+    EXPECT_EQ(c.abilities[0].duration_ticks, 0u);  // melee has no duration
+}
+
+TEST(GameConfigParse, RejectsBlockWithoutDuration) {
+    EXPECT_THROW(lit::parse_game_config(config_json(
+                     R"([{ "id": 3, "kind": "block", "name": "Блок", "cooldown_ticks": 45 }])")),
+                 std::exception);
+    EXPECT_THROW(lit::parse_game_config(config_json(
+                     R"([{ "id": 3, "kind": "block", "name": "Блок", "cooldown_ticks": 45,
+                           "duration_ticks": 0 }])")),
+                 std::exception);
+}

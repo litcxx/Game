@@ -98,12 +98,15 @@ message Ability {
   uint32 range = 6;              // единиц: радиус удара (MELEE) или дальность полёта (PROJECTILE)
   uint32 projectile_speed = 7;   // PROJECTILE: скорость снаряда, единиц в секунду
   uint32 projectile_radius = 8;  // PROJECTILE: радиус снаряда, единиц
+  uint32 duration_ticks = 9;     // BLOCK: сколько тиков длится блок: 9 = 0,15 с
 }
 
 enum AbilityKind {
   ABILITY_KIND_UNSPECIFIED = 0;
   ABILITY_KIND_MELEE = 1;       // удар по всем врагам в радиусе range вокруг игрока
   ABILITY_KIND_PROJECTILE = 2;  // снаряд в сторону прицела; летит range единиц, от него можно увернуться
+  ABILITY_KIND_BLOCK = 3;       // duration_ticks тиков игрок не получает урона ни от удара, ни от
+                                //   снаряда; своя перезарядка, не общая с атаками
 }
 
 message Faction {
@@ -221,6 +224,8 @@ message SelfState {
   uint32 respawn_tick = 3;       // при DEAD: с этого тика примут SpawnRequest
   uint32 attack_ready_tick = 4;      // с этого тика возможна следующая атака
   uint32 attack_cooldown_ticks = 5;  // длина текущей перезарядки (от применённой способности)
+  uint32 block_ready_tick = 6;       // с этого тика возможен следующий блок (своя перезарядка)
+  uint32 block_cooldown_ticks = 7;   // длина текущей перезарядки блока
 }
 
 enum LifeState {
@@ -237,13 +242,21 @@ message GameEvent {
   oneof kind {
     HitEvent hit = 2;
     DeathEvent death = 3;
+    AbilityEvent ability = 4;
   }
+}
+
+// Игрок применил способность: удар (даже мимо), блок, выстрел — для анимации у всех.
+message AbilityEvent {
+  uint32 player_id = 1;
+  uint32 ability_id = 2;  // Ability.id
 }
 
 message HitEvent {
   uint32 attacker_id = 1;
   uint32 target_id = 2;
   uint32 damage = 3;
+  bool blocked = 4;  // удар или снаряд пришёлся в блок: damage = 0
 }
 
 message DeathEvent {

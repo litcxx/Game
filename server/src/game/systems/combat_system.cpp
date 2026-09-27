@@ -62,6 +62,8 @@ void resolve_attacks(WorldState& state, const GameConfig& config, const SpatialI
             case AbilityKind::Projectile:
                 if (!launch_projectile(state, attacker, *ability)) continue;  // no aim: no shot
                 break;
+            case AbilityKind::Block:
+                continue;  // not an attack: blocks run on their own timer
         }
         // Used: the shared cooldown starts, with this ability's length.
         attacker.attack_ready_tick = state.tick + ability->cooldown_ticks;

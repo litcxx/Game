@@ -23,6 +23,7 @@ struct FactionConfig {
 enum class AbilityKind : std::uint8_t {
     Melee = 1,       // hit every enemy within `range` around the player
     Projectile = 2,  // launch a projectile toward the aim; it flies `range` units
+    Block = 3,       // no damage from any attack for `duration_ticks`; its own cooldown
 };
 
 // An ability on the 1–5 bar. Server-defined; sent to clients as Welcome.abilities.
@@ -35,6 +36,7 @@ struct AbilityConfig {
     std::uint32_t range;              // units: melee radius / projectile flight distance
     std::uint32_t projectile_speed;   // projectile: units per second (0 for melee)
     std::uint32_t projectile_radius;  // projectile: units (0 for melee)
+    std::uint32_t duration_ticks;     // block: how long it lasts (0 for attacks)
 };
 
 // Mirrors game.v1.GameConfig from protocol.proto — the authoritative game rules
@@ -57,7 +59,8 @@ struct GameConfig {
 };
 
 // Parses the "game" section of a config document. Throws on a missing or invalid
-// value (unknown ability kind, no abilities, bad ids, a projectile that can't fly).
+// value (unknown ability kind, no abilities, bad ids, a projectile that can't fly,
+// a block without a duration).
 GameConfig parse_game_config(const std::string& config_json);
 
 class Config {

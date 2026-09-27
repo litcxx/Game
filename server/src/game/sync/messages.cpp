@@ -8,6 +8,8 @@ namespace {
             return ::game::v1::ABILITY_KIND_MELEE;
         case AbilityKind::Projectile:
             return ::game::v1::ABILITY_KIND_PROJECTILE;
+        case AbilityKind::Block:
+            return ::game::v1::ABILITY_KIND_BLOCK;
     }
     return ::game::v1::ABILITY_KIND_UNSPECIFIED;
 }
@@ -53,6 +55,7 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
         ability->set_range(a.range);
         ability->set_projectile_speed(a.projectile_speed);
         ability->set_projectile_radius(a.projectile_radius);
+        ability->set_duration_ticks(a.duration_ticks);
     }
     return msg;
 }

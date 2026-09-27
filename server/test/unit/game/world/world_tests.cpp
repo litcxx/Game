@@ -29,9 +29,11 @@ lit::GameConfig test_config() {
     c.factions = {{1, "Red", 0xFF0000}, {2, "Blue", 0x0000FF}};
     // Bar order: abilities[0] is the default (ability 0 in input) — melee.
     // Melee: cooldown 10 -> one swing in a short test window; 40 dmg -> 3 hits kill.
+    // Block: its own cooldown (10, like melee), active for 9 ticks.
     c.abilities = {
-        {1, lit::AbilityKind::Melee, "Strike", 10, 40, 120, 0, 0},
-        {2, lit::AbilityKind::Projectile, "Shot", 30, 25, 250, 600, 8},
+        {1, lit::AbilityKind::Melee, "Strike", 10, 40, 120, 0, 0, 0},
+        {2, lit::AbilityKind::Projectile, "Shot", 30, 25, 250, 600, 8, 0},
+        {3, lit::AbilityKind::Block, "Guard", 10, 0, 0, 0, 0, 9},
     };
     return c;
 }
@@ -136,7 +138,7 @@ TEST(WorldHello, WelcomeCarriesAbilitiesAndPlayerRadius) {
     ASSERT_TRUE(welcome.has_value());
 
     EXPECT_EQ(welcome->config().player_radius(), 16u);
-    ASSERT_EQ(welcome->abilities_size(), 2);  // bar order kept
+    ASSERT_EQ(welcome->abilities_size(), 3);  // bar order kept
     const auto& strike = welcome->abilities(0);
     EXPECT_EQ(strike.id(), 1u);
     EXPECT_EQ(strike.kind(), ::game::v1::ABILITY_KIND_MELEE);
@@ -153,6 +155,12 @@ TEST(WorldHello, WelcomeCarriesAbilitiesAndPlayerRadius) {
     EXPECT_EQ(shot.range(), 250u);
     EXPECT_EQ(shot.projectile_speed(), 600u);
     EXPECT_EQ(shot.projectile_radius(), 8u);
+    const auto& guard = welcome->abilities(2);
+    EXPECT_EQ(guard.id(), 3u);
+    EXPECT_EQ(guard.kind(), ::game::v1::ABILITY_KIND_BLOCK);
+    EXPECT_EQ(guard.name(), "Guard");
+    EXPECT_EQ(guard.cooldown_ticks(), 10u);
+    EXPECT_EQ(guard.duration_ticks(), 9u);
 }
 
 TEST(WorldHello, SendsNeutralMapStateToJoiner) {
@@ -792,14 +800,14 @@ TEST(WorldAbility, UsesTheSelectedAbility) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    config.abilities.push_back({3, lit::AbilityKind::Melee, "Heavy", 20, 70, 120, 0, 0});
+    config.abilities.push_back({4, lit::AbilityKind::Melee, "Heavy", 20, 70, 120, 0, 0, 0});
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
     incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/3));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/4));
     run_ticks(world, 3, 0.016);
 
     auto victim = player_state_in(gw, 2, 2);
