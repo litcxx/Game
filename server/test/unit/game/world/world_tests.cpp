@@ -301,7 +301,7 @@ lit::ClientEvent attack_event(std::uint64_t session_id, std::uint32_t seq, std::
 }
 
 std::optional<::game::v1::Snapshot> last_snapshot_to(const lit::test::MockClientGateway& gw,
-                                                    std::uint64_t session_id) {
+                                                     std::uint64_t session_id) {
     std::optional<::game::v1::Snapshot> snap;
     for (const auto& m : messages_to(gw, session_id))
         if (m.has_snapshot()) snap = m.snapshot();
@@ -310,8 +310,8 @@ std::optional<::game::v1::Snapshot> last_snapshot_to(const lit::test::MockClient
 
 // The last CellUpdate seen for a given cell across snapshots to a session.
 std::optional<::game::v1::CellUpdate> last_cell_update(const lit::test::MockClientGateway& gw,
-                                                      std::uint64_t session_id,
-                                                      std::uint32_t index) {
+                                                       std::uint64_t session_id,
+                                                       std::uint32_t index) {
     std::optional<::game::v1::CellUpdate> out;
     for (const auto& m : messages_to(gw, session_id))
         if (m.has_snapshot())
@@ -322,7 +322,7 @@ std::optional<::game::v1::CellUpdate> last_cell_update(const lit::test::MockClie
 
 // The player's PlayerState in the last snapshot to a session (if present).
 std::optional<::game::v1::PlayerState> player_state_in(const lit::test::MockClientGateway& gw,
-                                                      std::uint64_t session_id, std::uint32_t id) {
+                                                       std::uint64_t session_id, std::uint32_t id) {
     std::optional<::game::v1::PlayerState> out;
     for (const auto& m : messages_to(gw, session_id))
         if (m.has_snapshot())
@@ -357,7 +357,8 @@ std::pair<int, int> blocked_and_landed_hits(const lit::test::MockClientGateway& 
     for (const auto& m : messages_to(gw, session_id))
         if (m.has_snapshot())
             for (const auto& e : m.snapshot().events())
-                if (e.has_hit() && e.hit().target_id() == id) (e.hit().blocked() ? blocked : landed)++;
+                if (e.has_hit() && e.hit().target_id() == id)
+                    (e.hit().blocked() ? blocked : landed)++;
     return {blocked, landed};
 }
 
@@ -368,7 +369,8 @@ std::vector<std::pair<std::uint32_t, std::uint32_t>> ability_events(
     for (const auto& m : messages_to(gw, session_id))
         if (m.has_snapshot())
             for (const auto& e : m.snapshot().events())
-                if (e.has_ability()) out.emplace_back(e.ability().player_id(), e.ability().ability_id());
+                if (e.has_ability())
+                    out.emplace_back(e.ability().player_id(), e.ability().ability_id());
     return out;
 }
 
@@ -516,51 +518,51 @@ TEST(WorldMovement, IgnoresInputWhenNotSpawned) {
 }
 
 TEST(WorldCapture, HoldingCaptureFlipsCellOwner) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();  // capture_ticks = 5
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();  // capture_ticks = 5
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(7, "p"));
-  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // center (150,150) -> cell 5
-  incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
-  run_ticks(world, 6, 0.016);  // 5 ticks * 20% -> flips by tick 5
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // center (150,150) -> cell 5
+    incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 6, 0.016);  // 5 ticks * 20% -> flips by tick 5
 
-  auto cu = last_cell_update(gw, 7, /*index=*/5);
-  ASSERT_TRUE(cu.has_value());
-  EXPECT_EQ(cu->owner(), 1u);  // cell now owned by faction 1
+    auto cu = last_cell_update(gw, 7, /*index=*/5);
+    ASSERT_TRUE(cu.has_value());
+    EXPECT_EQ(cu->owner(), 1u);  // cell now owned by faction 1
 }
 
 TEST(WorldCapture, ReleasingCaptureResetsProgress) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(7, "p"));
-  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
-  incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
-  run_ticks(world, 3, 0.016);  // partial (~60%), not yet captured
-  incoming.push(input_event(7, 0, 0, /*seq=*/2, /*capturing=*/false));  // release
-  run_ticks(world, 3, 0.016);
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
+    incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 3, 0.016);  // partial (~60%), not yet captured
+    incoming.push(input_event(7, 0, 0, /*seq=*/2, /*capturing=*/false));  // release
+    run_ticks(world, 3, 0.016);
 
-  auto cu = last_cell_update(gw, 7, /*index=*/5);
-  ASSERT_TRUE(cu.has_value());
-  EXPECT_EQ(cu->owner(), 0u);             // never captured
-  EXPECT_EQ(cu->capture_progress(), 0u);  // progress reset
+    auto cu = last_cell_update(gw, 7, /*index=*/5);
+    ASSERT_TRUE(cu.has_value());
+    EXPECT_EQ(cu->owner(), 0u);             // never captured
+    EXPECT_EQ(cu->capture_progress(), 0u);  // progress reset
 }
 
 TEST(WorldCapture, NoCaptureWithoutHoldingKey) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(7, "p"));
-  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // spawned, but not capturing
-  run_ticks(world, 6, 0.016);
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // spawned, but not capturing
+    run_ticks(world, 6, 0.016);
 
-  EXPECT_FALSE(last_cell_update(gw, 7, /*index=*/5).has_value());  // cell never changed
+    EXPECT_FALSE(last_cell_update(gw, 7, /*index=*/5).has_value());  // cell never changed
 }
 
 // --- M3: combat (area attack) / death / respawn ---------------------------
@@ -570,251 +572,252 @@ TEST(WorldCapture, NoCaptureWithoutHoldingKey) {
 // 100 from cell 5, within range 120), 15->(350,350) (far).
 
 TEST(WorldCombat, AttackHitsEnemyInRange) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();  // cooldown 10 -> a single swing in a short window
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();  // cooldown 10 -> a single swing in a short window
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(1, "a"));
-  incoming.push(hello_event(2, "b"));
-  incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-  incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
-  incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
-  run_ticks(world, 3, 0.016);
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
+    run_ticks(world, 3, 0.016);
 
-  auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
-  ASSERT_TRUE(victim.has_value());
-  EXPECT_EQ(victim->hp(), config.max_hp - melee(config).damage);  // one swing
-  EXPECT_GE(count_hits(gw, 2), 1);
+    auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), config.max_hp - melee(config).damage);  // one swing
+    EXPECT_GE(count_hits(gw, 2), 1);
 }
 
 TEST(WorldCombat, AttackHitsAllEnemiesInArea) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(1, "a"));
-  incoming.push(hello_event(2, "b"));
-  incoming.push(hello_event(3, "c"));
-  incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));   // attacker (150,150)
-  incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));   // enemy at (250,150)
-  incoming.push(spawn_event(3, /*cell=*/4, /*faction=*/2));   // enemy at (50,150)
-  incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
-  run_ticks(world, 3, 0.016);
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(hello_event(3, "c"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));  // attacker (150,150)
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // enemy at (250,150)
+    incoming.push(spawn_event(3, /*cell=*/4, /*faction=*/2));  // enemy at (50,150)
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
+    run_ticks(world, 3, 0.016);
 
-  auto b = player_state_in(gw, 2, 2);
-  auto c = player_state_in(gw, 3, 3);
-  ASSERT_TRUE(b.has_value());
-  ASSERT_TRUE(c.has_value());
-  EXPECT_EQ(b->hp(), config.max_hp - melee(config).damage);  // both struck by one swing
-  EXPECT_EQ(c->hp(), config.max_hp - melee(config).damage);
-  EXPECT_GE(count_hits(gw, 1), 2);
+    auto b = player_state_in(gw, 2, 2);
+    auto c = player_state_in(gw, 3, 3);
+    ASSERT_TRUE(b.has_value());
+    ASSERT_TRUE(c.has_value());
+    EXPECT_EQ(b->hp(), config.max_hp - melee(config).damage);  // both struck by one swing
+    EXPECT_EQ(c->hp(), config.max_hp - melee(config).damage);
+    EXPECT_GE(count_hits(gw, 1), 2);
 }
 
 TEST(WorldCombat, NoAttackWithoutKey) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(1, "a"));
-  incoming.push(hello_event(2, "b"));
-  incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-  incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // enemy in range
-  incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/false));
-  run_ticks(world, 3, 0.016);
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // enemy in range
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/false));
+    run_ticks(world, 3, 0.016);
 
-  auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
-  ASSERT_TRUE(victim.has_value());
-  EXPECT_EQ(victim->hp(), config.max_hp);  // never attacked -> unharmed
-  EXPECT_EQ(count_hits(gw, 2), 0);
+    auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), config.max_hp);  // never attacked -> unharmed
+    EXPECT_EQ(count_hits(gw, 2), 0);
 }
 
 TEST(WorldCombat, NoFriendlyFire) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(1, "a"));
-  incoming.push(hello_event(2, "b"));
-  incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-  incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/1));  // same faction
-  incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
-  run_ticks(world, 3, 0.016);
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/1));  // same faction
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
+    run_ticks(world, 3, 0.016);
 
-  auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
-  ASSERT_TRUE(victim.has_value());
-  EXPECT_EQ(victim->hp(), config.max_hp);  // ally unharmed
-  EXPECT_EQ(count_hits(gw, 2), 0);
+    auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), config.max_hp);  // ally unharmed
+    EXPECT_EQ(count_hits(gw, 2), 0);
 }
 
 TEST(WorldCombat, OutOfRangeNoDamage) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(1, "a"));
-  incoming.push(hello_event(2, "b"));
-  incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));   // (150,150)
-  incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // (350,350) -> far
-  incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
-  run_ticks(world, 3, 0.016);
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));   // (150,150)
+    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // (350,350) -> far
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
+    run_ticks(world, 3, 0.016);
 
-  auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
-  ASSERT_TRUE(victim.has_value());
-  EXPECT_EQ(victim->hp(), config.max_hp);  // out of range, unharmed
+    auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), config.max_hp);  // out of range, unharmed
 }
 
 TEST(WorldCombat, CooldownLimitsSwings) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  melee(config).cooldown_ticks = 3;  // only one swing fits in the 3-tick window
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    melee(config).cooldown_ticks = 3;  // only one swing fits in the 3-tick window
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(1, "a"));
-  incoming.push(hello_event(2, "b"));
-  incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-  incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
-  incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
-  run_ticks(world, 3, 0.016);
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
+    run_ticks(world, 3, 0.016);
 
-  auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
-  ASSERT_TRUE(victim.has_value());
-  EXPECT_EQ(victim->hp(), config.max_hp - melee(config).damage);  // exactly one swing
-  EXPECT_EQ(count_hits(gw, 2), 1);
+    auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), config.max_hp - melee(config).damage);  // exactly one swing
+    EXPECT_EQ(count_hits(gw, 2), 1);
 }
 
 TEST(WorldCombat, KillsAndSetsDead) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  melee(config).cooldown_ticks = 1;  // swing every tick -> 3 swings kill 100 hp
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    melee(config).cooldown_ticks = 1;  // swing every tick -> 3 swings kill 100 hp
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(1, "a"));
-  incoming.push(hello_event(2, "b"));
-  incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-  incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
-  incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
-  run_ticks(world, 6, 0.016);
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
+    run_ticks(world, 6, 0.016);
 
-  auto snap = last_snapshot_to(gw, 2);
-  ASSERT_TRUE(snap.has_value());
-  EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_DEAD);
-  EXPECT_GE(count_deaths(gw, 2), 1);
+    auto snap = last_snapshot_to(gw, 2);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_DEAD);
+    EXPECT_GE(count_deaths(gw, 2), 1);
 
-  auto body = player_state_in(gw, 2, 2);  // body stays where it died
-  ASSERT_TRUE(body.has_value());
-  EXPECT_EQ(body->hp(), 0u);
+    auto body = player_state_in(gw, 2, 2);  // body stays where it died
+    ASSERT_TRUE(body.has_value());
+    EXPECT_EQ(body->hp(), 0u);
 }
 
 TEST(WorldCombat, RespawnAfterDelay) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  melee(config).cooldown_ticks = 1;
-  config.respawn_delay_ticks = 5;
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    melee(config).cooldown_ticks = 1;
+    config.respawn_delay_ticks = 5;
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(1, "a"));
-  incoming.push(hello_event(2, "b"));
-  incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-  incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
-  incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
-  run_ticks(world, 3, 0.016);  // b dies (~tick 3), respawn_tick = 3 + 5
-  incoming.push(input_event(1, 0, 0, /*seq=*/2, /*capturing=*/false, /*attack=*/false));  // a stops
-  run_ticks(world, 6, 0.016);  // wait past respawn_tick
-  incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // respawn far from a
-  run_ticks(world, 3, 0.016);
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
+    run_ticks(world, 3, 0.016);  // b dies (~tick 3), respawn_tick = 3 + 5
+    incoming.push(
+        input_event(1, 0, 0, /*seq=*/2, /*capturing=*/false, /*attack=*/false));  // a stops
+    run_ticks(world, 6, 0.016);                                 // wait past respawn_tick
+    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // respawn far from a
+    run_ticks(world, 3, 0.016);
 
-  auto snap = last_snapshot_to(gw, 2);
-  ASSERT_TRUE(snap.has_value());
-  EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_ALIVE);
-  auto self = player_state_in(gw, 2, 2);
-  ASSERT_TRUE(self.has_value());
-  EXPECT_EQ(self->hp(), config.max_hp);  // full hp on respawn
+    auto snap = last_snapshot_to(gw, 2);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_ALIVE);
+    auto self = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(self.has_value());
+    EXPECT_EQ(self->hp(), config.max_hp);  // full hp on respawn
 }
 
 // --- Fixed-step input model -------------------------------------------------
 TEST(WorldInput, FixedStepMovementIsDeterministic) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(7, "p"));
-  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // center (150,150)
-  incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));  // then repeat-last
-  const double dt = 1.0 / config.tick_rate;
-  run_ticks(world, 6, dt);  // tick1 consumes cmd, ticks 2..6 repeat it
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));              // center (150,150)
+    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));  // then repeat-last
+    const double dt = 1.0 / config.tick_rate;
+    run_ticks(world, 6, dt);  // tick1 consumes cmd, ticks 2..6 repeat it
 
-  auto snap = last_snapshot_to(gw, 7);
-  ASSERT_TRUE(snap.has_value());
-  ASSERT_EQ(snap->players_size(), 1);
-  const double expected = 150.0 + 6 * config.move_speed * dt;  // 6 ticks of +speed*dt
-  EXPECT_NEAR(static_cast<double>(snap->players(0).x()), expected, 1.0);
-  EXPECT_EQ(snap->players(0).y(), 150u);
+    auto snap = last_snapshot_to(gw, 7);
+    ASSERT_TRUE(snap.has_value());
+    ASSERT_EQ(snap->players_size(), 1);
+    const double expected = 150.0 + 6 * config.move_speed * dt;  // 6 ticks of +speed*dt
+    EXPECT_NEAR(static_cast<double>(snap->players(0).x()), expected, 1.0);
+    EXPECT_EQ(snap->players(0).y(), 150u);
 }
 
 TEST(WorldInput, ConsumesOneCommandPerTick) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  config.snapshot_rate = config.tick_rate;  // one snapshot per tick, to read per-tick acks
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.snapshot_rate = config.tick_rate;  // one snapshot per tick, to read per-tick acks
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(7, "p"));
-  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
-  incoming.push(input_event(7, 0, 0, /*seq=*/1));
-  incoming.push(input_event(7, 0, 0, /*seq=*/2));
-  const double dt = 1.0 / config.tick_rate;
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
+    incoming.push(input_event(7, 0, 0, /*seq=*/1));
+    incoming.push(input_event(7, 0, 0, /*seq=*/2));
+    const double dt = 1.0 / config.tick_rate;
 
-  run_ticks(world, 1, dt);
-  EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 1u);  // consumed seq 1
-  run_ticks(world, 1, dt);
-  EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // consumed seq 2
-  run_ticks(world, 1, dt);
-  EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // empty queue -> repeat
+    run_ticks(world, 1, dt);
+    EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 1u);  // consumed seq 1
+    run_ticks(world, 1, dt);
+    EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // consumed seq 2
+    run_ticks(world, 1, dt);
+    EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // empty queue -> repeat
 }
 
 TEST(WorldInput, EnqueuesAfterRespawnClear) {
-  lit::TSQueue<lit::ClientEvent> incoming;
-  lit::test::MockClientGateway gw;
-  auto config = test_config();
-  config.snapshot_rate = config.tick_rate;
-  lit::game::World world(incoming, gw, config);
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.snapshot_rate = config.tick_rate;
+    lit::game::World world(incoming, gw, config);
 
-  incoming.push(hello_event(7, "p"));
-  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // clears any queued input
-  incoming.push(input_event(7, 1, 0, /*seq=*/10));           // seq keeps climbing
-  const double dt = 1.0 / config.tick_rate;
-  run_ticks(world, 1, dt);
-  EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 10u);  // still enqueued & consumed
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // clears any queued input
+    incoming.push(input_event(7, 1, 0, /*seq=*/10));           // seq keeps climbing
+    const double dt = 1.0 / config.tick_rate;
+    run_ticks(world, 1, dt);
+    EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 10u);  // still enqueued & consumed
 }
 
 // --- Fixed-timestep accumulator ---------------------------------------------
 TEST(FixedStep, RunsOneStepPerInterval) {
-  double acc = 0.0;
-  EXPECT_EQ(lit::game::fixed_steps(acc, 1.0 / 60, 1.0 / 60, 0.25), 1);
-  EXPECT_NEAR(acc, 0.0, 1e-9);
+    double acc = 0.0;
+    EXPECT_EQ(lit::game::fixed_steps(acc, 1.0 / 60, 1.0 / 60, 0.25), 1);
+    EXPECT_NEAR(acc, 0.0, 1e-9);
 }
 
 TEST(FixedStep, AccumulatesRemainder) {
-  double acc = 0.0;
-  const double f = 1.0 / 60;
-  EXPECT_EQ(lit::game::fixed_steps(acc, 2.5 * f, f, 0.25), 2);
-  EXPECT_NEAR(acc, 0.5 * f, 1e-9);
+    double acc = 0.0;
+    const double f = 1.0 / 60;
+    EXPECT_EQ(lit::game::fixed_steps(acc, 2.5 * f, f, 0.25), 2);
+    EXPECT_NEAR(acc, 0.5 * f, 1e-9);
 }
 
 TEST(FixedStep, ClampsSpiralOfDeath) {
-  double acc = 0.0;
-  const double f = 1.0 / 60;
-  EXPECT_EQ(lit::game::fixed_steps(acc, 10.0, f, 0.25), 15);  // 0.25s / (1/60) = 15
-  EXPECT_LT(acc, f);
+    double acc = 0.0;
+    const double f = 1.0 / 60;
+    EXPECT_EQ(lit::game::fixed_steps(acc, 10.0, f, 0.25), 15);  // 0.25s / (1/60) = 15
+    EXPECT_LT(acc, f);
 }
 
 // --- Abilities: selection by id, shared cooldown ---------------------------
@@ -1099,8 +1102,8 @@ TEST(WorldAbility, EveryUseIsAnnounced) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
     incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/1));  // far away, an ally
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));    // a swing that hits nobody
-    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/3));    // a block
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));   // a swing that hits nobody
+    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/3));   // a block
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
