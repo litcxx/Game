@@ -11,7 +11,7 @@ import {
 } from "../src/gen/game/v1/protocol_pb.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
-const CELL = 50 * 100 + 50; // central cell (col 50, row 50)
+const CELL = 30 * 100 + 30; // its own cell (col 30, row 30) — avoids other smokes' cells
 
 const a = new WebSocket(URL);
 const b = new WebSocket(URL);
