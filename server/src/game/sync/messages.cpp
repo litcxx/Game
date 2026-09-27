@@ -2,6 +2,16 @@
 
 namespace lit::game {
 namespace {
+::game::v1::AbilityKind to_wire(AbilityKind kind) {
+    switch (kind) {
+        case AbilityKind::Melee:
+            return ::game::v1::ABILITY_KIND_MELEE;
+        case AbilityKind::Projectile:
+            return ::game::v1::ABILITY_KIND_PROJECTILE;
+    }
+    return ::game::v1::ABILITY_KIND_UNSPECIFIED;
+}
+
 void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
     info->set_id(player.id);
     info->set_name(player.name);
@@ -23,16 +33,26 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
     cfg->set_map_height(config.map_height);
     cfg->set_move_speed(config.move_speed);
     cfg->set_max_hp(config.max_hp);
-    cfg->set_attack_range(config.attack_range);
-    cfg->set_attack_cooldown_ticks(config.attack_cooldown_ticks);
     cfg->set_respawn_delay_ticks(config.respawn_delay_ticks);
     cfg->set_reconnect_grace_ms(config.reconnect_grace_ms);
+    cfg->set_player_radius(config.player_radius);
 
     for (const auto& f : config.factions) {
         auto* faction = welcome->add_factions();
         faction->set_id(f.id);
         faction->set_name(f.name);
         faction->set_color(f.color);
+    }
+    for (const auto& a : config.abilities) {
+        auto* ability = welcome->add_abilities();
+        ability->set_id(a.id);
+        ability->set_kind(to_wire(a.kind));
+        ability->set_name(a.name);
+        ability->set_cooldown_ticks(a.cooldown_ticks);
+        ability->set_damage(a.damage);
+        ability->set_range(a.range);
+        ability->set_projectile_speed(a.projectile_speed);
+        ability->set_projectile_radius(a.projectile_radius);
     }
     return msg;
 }

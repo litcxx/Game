@@ -6,7 +6,9 @@
 
 namespace lit::game {
 void resolve_melee(WorldState& state, const GameConfig& config, const SpatialIndex& index) {
-    const double range = static_cast<double>(config.attack_range);
+    if (config.abilities.empty()) return;
+    const AbilityConfig& melee = config.abilities.front();  // the default ability (bar slot 1)
+    const double range = static_cast<double>(melee.range);
 
     for (auto& [attacker_sid, attacker] : state.players) {
         if (attacker.life != ::game::v1::LIFE_STATE_ALIVE) continue;
@@ -14,9 +16,9 @@ void resolve_melee(WorldState& state, const GameConfig& config, const SpatialInd
         if (state.tick < attacker.attack_ready_tick) continue;  // on cooldown
 
         // A swing fires: it consumes the cooldown even if nothing is in range.
-        attacker.attack_ready_tick = state.tick + config.attack_cooldown_ticks;
+        attacker.attack_ready_tick = state.tick + melee.cooldown_ticks;
 
-        // Area hit: every enemy within attack_range of the attacker is struck
+        // Area hit: every enemy within the melee range of the attacker is struck
         // (apply_damage skips anyone already killed earlier this tick).
         const std::uint64_t self_sid = attacker_sid;
         const Player& self = attacker;
@@ -26,7 +28,7 @@ void resolve_melee(WorldState& state, const GameConfig& config, const SpatialInd
             if (it == state.players.end()) return;
             Player& target = it->second;
             if (target.faction_id == self.faction_id) return;  // no friendly fire
-            apply_damage(state, config, target, config.attack_damage, self.id);
+            apply_damage(state, config, target, melee.damage, self.id);
         });
     }
 }

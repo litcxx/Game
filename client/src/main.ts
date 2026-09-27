@@ -96,12 +96,13 @@ async function main(): Promise<void> {
         for (const f of w.factions) factionInfo.set(f.id, { name: f.name, color: f.color });
         scene.setSelf(myId);
         if (w.config) {
+          const first = w.abilities[0]; // bar slot 1 (melee) until the ability bar lands
           scene.setConfig(
             w.config.mapWidth,
             w.config.mapHeight,
             w.config.maxHp,
-            w.config.attackRange,
-            w.config.attackCooldownTicks,
+            first?.range ?? 0,
+            first?.cooldownTicks ?? 1,
             w.config.tickRate,
           );
         }

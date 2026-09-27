@@ -19,25 +19,46 @@ struct FactionConfig {
     std::uint32_t color;  // 0xRRGGBB
 };
 
+// Mirrors game.v1.AbilityKind: what using the ability does.
+enum class AbilityKind : std::uint8_t {
+    Melee = 1,       // hit every enemy within `range` around the player
+    Projectile = 2,  // launch a projectile toward the aim; it flies `range` units
+};
+
+// An ability on the 1–5 bar. Server-defined; sent to clients as Welcome.abilities.
+struct AbilityConfig {
+    std::uint32_t id;  // >= 1; InputFrame.ability refers to it (0 = the first ability)
+    AbilityKind kind;
+    std::string name;
+    std::uint32_t cooldown_ticks;     // shared cooldown after use (45 = 0.75 s at 60 Hz)
+    std::uint32_t damage;             // hp removed per hit
+    std::uint32_t range;              // units: melee radius / projectile flight distance
+    std::uint32_t projectile_speed;   // projectile: units per second (0 for melee)
+    std::uint32_t projectile_radius;  // projectile: units (0 for melee)
+};
+
 // Mirrors game.v1.GameConfig from protocol.proto — the authoritative game rules
 // the server sends to clients in Welcome. Scalar fields are uint32 to match the
-// protobuf message; factions are sent as Welcome.factions. Position units: 100
-// units = 1 cell (UNITS_PER_CELL).
+// protobuf message; factions and abilities are sent as Welcome.factions /
+// Welcome.abilities. Position units: 100 units = 1 cell (UNITS_PER_CELL).
 struct GameConfig {
-    std::uint32_t tick_rate;              // simulation ticks per second (60)
-    std::uint32_t snapshot_rate;          // snapshots per second (20)
-    std::uint32_t map_width;              // cells (100)
-    std::uint32_t map_height;             // cells (100)
-    std::uint32_t move_speed;             // units per second (300 = 3 cells/s)
-    std::uint32_t max_hp;                 // (100)
-    std::uint32_t attack_range;           // units between player centers (120)
-    std::uint32_t attack_cooldown_ticks;  // (45 = 0.75 s at 60 Hz)
-    std::uint32_t respawn_delay_ticks;    // (300 = 5 s at 60 Hz)
-    std::uint32_t reconnect_grace_ms;     // how long a dropped session is kept (30000)
-    std::uint32_t capture_ticks;          // ticks for one player to capture a cell (60 = 1 s)
-    std::uint32_t attack_damage;          // hp removed per hit
-    std::vector<FactionConfig> factions;  // selectable factions (colours)
+    std::uint32_t tick_rate;               // simulation ticks per second (60)
+    std::uint32_t snapshot_rate;           // snapshots per second (20)
+    std::uint32_t map_width;               // cells (100)
+    std::uint32_t map_height;              // cells (100)
+    std::uint32_t move_speed;              // units per second (300 = 3 cells/s)
+    std::uint32_t max_hp;                  // (100)
+    std::uint32_t respawn_delay_ticks;     // (300 = 5 s at 60 Hz)
+    std::uint32_t reconnect_grace_ms;      // how long a dropped session is kept (30000)
+    std::uint32_t capture_ticks;           // ticks for one player to capture a cell (60 = 1 s)
+    std::uint32_t player_radius;           // body hit radius for projectiles, units (16)
+    std::vector<FactionConfig> factions;   // selectable factions (colours)
+    std::vector<AbilityConfig> abilities;  // bar order: abilities[0] is key 1 and the default
 };
+
+// Parses the "game" section of a config document. Throws on a missing or invalid
+// value (unknown ability kind, no abilities, bad ids, a projectile that can't fly).
+GameConfig parse_game_config(const std::string& config_json);
 
 class Config {
   public:

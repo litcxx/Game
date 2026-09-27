@@ -11,12 +11,17 @@
     "map_height": 100,
     "move_speed": 300,
     "max_hp": 100,
-    "attack_range": 120,
-    "attack_cooldown_ticks": 45,
     "respawn_delay_ticks": 300,
     "reconnect_grace_ms": 30000,
     "capture_ticks": 60,
-    "attack_damage": 20,
+    "player_radius": 16,
+    "abilities": [
+      { "id": 1, "kind": "melee", "name": "Удар",
+        "cooldown_ticks": 45, "damage": 20, "range": 120 },
+      { "id": 2, "kind": "projectile", "name": "Выстрел",
+        "cooldown_ticks": 90, "damage": 30, "range": 500,
+        "projectile_speed": 800, "projectile_radius": 8 }
+    ],
     "factions": [
       { "id": 1, "name": "Red",   "color": 16711680 },
       { "id": 2, "name": "Green", "color": 65280 },

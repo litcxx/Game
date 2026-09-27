@@ -22,15 +22,22 @@ lit::GameConfig test_config() {
     c.map_height = 4;
     c.move_speed = 300;
     c.max_hp = 100;
-    c.attack_range = 120;
-    c.attack_cooldown_ticks = 10;  // one hit within a short test window by default
     c.respawn_delay_ticks = 5;
     c.reconnect_grace_ms = 30000;
-    c.capture_ticks = 5;   // small so capture tests flip quickly
-    c.attack_damage = 40;  // 3 hits to kill max_hp = 100
+    c.capture_ticks = 5;  // small so capture tests flip quickly
+    c.player_radius = 16;
     c.factions = {{1, "Red", 0xFF0000}, {2, "Blue", 0x0000FF}};
+    // Bar order: abilities[0] is the default (ability 0 in input) — melee.
+    // Melee: cooldown 10 -> one swing in a short test window; 40 dmg -> 3 hits kill.
+    c.abilities = {
+        {1, lit::AbilityKind::Melee, "Strike", 10, 40, 120, 0, 0},
+        {2, lit::AbilityKind::Projectile, "Shot", 30, 25, 250, 600, 8},
+    };
     return c;
 }
+
+// The melee ability of test_config() (bar slot 1).
+lit::AbilityConfig& melee(lit::GameConfig& c) { return c.abilities[0]; }
 
 lit::ClientEvent hello_event(std::uint64_t session_id, std::string name) {
     lit::ClientEvent ev;
@@ -112,6 +119,40 @@ TEST(WorldHello, WelcomeCarriesTickConfigAndFactions) {
     EXPECT_EQ(welcome.factions(0).id(), config.factions[0].id);
     EXPECT_EQ(welcome.factions(0).name(), config.factions[0].name);
     EXPECT_EQ(welcome.factions(0).color(), config.factions[0].color);
+}
+
+TEST(WorldHello, WelcomeCarriesAbilitiesAndPlayerRadius) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(42, "tag"));
+    world.tick(0.016);
+
+    std::optional<::game::v1::Welcome> welcome;
+    for (const auto& m : messages_to(gw, 42))
+        if (m.has_welcome()) welcome = m.welcome();
+    ASSERT_TRUE(welcome.has_value());
+
+    EXPECT_EQ(welcome->config().player_radius(), 16u);
+    ASSERT_EQ(welcome->abilities_size(), 2);  // bar order kept
+    const auto& strike = welcome->abilities(0);
+    EXPECT_EQ(strike.id(), 1u);
+    EXPECT_EQ(strike.kind(), ::game::v1::ABILITY_KIND_MELEE);
+    EXPECT_EQ(strike.name(), "Strike");
+    EXPECT_EQ(strike.cooldown_ticks(), 10u);
+    EXPECT_EQ(strike.damage(), 40u);
+    EXPECT_EQ(strike.range(), 120u);
+    const auto& shot = welcome->abilities(1);
+    EXPECT_EQ(shot.id(), 2u);
+    EXPECT_EQ(shot.kind(), ::game::v1::ABILITY_KIND_PROJECTILE);
+    EXPECT_EQ(shot.name(), "Shot");
+    EXPECT_EQ(shot.cooldown_ticks(), 30u);
+    EXPECT_EQ(shot.damage(), 25u);
+    EXPECT_EQ(shot.range(), 250u);
+    EXPECT_EQ(shot.projectile_speed(), 600u);
+    EXPECT_EQ(shot.projectile_radius(), 8u);
 }
 
 TEST(WorldHello, SendsNeutralMapStateToJoiner) {
@@ -499,7 +540,7 @@ TEST(WorldCombat, AttackHitsEnemyInRange) {
 
   auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
   ASSERT_TRUE(victim.has_value());
-  EXPECT_EQ(victim->hp(), config.max_hp - config.attack_damage);  // one swing
+  EXPECT_EQ(victim->hp(), config.max_hp - melee(config).damage);  // one swing
   EXPECT_GE(count_hits(gw, 2), 1);
 }
 
@@ -522,8 +563,8 @@ TEST(WorldCombat, AttackHitsAllEnemiesInArea) {
   auto c = player_state_in(gw, 3, 3);
   ASSERT_TRUE(b.has_value());
   ASSERT_TRUE(c.has_value());
-  EXPECT_EQ(b->hp(), config.max_hp - config.attack_damage);  // both struck by one swing
-  EXPECT_EQ(c->hp(), config.max_hp - config.attack_damage);
+  EXPECT_EQ(b->hp(), config.max_hp - melee(config).damage);  // both struck by one swing
+  EXPECT_EQ(c->hp(), config.max_hp - melee(config).damage);
   EXPECT_GE(count_hits(gw, 1), 2);
 }
 
@@ -587,7 +628,7 @@ TEST(WorldCombat, CooldownLimitsSwings) {
   lit::TSQueue<lit::ClientEvent> incoming;
   lit::test::MockClientGateway gw;
   auto config = test_config();
-  config.attack_cooldown_ticks = 3;  // only one swing fits in the 3-tick window
+  melee(config).cooldown_ticks = 3;  // only one swing fits in the 3-tick window
   lit::game::World world(incoming, gw, config);
 
   incoming.push(hello_event(1, "a"));
@@ -599,7 +640,7 @@ TEST(WorldCombat, CooldownLimitsSwings) {
 
   auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
   ASSERT_TRUE(victim.has_value());
-  EXPECT_EQ(victim->hp(), config.max_hp - config.attack_damage);  // exactly one swing
+  EXPECT_EQ(victim->hp(), config.max_hp - melee(config).damage);  // exactly one swing
   EXPECT_EQ(count_hits(gw, 2), 1);
 }
 
@@ -607,7 +648,7 @@ TEST(WorldCombat, KillsAndSetsDead) {
   lit::TSQueue<lit::ClientEvent> incoming;
   lit::test::MockClientGateway gw;
   auto config = test_config();
-  config.attack_cooldown_ticks = 1;  // swing every tick -> 3 swings kill 100 hp
+  melee(config).cooldown_ticks = 1;  // swing every tick -> 3 swings kill 100 hp
   lit::game::World world(incoming, gw, config);
 
   incoming.push(hello_event(1, "a"));
@@ -631,7 +672,7 @@ TEST(WorldCombat, RespawnAfterDelay) {
   lit::TSQueue<lit::ClientEvent> incoming;
   lit::test::MockClientGateway gw;
   auto config = test_config();
-  config.attack_cooldown_ticks = 1;
+  melee(config).cooldown_ticks = 1;
   config.respawn_delay_ticks = 5;
   lit::game::World world(incoming, gw, config);
 

@@ -70,6 +70,7 @@ message Welcome {
   uint32 server_tick = 4;         // текущий тик сервера
   GameConfig config = 5;
   repeated Faction factions = 6;
+  repeated Ability abilities = 7;  // панель способностей по порядку: abilities[0] — клавиша 1
 }
 
 // Правила и темп игры. Клиент не хардкодит ни одно из этих чисел.
@@ -80,10 +81,29 @@ message GameConfig {
   uint32 map_height = 4;             // клеток: 100
   uint32 move_speed = 5;             // единиц в секунду: 300 = 3 клетки/с
   uint32 max_hp = 6;                 // 100
-  uint32 attack_range = 7;           // единиц между центрами игроков: 120
-  uint32 attack_cooldown_ticks = 8;  // 45 = 0,75 с
+  reserved 7, 8;                     // были attack_range и attack_cooldown_ticks: теперь в Ability
+  reserved "attack_range", "attack_cooldown_ticks";
   uint32 respawn_delay_ticks = 9;    // 300 = 5 с
   uint32 reconnect_grace_ms = 10;    // сколько сервер держит сессию после разрыва: 30000
+  uint32 player_radius = 11;         // радиус тела игрока для попаданий снарядами, единиц: 16
+}
+
+// Способность на панели 1–5. Набор, порядок и числа задаёт сервер.
+message Ability {
+  uint32 id = 1;                 // ≥ 1; на него ссылается InputFrame.ability
+  AbilityKind kind = 2;
+  string name = 3;               // «Удар», «Выстрел»
+  uint32 cooldown_ticks = 4;     // общая перезарядка после применения: 45 = 0,75 с; 90 = 1,5 с
+  uint32 damage = 5;             // урон за попадание
+  uint32 range = 6;              // единиц: радиус удара (MELEE) или дальность полёта (PROJECTILE)
+  uint32 projectile_speed = 7;   // PROJECTILE: скорость снаряда, единиц в секунду
+  uint32 projectile_radius = 8;  // PROJECTILE: радиус снаряда, единиц
+}
+
+enum AbilityKind {
+  ABILITY_KIND_UNSPECIFIED = 0;
+  ABILITY_KIND_MELEE = 1;       // удар по всем врагам в радиусе range вокруг игрока
+  ABILITY_KIND_PROJECTILE = 2;  // снаряд в сторону прицела; летит range единиц, от него можно увернуться
 }
 
 message Faction {
@@ -144,9 +164,12 @@ message InputFrame {
   sint32 move_x = 2;         // направление; длину сервер нормирует до 1,
   sint32 move_y = 3;         //   (0, 0) = стоять
   bool attack = 4;           // держит клавишу атаки: пока перезарядка готова,
-                             //   сервер бьёт всех врагов в радиусе attack_range
+                             //   сервер применяет выбранную способность
   bool capturing = 5;        // держит клавишу захвата: сервер захватывает клетку
                              //   под центром игрока (1 захватчик ≈ capture_ticks)
+  uint32 ability = 6;        // Ability.id выбранной способности; 0 = первая (ближний бой)
+  sint32 aim_x = 7;          // прицел: направление от центра игрока, длина любая
+  sint32 aim_y = 8;          //   (сервер нормирует); (0, 0) = нет прицела, снаряд не вылетает
 }
 
 // Кадры ввода по возрастанию seq: обычно один, после долгого кадра
@@ -170,6 +193,7 @@ message Snapshot {
   repeated PlayerState players = 3;  // все видимые игроки, включая себя; нет в списке = не видно
   repeated CellUpdate cells = 4;     // клетки, изменившиеся после предыдущего снапшота
   repeated GameEvent events = 5;     // события после предыдущего снапшота
+  repeated ProjectileState projectiles = 6;  // снаряды в полёте
 }
 
 // Публичное состояние игрока: всё, что нужно для отрисовки.
@@ -180,12 +204,23 @@ message PlayerState {
   uint32 hp = 4;  // 0 = мёртв: тело лежит на месте смерти до респавна
 }
 
+// Снаряд в полёте: всё, что нужно для отрисовки.
+message ProjectileState {
+  uint32 id = 1;
+  uint32 x = 2;           // единицы
+  uint32 y = 3;
+  uint32 faction_id = 4;  // фракция стрелка (цвет)
+  sint32 vx = 5;          // скорость, единиц в секунду: направление полёта и след
+  sint32 vy = 6;
+}
+
 // Приватное состояние получателя снапшота.
 message SelfState {
   LifeState life = 1;
   uint32 last_input_seq = 2;     // последний InputFrame.seq, который сервер обработал
   uint32 respawn_tick = 3;       // при DEAD: с этого тика примут SpawnRequest
-  uint32 attack_ready_tick = 4;  // с этого тика возможна следующая атака
+  uint32 attack_ready_tick = 4;      // с этого тика возможна следующая атака
+  uint32 attack_cooldown_ticks = 5;  // длина текущей перезарядки (от применённой способности)
 }
 
 enum LifeState {
