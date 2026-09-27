@@ -70,7 +70,11 @@ void Session::process_data(std::span<const char> buff) {
 asio::awaitable<void> Session::do_send() {
     spdlog::info("Session::do_send id={}", id_);
     for (;;) {
-        auto [rec, buff] = co_await send_queue_.async_receive(asio::as_tuple(asio::use_awaitable));
+        // Keep the received frame in a named variable. With GCC 16.1 the hidden
+        // object of `auto [rec, buff] = co_await ...` was not destroyed at the end of
+        // the loop body, leaking every sent frame (found with ASan/LSan under load).
+        auto received = co_await send_queue_.async_receive(asio::as_tuple(asio::use_awaitable));
+        auto& [rec, buff] = received;
         if (rec) {
             break;  // channel closed or cancelled -> stop.
         }
