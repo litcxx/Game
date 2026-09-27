@@ -45,9 +45,11 @@ int main(int argc, char* argv[]) {
     // Graceful shutdown: stop accepting and close sessions so their coroutines
     // finish; io.run() then drains on its own. (io.stop() would abandon in-flight
     // session coroutines and crash during teardown.)
-    signals.async_wait([&server](auto, auto) {
+    signals.async_wait([&server, &game_thread](auto, auto) {
         spdlog::info("Shutdown signal received");
-        server.stop();
+        game_thread.request_stop();  // stop the game loop first so it stops queuing
+                                     // snapshots into sessions...
+        server.stop();               // ...then close sessions; io.run() drains cleanly.
     });
 
     server.listen();
