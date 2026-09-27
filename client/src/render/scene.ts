@@ -390,9 +390,8 @@ export class Scene {
         // Grounding shadow: over the glow (so it isn't washed out) and under the
         // token; darker/larger so it reads against the dark map.
         gfx.ellipse(0, 8, 9, 3.5).fill({ color: 0x000000, alpha: 0.5 });
-        // Token.
+        // Token — identical for every player; the attack-range ring marks "you".
         gfx.circle(0, 0, 6).fill(color).stroke({ width: 1, color: this.lighten(color, 0.45), alpha: 0.9 });
-        if (isSelf) gfx.circle(0, 0, 9).stroke({ width: 1.5, color: 0xffffff, alpha: 0.85 });
 
         // Name pill (above the head) + hp bar beneath it.
         const name = this.playerNames.get(id) ?? "";
