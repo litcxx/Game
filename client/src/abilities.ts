@@ -3,11 +3,12 @@ import { AbilityKind, type Ability } from "./gen/game/v1/protocol_pb.js";
 // An ability on the 1–5 bar, as the client needs it (Welcome.abilities, bar order).
 export interface AbilityInfo {
   id: number; // sent as InputFrame.ability
-  kind: "melee" | "projectile";
+  kind: "melee" | "projectile" | "block";
   name: string;
   range: number; // units: melee radius / projectile flight distance
   cooldownTicks: number;
   projectileRadius: number; // units; 0 for melee
+  durationTicks: number; // block: how long it lasts; 0 for attacks
 }
 
 export const BAR_SLOTS = 5;
@@ -18,7 +19,13 @@ export function abilitiesFromWelcome(list: readonly Ability[]): AbilityInfo[] {
   const out: AbilityInfo[] = [];
   for (const a of list) {
     const kind =
-      a.kind === AbilityKind.MELEE ? "melee" : a.kind === AbilityKind.PROJECTILE ? "projectile" : undefined;
+      a.kind === AbilityKind.MELEE
+        ? "melee"
+        : a.kind === AbilityKind.PROJECTILE
+          ? "projectile"
+          : a.kind === AbilityKind.BLOCK
+            ? "block"
+            : undefined;
     if (kind === undefined) continue;
     out.push({
       id: a.id,
@@ -27,6 +34,7 @@ export function abilitiesFromWelcome(list: readonly Ability[]): AbilityInfo[] {
       range: a.range,
       cooldownTicks: a.cooldownTicks,
       projectileRadius: a.projectileRadius,
+      durationTicks: a.durationTicks,
     });
   }
   return out;

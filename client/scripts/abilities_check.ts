@@ -19,22 +19,27 @@ const shot = create(AbilitySchema, {
   id: 2, kind: AbilityKind.PROJECTILE, name: "Выстрел", cooldownTicks: 90, damage: 30, range: 500,
   projectileSpeed: 800, projectileRadius: 8,
 });
+const guard = create(AbilitySchema, {
+  id: 3, kind: AbilityKind.BLOCK, name: "Блок", cooldownTicks: 45, durationTicks: 9,
+});
 const mystery = create(AbilitySchema, { id: 7, kind: AbilityKind.UNSPECIFIED, name: "?" });
 
 // abilitiesFromWelcome: bar order kept, kinds as strings, unknown kinds skipped.
-const bar = abilitiesFromWelcome([strike, mystery, shot]);
+const bar = abilitiesFromWelcome([strike, mystery, shot, guard]);
 check(
   "maps abilities in bar order, skipping unknown kinds",
   same(bar, [
-    { id: 1, kind: "melee", name: "Удар", range: 120, cooldownTicks: 45, projectileRadius: 0 },
-    { id: 2, kind: "projectile", name: "Выстрел", range: 500, cooldownTicks: 90, projectileRadius: 8 },
+    { id: 1, kind: "melee", name: "Удар", range: 120, cooldownTicks: 45, projectileRadius: 0, durationTicks: 0 },
+    { id: 2, kind: "projectile", name: "Выстрел", range: 500, cooldownTicks: 90, projectileRadius: 8, durationTicks: 0 },
+    { id: 3, kind: "block", name: "Блок", range: 0, cooldownTicks: 45, projectileRadius: 0, durationTicks: 9 },
   ]),
 );
 
 // selectSlot: digits 1–5 pick a filled slot; empty slots and other keys keep the current one.
 check("key 2 selects slot 2", selectSlot(bar, 0, "2") === 1);
 check("key 1 selects slot 1", selectSlot(bar, 1, "1") === 0);
-check("empty slot 3 keeps the current slot", selectSlot(bar, 1, "3") === 1);
+check("key 3 selects the block slot", selectSlot(bar, 1, "3") === 2);
+check("empty slot 4 keeps the current slot", selectSlot(bar, 1, "4") === 1);
 check("key 0 is not a slot", selectSlot(bar, 1, "0") === 1);
 check("key 6 is past the bar", selectSlot([...bar, ...bar, ...bar], 1, "6") === 1);
 check("non-digit keys are ignored", selectSlot(bar, 0, "w") === 0);
