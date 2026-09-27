@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <stop_token>
 #include <string>
 #include <unordered_map>
@@ -14,6 +15,15 @@
 #include "utils/ts_queue.hpp"
 
 namespace lit::game {
+// One tick's worth of player intent, consumed one-per-tick for deterministic replay.
+struct InputCommand {
+    std::uint32_t seq{0};
+    std::int32_t move_x{0};
+    std::int32_t move_y{0};
+    bool capturing{false};
+    bool attack{false};
+};
+
 // Per-connection game state. `session_id` is the transport key; `id` is the
 // public player_id (>= 1) used on the wire.
 struct Player {
@@ -33,6 +43,9 @@ struct Player {
     bool attack{false};     // holding the attack key: area hit around the player when ready
     std::uint32_t attack_ready_tick{0};  // next tick this player may attack
     std::uint32_t respawn_tick{0};       // when DEAD: tick from which respawn is allowed
+
+    std::deque<InputCommand> inputs;     // pending per-tick commands (FIFO by seq)
+    std::uint32_t last_enqueued_seq{0};  // highest seq accepted into the queue
 };
 
 // Authoritative game loop. Drains net→game events each tick, updates state, and
@@ -60,6 +73,8 @@ class World {
     void on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping);
     void on_disconnect(std::uint64_t session_id);
 
+    // Pop one queued command per player (repeat last when empty); sets intent + last_input_seq.
+    void consume_inputs();
     // Per-tick simulation: integrate movement from each alive player's intent.
     void update(double dt);
     // Per-tick combat: alive attackers hit their target when in range and off cooldown.

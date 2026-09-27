@@ -653,3 +653,60 @@ TEST(WorldCombat, RespawnAfterDelay) {
   ASSERT_TRUE(self.has_value());
   EXPECT_EQ(self->hp(), config.max_hp);  // full hp on respawn
 }
+
+// --- Fixed-step input model -------------------------------------------------
+TEST(WorldInput, FixedStepMovementIsDeterministic) {
+  lit::TSQueue<lit::ClientEvent> incoming;
+  lit::test::MockClientGateway gw;
+  auto config = test_config();
+  lit::game::World world(incoming, gw, config);
+
+  incoming.push(hello_event(7, "p"));
+  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // center (150,150)
+  incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));  // then repeat-last
+  const double dt = 1.0 / config.tick_rate;
+  run_ticks(world, 6, dt);  // tick1 consumes cmd, ticks 2..6 repeat it
+
+  auto snap = last_snapshot_to(gw, 7);
+  ASSERT_TRUE(snap.has_value());
+  ASSERT_EQ(snap->players_size(), 1);
+  const double expected = 150.0 + 6 * config.move_speed * dt;  // 6 ticks of +speed*dt
+  EXPECT_NEAR(static_cast<double>(snap->players(0).x()), expected, 1.0);
+  EXPECT_EQ(snap->players(0).y(), 150u);
+}
+
+TEST(WorldInput, ConsumesOneCommandPerTick) {
+  lit::TSQueue<lit::ClientEvent> incoming;
+  lit::test::MockClientGateway gw;
+  auto config = test_config();
+  config.snapshot_rate = config.tick_rate;  // one snapshot per tick, to read per-tick acks
+  lit::game::World world(incoming, gw, config);
+
+  incoming.push(hello_event(7, "p"));
+  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
+  incoming.push(input_event(7, 0, 0, /*seq=*/1));
+  incoming.push(input_event(7, 0, 0, /*seq=*/2));
+  const double dt = 1.0 / config.tick_rate;
+
+  run_ticks(world, 1, dt);
+  EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 1u);  // consumed seq 1
+  run_ticks(world, 1, dt);
+  EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // consumed seq 2
+  run_ticks(world, 1, dt);
+  EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // empty queue -> repeat
+}
+
+TEST(WorldInput, EnqueuesAfterRespawnClear) {
+  lit::TSQueue<lit::ClientEvent> incoming;
+  lit::test::MockClientGateway gw;
+  auto config = test_config();
+  config.snapshot_rate = config.tick_rate;
+  lit::game::World world(incoming, gw, config);
+
+  incoming.push(hello_event(7, "p"));
+  incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // clears any queued input
+  incoming.push(input_event(7, 1, 0, /*seq=*/10));           // seq keeps climbing
+  const double dt = 1.0 / config.tick_rate;
+  run_ticks(world, 1, dt);
+  EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 10u);  // still enqueued & consumed
+}

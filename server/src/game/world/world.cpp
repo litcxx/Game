@@ -63,6 +63,7 @@ void World::tick(double dt) {
         }
     }
 
+    consume_inputs();
     update(dt);
     update_combat();
     update_captures();
@@ -156,6 +157,7 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
     player.attack = false;
     player.attack_ready_tick = 0;
     player.respawn_tick = 0;
+    player.inputs.clear();  // drop stale pre-spawn commands (last_enqueued_seq stays monotonic)
 
     // Faction (colour) chosen -> tell everyone else.
     broadcast_except(session_id, make_roster_upsert(player));
@@ -169,20 +171,29 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
         return;
     }
     Player& player = it->second;
-    if (player.life != ::game::v1::LIFE_STATE_ALIVE) {
-        return;  // only alive players act
+    // Enqueue frames in seq order; consume_inputs applies one per tick. Enqueue
+    // even when not alive so last_input_seq (the client's ack) keeps advancing.
+    for (const auto& frame : input.frames()) {
+        if (frame.seq() <= player.last_enqueued_seq) continue;  // out-of-order / duplicate
+        player.last_enqueued_seq = frame.seq();
+        player.inputs.push_back(InputCommand{frame.seq(), frame.move_x(), frame.move_y(),
+                                             frame.capturing(), frame.attack()});
     }
-    if (input.frames_size() == 0) {
-        return;
-    }
+}
 
-    // Latest frame wins as the current movement intent; update() integrates it.
-    const auto& frame = input.frames(input.frames_size() - 1);
-    player.move_x = frame.move_x();
-    player.move_y = frame.move_y();
-    player.capturing = frame.capturing();
-    player.attack = frame.attack();
-    player.last_input_seq = frame.seq();
+void World::consume_inputs() {
+    for (auto& [session_id, p] : players_) {
+        if (p.inputs.empty()) {
+            continue;  // no fresh command this tick -> repeat last intent (fields unchanged)
+        }
+        const InputCommand cmd = p.inputs.front();
+        p.inputs.pop_front();
+        p.move_x = cmd.move_x;
+        p.move_y = cmd.move_y;
+        p.capturing = cmd.capturing;
+        p.attack = cmd.attack;
+        p.last_input_seq = cmd.seq;
+    }
 }
 
 void World::update(double dt) {
