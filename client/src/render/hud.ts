@@ -20,16 +20,15 @@ export class Hud {
   private readonly fps = new Text({ text: "FPS —", style: mono(13, "#8fce8f") });
   private readonly hint = new Text({ text: "", style: mono(14, "#c8c8b8") });
   private readonly hp: Gauge;
-  private readonly capture: Gauge;
+  private readonly cell: Gauge;
 
   constructor(private readonly app: Application) {
     this.online.anchor.set(1, 0);
     this.fps.anchor.set(1, 0);
     this.hint.anchor.set(0.5, 1);
 
-    this.hp = this.makeGauge(34, "ЗДОРОВЬЕ", "#c88868");
-    this.capture = this.makeGauge(30, "ЗАХВАТ", "#d8b048");
-    this.capture.root.visible = false;
+    this.hp = this.makeGauge(51, "ЗДОРОВЬЕ", "#c88868");
+    this.cell = this.makeGauge(30, "", "#9a9a88");
 
     app.stage.addChild(
       this.factionBadge,
@@ -39,7 +38,7 @@ export class Hud {
       this.fps,
       this.hint,
       this.hp.root,
-      this.capture.root,
+      this.cell.root,
     );
 
     this.layout();
@@ -82,15 +81,27 @@ export class Hud {
     if (alive) this.updateGauge(this.hp, hp / maxHp, 0xd0583a, String(hp));
   }
 
-  // Capture progress of the cell under the player; hidden when nothing is in progress.
-  setCapture(col: number, row: number, percent: number): void {
-    if (percent <= 0) {
-      this.capture.root.visible = false;
-      return;
+  // The cell under the player: shown full in its owner's colour, or the capturing
+  // faction's colour rising by % while a capture is in progress.
+  setCell(
+    index: number,
+    ownerColor: number | undefined,
+    captureColor: number | undefined,
+    capturePercent: number,
+  ): void {
+    this.cell.root.visible = true;
+    this.cell.label.text = `Клетка ${index}`;
+    if (capturePercent > 0 && captureColor !== undefined) {
+      this.updateGauge(this.cell, capturePercent / 100, captureColor, `${capturePercent}%`);
+    } else if (ownerColor !== undefined) {
+      this.updateGauge(this.cell, 1, ownerColor, "");
+    } else {
+      this.updateGauge(this.cell, 0, 0x000000, "");
     }
-    this.capture.root.visible = true;
-    this.capture.label.text = `ЗАХВАТ ${col},${row}`;
-    this.updateGauge(this.capture, percent / 100, 0xd8a838, `${percent}%`);
+  }
+
+  hideCell(): void {
+    this.cell.root.visible = false;
   }
 
   private makeGauge(radius: number, label: string, labelColor: string): Gauge {
@@ -100,7 +111,16 @@ export class Hud {
     const maskG = new Graphics().circle(0, 0, radius).fill(0xffffff);
     fill.mask = maskG;
     const border = new Graphics().circle(0, 0, radius).stroke({ width: 2, color: 0x3a3a46 });
-    const value = new Text({ text: "", style: mono(18, "#f0f0e8") });
+    const value = new Text({
+      text: "",
+      style: {
+        fill: "#f4f4ec",
+        fontFamily: "monospace",
+        fontWeight: "bold",
+        fontSize: Math.round(radius * 0.55),
+        stroke: { color: 0x14141a, width: 3 }, // dark outline -> readable over the fill
+      },
+    });
     value.anchor.set(0.5);
     const labelText = new Text({ text: label, style: mono(11, labelColor) });
     labelText.anchor.set(0.5, 1);
@@ -127,6 +147,6 @@ export class Hud {
     this.fps.position.set(w - 16, 32);
     this.hint.position.set(w / 2, h - 16);
     this.hp.root.position.set(16 + this.hp.radius, h - 16 - this.hp.radius);
-    this.capture.root.position.set(w - 16 - this.capture.radius, h - 16 - this.capture.radius);
+    this.cell.root.position.set(w - 16 - this.cell.radius, h - 16 - this.cell.radius);
   }
 }

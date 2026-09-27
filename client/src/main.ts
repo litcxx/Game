@@ -61,9 +61,10 @@ async function main(): Promise<void> {
     if (alive && predictor) {
       const col = Math.floor(predictor.position.x / 100);
       const row = Math.floor(predictor.position.y / 100);
-      hud.setCapture(col, row, scene.captureProgressAt(col, row));
+      const ci = scene.cellInfo(col, row);
+      hud.setCell(ci.index, ci.ownerColor, ci.captureColor, ci.capturePercent);
     } else {
-      hud.setCapture(0, 0, 0);
+      hud.hideCell();
     }
 
     const mapHint = `M — ${scene.mapMode ? "к игроку" : "вся карта"}`;

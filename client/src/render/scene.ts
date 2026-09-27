@@ -149,9 +149,22 @@ export class Scene {
     return { cells, percent: total > 0 ? Math.round((cells / total) * 100) : 0 };
   }
 
-  captureProgressAt(col: number, row: number): number {
-    if (col < 0 || row < 0 || col >= this.mapCols || row >= this.mapRows) return 0;
-    return this.captureProgress[row * this.mapCols + col] ?? 0;
+  cellInfo(
+    col: number,
+    row: number,
+  ): { index: number; ownerColor: number | undefined; captureColor: number | undefined; capturePercent: number } {
+    const index = row * this.mapCols + col;
+    if (col < 0 || row < 0 || col >= this.mapCols || row >= this.mapRows) {
+      return { index, ownerColor: undefined, captureColor: undefined, capturePercent: 0 };
+    }
+    const owner = this.owners[index] ?? 0;
+    const capFaction = this.captureFaction[index] ?? 0;
+    return {
+      index,
+      ownerColor: owner !== 0 ? this.factionColors.get(owner) : undefined,
+      captureColor: capFaction !== 0 ? this.factionColors.get(capFaction) : undefined,
+      capturePercent: this.captureProgress[index] ?? 0,
+    };
   }
 
   upsertRoster(players: readonly PlayerInfo[]): void {
