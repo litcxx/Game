@@ -8,6 +8,7 @@ import { GameClient } from "./net/client.js";
 import { InterpolationBuffer, type RemoteState } from "./net/interpolation.js";
 import { Predictor, type PendingInput } from "./net/prediction.js";
 import { AbilityBar } from "./render/abilityBar.js";
+import { FactionPicker } from "./render/factionPicker.js";
 import { Hud } from "./render/hud.js";
 import { Scene } from "./render/scene.js";
 
@@ -29,6 +30,7 @@ async function main(): Promise<void> {
   const scene = new Scene(app);
   const hud = new Hud(app);
   const bar = new AbilityBar(app);
+  const picker = new FactionPicker(app);
 
   let myId = 0;
   let mapWidth = 0;
@@ -54,13 +56,15 @@ async function main(): Promise<void> {
   const outbox: PendingInput[] = [];
 
   const updateHud = (life: LifeState, hp: number): void => {
-    const shownFaction = myFaction || selectedFaction;
+    // In play: the faction of this life; otherwise the one picked for the next spawn.
+    const shownFaction = alive ? myFaction : selectedFaction;
     const fi = factionInfo.get(shownFaction);
     if (fi) {
       hud.setFaction(fi.name, fi.color);
       bar.setAccent(fi.color);
     }
     bar.setVisible(alive);
+    picker.setVisible(!alive);
     hud.setOnline(scene.onlineCount());
     const st = scene.factionStats(shownFaction);
     hud.setTerritory(st.cells, st.percent);
@@ -83,10 +87,10 @@ async function main(): Promise<void> {
       hud.setHint(
         left > 0
           ? `Убит · возрождение через ${left}с · ${mapHint}`
-          : `Убит · клик по клетке — возрождение · ${mapHint}`,
+          : `Убит · выберите фракцию и кликните по клетке — возрождение · ${mapHint}`,
       );
     } else {
-      hud.setHint(`Не в игре · клик по клетке — старт · ${mapHint}`);
+      hud.setHint(`Выберите фракцию и кликните по клетке — старт · ${mapHint}`);
     }
   };
 
@@ -101,6 +105,8 @@ async function main(): Promise<void> {
         tickRate = w.config?.tickRate || 60;
         selectedFaction = w.factions[0]?.id ?? 1;
         for (const f of w.factions) factionInfo.set(f.id, { name: f.name, color: f.color });
+        picker.setFactions(w.factions.map((f) => ({ id: f.id, name: f.name, color: f.color })));
+        picker.setSelected(selectedFaction);
         abilities = abilitiesFromWelcome(w.abilities);
         activeSlot = 0;
         bar.setAbilities(abilities);
@@ -175,11 +181,22 @@ async function main(): Promise<void> {
   // Attack: hold the left mouse button while alive; aim follows the cursor.
   const mouse = installMouse(app.canvas, () => alive);
 
-  // Click a cell to spawn / respawn — only when not alive (alive clicks attack).
+  // Click a faction card to pick it; click a cell to spawn / respawn — only when
+  // not alive (alive clicks attack).
   app.canvas.addEventListener("click", (e) => {
-    if (alive || respawnTick > serverTick) return;
     const rect = app.canvas.getBoundingClientRect();
-    const [col, row] = scene.screenToCell(e.clientX - rect.left, e.clientY - rect.top);
+    const sx = e.clientX - rect.left;
+    const sy = e.clientY - rect.top;
+    const picked = picker.pick(sx, sy);
+    if (picked !== undefined) {
+      selectedFaction = picked;
+      picker.setSelected(picked);
+      const fi = factionInfo.get(picked);
+      if (fi) hud.setFaction(fi.name, fi.color);
+      return; // a card click never spawns
+    }
+    if (alive || respawnTick > serverTick) return;
+    const [col, row] = scene.screenToCell(sx, sy);
     if (col < 0 || row < 0 || col >= mapWidth || row >= mapHeight) return;
     myFaction = selectedFaction;
     scene.setSelfFaction(myFaction);
