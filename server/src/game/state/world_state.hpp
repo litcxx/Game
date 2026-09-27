@@ -6,6 +6,7 @@
 
 #include "game/v1/protocol.pb.h"
 #include "state/player.hpp"
+#include "state/projectile.hpp"
 #include "state/territory.hpp"
 
 namespace lit::game {
@@ -14,8 +15,10 @@ namespace lit::game {
 struct WorldState {
     std::uint32_t tick{0};
     std::uint32_t next_player_id{1};
+    std::uint32_t next_projectile_id{1};
     std::unordered_map<std::uint64_t, Player> players;  // key: session_id
     Territory territory;
+    std::vector<Projectile> projectiles;  // in flight, in launch order
     // Combat events (hits/deaths) since the last snapshot; flushed to every
     // recipient's Snapshot.events, then cleared.
     std::vector<::game::v1::GameEvent> events;

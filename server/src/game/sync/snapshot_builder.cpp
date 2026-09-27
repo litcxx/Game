@@ -1,5 +1,7 @@
 #include "sync/snapshot_builder.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 
 #include "sync/messages.hpp"
@@ -32,6 +34,15 @@ namespace lit::game {
     }
     for (const auto& ev : state.events) {
         *snap->add_events() = ev;
+    }
+    for (const auto& p : state.projectiles) {
+        auto* ps = snap->add_projectiles();
+        ps->set_id(p.id);
+        ps->set_x(static_cast<std::uint32_t>(std::max(0.0, p.x)));
+        ps->set_y(static_cast<std::uint32_t>(std::max(0.0, p.y)));
+        ps->set_faction_id(p.faction_id);
+        ps->set_vx(static_cast<std::int32_t>(std::lround(p.vx)));
+        ps->set_vy(static_cast<std::int32_t>(std::lround(p.vy)));
     }
     return msg;
 }

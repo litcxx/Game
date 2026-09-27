@@ -5,6 +5,7 @@ add_library(game
   systems/damage.cpp
   systems/input_system.cpp
   systems/movement_system.cpp
+  systems/projectile_system.cpp
   systems/spawn_system.cpp
   sync/messages.cpp
   sync/snapshot_builder.cpp

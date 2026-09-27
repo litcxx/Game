@@ -12,6 +12,7 @@
 #include "systems/combat_system.hpp"
 #include "systems/input_system.hpp"
 #include "systems/movement_system.hpp"
+#include "systems/projectile_system.hpp"
 #include "systems/spawn_system.hpp"
 
 namespace lit::game {
@@ -69,8 +70,9 @@ void World::tick(double dt) {
 
     consume_inputs(state_);
     integrate_movement(state_, config_, dt);
-    index_alive_players();  // positions are final for this tick
-    resolve_attacks(state_, config_, alive_index_);
+    index_alive_players();                           // positions are final for this tick
+    resolve_attacks(state_, config_, alive_index_);  // melee hits + projectile launches
+    update_projectiles(state_, config_, alive_index_, dt);
     update_captures(state_, config_);
     send_snapshots();
 }

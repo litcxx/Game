@@ -845,3 +845,117 @@ TEST(WorldAbility, UnknownAbilityDoesNothing) {
     ASSERT_TRUE(snap.has_value());
     EXPECT_EQ(snap->you().attack_ready_tick(), 0u);  // cooldown untouched
 }
+
+// --- Ranged attack: projectiles --------------------------------------------
+// test_config() ability 2 "Shot": cooldown 30, 25 dmg, range 250, 600 units/s
+// (9.6 units per 0.016 s tick), radius 8; bodies are 16. Cells: 4 -> (50,150),
+// 5 -> (150,150), 6 -> (250,150).
+
+TEST(WorldRanged, FiresTowardTheAim) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    run_ticks(world, 3, 0.016);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    ASSERT_EQ(snap->projectiles_size(), 1);
+    const auto& p = snap->projectiles(0);
+    EXPECT_EQ(p.faction_id(), 1u);
+    EXPECT_EQ(p.vx(), 600);
+    EXPECT_EQ(p.vy(), 0);
+    EXPECT_EQ(p.x(), 78u);  // launched from x = 50 on tick 1, 9.6 per tick for 3 ticks
+    EXPECT_EQ(p.y(), 150u);
+}
+
+TEST(WorldRanged, HitsAnEnemyForTheRangedDamage) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    run_ticks(world, 30, 0.016);  // contact near tick 19; the next shot is due on tick 31
+
+    auto victim = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), 75u);
+    EXPECT_EQ(count_hits(gw, 2), 1);
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->projectiles_size(), 0);  // spent on the hit
+}
+
+TEST(WorldRanged, NoAimNoShot) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/0));
+    run_ticks(world, 3, 0.016);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->projectiles_size(), 0);
+    EXPECT_EQ(snap->you().attack_ready_tick(), 0u);  // cooldown untouched
+}
+
+TEST(WorldRanged, DodgedProjectileMisses) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    incoming.push(input_event(2, 0, 1, /*seq=*/1));  // the target runs out of the line
+    run_ticks(world, 30, 0.016);
+
+    auto victim = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), 100u);
+    EXPECT_EQ(count_hits(gw, 2), 0);
+}
+
+TEST(WorldRanged, SharedCooldownBlocksOtherAbilities) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // within melee range
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/-1000));
+    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/1));  // then hold melee
+    run_ticks(world, 12, 0.016);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().attack_cooldown_ticks(), 30u);  // the shot's cooldown
+    EXPECT_EQ(snap->you().attack_ready_tick(), 31u);
+    auto victim = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), 100u);  // melee is held but must wait for the shared cooldown
+
+    run_ticks(world, 21, 0.016);  // through tick 33: melee swings on tick 31
+    victim = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), 60u);
+}

@@ -1,5 +1,6 @@
 #include "systems/combat_system.hpp"
 
+#include <cmath>
 #include <cstdint>
 
 #include "systems/damage.hpp"
@@ -30,6 +31,20 @@ void melee_strike(WorldState& state, const GameConfig& config, const SpatialInde
         apply_damage(state, config, target, ability.damage, self.id);
     });
 }
+// Launch a projectile from the player's centre along its aim. Returns false (and
+// launches nothing) when there is no aim.
+bool launch_projectile(WorldState& state, const Player& self, const AbilityConfig& ability) {
+    const double ax = static_cast<double>(self.aim_x);
+    const double ay = static_cast<double>(self.aim_y);
+    const double len = std::sqrt(ax * ax + ay * ay);
+    if (len <= 0.0) return false;
+    const double speed = static_cast<double>(ability.projectile_speed);
+    state.projectiles.push_back(
+        Projectile{state.next_projectile_id++, self.id, self.faction_id, ability.damage,
+                   static_cast<double>(ability.projectile_radius), self.x, self.y, ax / len * speed,
+                   ay / len * speed, static_cast<double>(ability.range)});
+    return true;
+}
 }  // namespace
 
 void resolve_attacks(WorldState& state, const GameConfig& config, const SpatialIndex& index) {
@@ -45,7 +60,8 @@ void resolve_attacks(WorldState& state, const GameConfig& config, const SpatialI
                 melee_strike(state, config, index, attacker_sid, attacker, *ability);
                 break;
             case AbilityKind::Projectile:
-                continue;  // not implemented yet: nothing happens, cooldown untouched
+                if (!launch_projectile(state, attacker, *ability)) continue;  // no aim: no shot
+                break;
         }
         // Used: the shared cooldown starts, with this ability's length.
         attacker.attack_ready_tick = state.tick + ability->cooldown_ticks;
