@@ -1,66 +1,17 @@
 #pragma once
 
 #include <cstdint>
-#include <deque>
 #include <stop_token>
-#include <string>
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
 
 #include "config/config.hpp"
 #include "game/v1/protocol.pb.h"
 #include "net/client_event.hpp"
 #include "net/i_client_gateway.hpp"
+#include "state/world_state.hpp"
 #include "utils/ts_queue.hpp"
+#include "world/fixed_step.hpp"
 
 namespace lit::game {
-// Fixed-timestep accumulator: add `frame` seconds, clamp to `max_accum` (avoid a
-// spiral of death after a stall), and return how many `fixed_dt` steps to run now.
-inline int fixed_steps(double& accumulator, double frame, double fixed_dt, double max_accum) {
-    accumulator += frame;
-    if (accumulator > max_accum) accumulator = max_accum;
-    int steps = 0;
-    while (accumulator >= fixed_dt) {
-        accumulator -= fixed_dt;
-        ++steps;
-    }
-    return steps;
-}
-
-// One tick's worth of player intent, consumed one-per-tick for deterministic replay.
-struct InputCommand {
-    std::uint32_t seq{0};
-    std::int32_t move_x{0};
-    std::int32_t move_y{0};
-    bool capturing{false};
-    bool attack{false};
-};
-
-// Per-connection game state. `session_id` is the transport key; `id` is the
-// public player_id (>= 1) used on the wire.
-struct Player {
-    std::uint32_t id{0};
-    std::string name;
-    std::uint32_t faction_id{0};  // 0 until spawned
-    ::game::v1::LifeState life{::game::v1::LIFE_STATE_NOT_SPAWNED};
-
-    // Set on spawn, advanced by input + simulation (M2).
-    double x{0.0};  // position in units (100 units = 1 cell)
-    double y{0.0};
-    std::uint32_t hp{0};
-    std::uint32_t last_input_seq{0};
-    std::int32_t move_x{0};  // last input direction (intent); integrated in update()
-    std::int32_t move_y{0};
-    bool capturing{false};  // holding the capture key: captures the cell under the center
-    bool attack{false};     // holding the attack key: area hit around the player when ready
-    std::uint32_t attack_ready_tick{0};  // next tick this player may attack
-    std::uint32_t respawn_tick{0};       // when DEAD: tick from which respawn is allowed
-
-    std::deque<InputCommand> inputs;     // pending per-tick commands (FIFO by seq)
-    std::uint32_t last_enqueued_seq{0};  // highest seq accepted into the queue
-};
-
 // Authoritative game loop. Drains net→game events each tick, updates state, and
 // replies through the gateway. Runs on a single (game) thread — no locking.
 class World {
@@ -111,21 +62,7 @@ class World {
     IClientGateway& gateway_;
     const GameConfig config_;
 
-    std::uint32_t tick_{0};
     std::uint32_t snapshot_interval_{1};  // ticks between snapshots (tick_rate / snapshot_rate)
-    std::uint32_t next_player_id_{1};
-    std::unordered_map<std::uint64_t, Player> players_;  // key: session_id
-
-    // Territory grid (all map_w*map_h cells). owners_ = current owner; the rest
-    // track in-progress capture. Changed cells go out as CellUpdate in snapshots.
-    std::vector<std::uint8_t> owners_;                   // 0 = neutral
-    std::vector<std::uint8_t> capture_faction_;          // who is capturing (0 = none)
-    std::vector<double> capture_progress_;               // 0..100
-    std::unordered_set<std::uint32_t> active_captures_;  // cells with progress > 0
-    std::unordered_set<std::uint32_t> dirty_cells_;      // changed since last snapshot
-
-    // Combat events (hits/deaths) accumulated since the last snapshot; flushed to
-    // every recipient's Snapshot.events, then cleared.
-    std::vector<::game::v1::GameEvent> events_;
+    WorldState state_;                    // all simulation state (plain data)
 };
 }  // namespace lit::game

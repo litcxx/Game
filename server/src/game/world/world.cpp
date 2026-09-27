@@ -12,8 +12,6 @@
 
 namespace lit::game {
 namespace {
-constexpr std::uint32_t kUnitsPerCell = 100;  // matches protocol UNITS_PER_CELL
-
 void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
     info->set_id(player.id);
     info->set_name(player.name);
@@ -23,10 +21,7 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
 
 World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config)
     : incoming_{incoming}, gateway_{gateway}, config_{config} {
-    const std::size_t cell_count = static_cast<std::size_t>(config_.map_width) * config_.map_height;
-    owners_.assign(cell_count, 0);
-    capture_faction_.assign(cell_count, 0);
-    capture_progress_.assign(cell_count, 0.0);
+    state_.territory.reset(config_.map_width, config_.map_height);
 
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
     snapshot_interval_ = config_.tick_rate / rate;
@@ -55,7 +50,7 @@ void World::run(std::stop_token stop) {
 }
 
 void World::tick(double dt) {
-    ++tick_;
+    ++state_.tick;
 
     // Move the whole inbound queue into a tick-local one in one shot.
     swap(incoming_, local_);
@@ -102,9 +97,9 @@ void World::process_event(const ClientEvent& ev) {
 
 void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
     Player player;
-    player.id = next_player_id_++;
+    player.id = state_.next_player_id++;
     player.name = hello.name();
-    players_[session_id] = player;
+    state_.players[session_id] = player;
 
     // Greet the joiner: Welcome, then the full map, then the full roster.
     send(session_id, make_welcome(player));
@@ -119,8 +114,8 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
 }
 
 void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn) {
-    auto it = players_.find(session_id);
-    if (it == players_.end()) {
+    auto it = state_.players.find(session_id);
+    if (it == state_.players.end()) {
         return;  // never sent Hello
     }
     Player& player = it->second;
@@ -129,7 +124,7 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
         spdlog::warn("World::on_spawn ignored (already alive) session={}", session_id);
         return;
     }
-    if (player.life == ::game::v1::LIFE_STATE_DEAD && tick_ < player.respawn_tick) {
+    if (player.life == ::game::v1::LIFE_STATE_DEAD && state_.tick < player.respawn_tick) {
         spdlog::warn("World::on_spawn ignored (respawning) session={} respawn_tick={}", session_id,
                      player.respawn_tick);
         return;  // still waiting out the respawn delay
@@ -170,8 +165,8 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
 }
 
 void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
-    auto it = players_.find(session_id);
-    if (it == players_.end()) {
+    auto it = state_.players.find(session_id);
+    if (it == state_.players.end()) {
         return;
     }
     Player& player = it->second;
@@ -186,7 +181,7 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
 }
 
 void World::consume_inputs() {
-    for (auto& [session_id, p] : players_) {
+    for (auto& [session_id, p] : state_.players) {
         if (p.inputs.empty()) {
             continue;  // no fresh command this tick -> repeat last intent (fields unchanged)
         }
@@ -204,7 +199,7 @@ void World::update(double dt) {
     const double bound_x = static_cast<double>(config_.map_width) * kUnitsPerCell;
     const double bound_y = static_cast<double>(config_.map_height) * kUnitsPerCell;
 
-    for (auto& [session_id, p] : players_) {
+    for (auto& [session_id, p] : state_.players) {
         if (p.life != ::game::v1::LIFE_STATE_ALIVE) {
             continue;
         }
@@ -228,7 +223,7 @@ void World::update_captures() {
     // Each alive, holding player claims the cell under its center. First iteration:
     // one faction per cell; mixed factions -> contested (0) -> no progress.
     std::unordered_map<std::uint32_t, std::uint32_t> claim;  // cell index -> faction
-    for (const auto& [session_id, p] : players_) {
+    for (const auto& [session_id, p] : state_.players) {
         if (p.life != ::game::v1::LIFE_STATE_ALIVE || !p.capturing) {
             continue;
         }
@@ -245,54 +240,55 @@ void World::update_captures() {
     std::unordered_set<std::uint32_t> still_active;
 
     for (const auto& [index, faction] : claim) {
-        if (faction == 0 || owners_[index] == faction) {
+        if (faction == 0 || state_.territory.owners[index] == faction) {
             continue;  // contested, or already ours
         }
-        if (capture_faction_[index] != faction) {  // a different faction takes over
-            capture_faction_[index] = static_cast<std::uint8_t>(faction);
-            capture_progress_[index] = 0.0;
+        if (state_.territory.capture_faction[index] != faction) {  // a different faction takes over
+            state_.territory.capture_faction[index] = static_cast<std::uint8_t>(faction);
+            state_.territory.capture_progress[index] = 0.0;
         }
-        capture_progress_[index] += step;
-        dirty_cells_.insert(index);
-        if (capture_progress_[index] >= 100.0) {
-            owners_[index] = static_cast<std::uint8_t>(faction);
-            capture_faction_[index] = 0;
-            capture_progress_[index] = 0.0;
+        state_.territory.capture_progress[index] += step;
+        state_.territory.dirty.insert(index);
+        if (state_.territory.capture_progress[index] >= 100.0) {
+            state_.territory.owners[index] = static_cast<std::uint8_t>(faction);
+            state_.territory.capture_faction[index] = 0;
+            state_.territory.capture_progress[index] = 0.0;
         } else {
             still_active.insert(index);
         }
     }
 
     // Reset any in-progress cell whose capturer stopped this tick.
-    for (std::uint32_t index : active_captures_) {
+    for (std::uint32_t index : state_.territory.active) {
         if (still_active.count(index) != 0) continue;
-        if (capture_progress_[index] != 0.0 || capture_faction_[index] != 0) {
-            capture_progress_[index] = 0.0;
-            capture_faction_[index] = 0;
-            dirty_cells_.insert(index);
+        if (state_.territory.capture_progress[index] != 0.0 ||
+            state_.territory.capture_faction[index] != 0) {
+            state_.territory.capture_progress[index] = 0.0;
+            state_.territory.capture_faction[index] = 0;
+            state_.territory.dirty.insert(index);
         }
     }
-    active_captures_ = std::move(still_active);
+    state_.territory.active = std::move(still_active);
 }
 
 void World::update_combat() {
     const double range = static_cast<double>(config_.attack_range);
     const double range_sq = range * range;
 
-    for (auto& [attacker_sid, attacker] : players_) {
+    for (auto& [attacker_sid, attacker] : state_.players) {
         if (attacker.life != ::game::v1::LIFE_STATE_ALIVE) continue;
-        if (!attacker.attack) continue;                    // attack key not held
-        if (tick_ < attacker.attack_ready_tick) continue;  // on cooldown
+        if (!attacker.attack) continue;                          // attack key not held
+        if (state_.tick < attacker.attack_ready_tick) continue;  // on cooldown
 
         // A swing fires: it consumes the cooldown even if nothing is in range.
-        attacker.attack_ready_tick = tick_ + config_.attack_cooldown_ticks;
+        attacker.attack_ready_tick = state_.tick + config_.attack_cooldown_ticks;
         const double ax = attacker.x;
         const double ay = attacker.y;
         const std::uint32_t attacker_id = attacker.id;
         const std::uint32_t attacker_faction = attacker.faction_id;
 
         // Area hit: every alive enemy within attack_range of the attacker is struck.
-        for (auto& [target_sid, target] : players_) {
+        for (auto& [target_sid, target] : state_.players) {
             if (target_sid == attacker_sid) continue;
             if (target.life != ::game::v1::LIFE_STATE_ALIVE) continue;
             if (target.faction_id == attacker_faction) continue;  // no friendly fire
@@ -304,8 +300,8 @@ void World::update_combat() {
             const std::uint32_t dmg = std::min(config_.attack_damage, target.hp);
             target.hp -= dmg;
 
-            auto& hit_ev = events_.emplace_back();
-            hit_ev.set_tick(tick_);
+            auto& hit_ev = state_.events.emplace_back();
+            hit_ev.set_tick(state_.tick);
             auto* hit = hit_ev.mutable_hit();
             hit->set_attacker_id(attacker_id);
             hit->set_target_id(target.id);
@@ -313,14 +309,14 @@ void World::update_combat() {
 
             if (target.hp == 0) {
                 target.life = ::game::v1::LIFE_STATE_DEAD;
-                target.respawn_tick = tick_ + config_.respawn_delay_ticks;
+                target.respawn_tick = state_.tick + config_.respawn_delay_ticks;
                 target.move_x = 0;
                 target.move_y = 0;
                 target.capturing = false;
                 target.attack = false;
 
-                auto& death_ev = events_.emplace_back();
-                death_ev.set_tick(tick_);
+                auto& death_ev = state_.events.emplace_back();
+                death_ev.set_tick(state_.tick);
                 auto* death = death_ev.mutable_death();
                 death->set_victim_id(target.id);
                 death->set_killer_id(attacker_id);
@@ -336,18 +332,18 @@ void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
     ::game::v1::ServerMessage reply;
     auto* pong = reply.mutable_pong();
     pong->set_client_time_ms(ping.client_time_ms());
-    pong->set_server_tick(tick_);
+    pong->set_server_tick(state_.tick);
     send(session_id, reply);
 }
 
 void World::on_disconnect(std::uint64_t session_id) {
-    auto it = players_.find(session_id);
-    if (it == players_.end()) {
+    auto it = state_.players.find(session_id);
+    if (it == state_.players.end()) {
         return;  // connected but never sent Hello, or already gone
     }
 
     const std::uint32_t player_id = it->second.id;
-    players_.erase(it);
+    state_.players.erase(it);
 
     // Tell the remaining players the player left (broadcast now excludes it).
     ::game::v1::ServerMessage msg;
@@ -361,7 +357,7 @@ void World::on_disconnect(std::uint64_t session_id) {
     ::game::v1::ServerMessage msg;
     auto* welcome = msg.mutable_welcome();
     welcome->set_player_id(player.id);
-    welcome->set_server_tick(tick_);
+    welcome->set_server_tick(state_.tick);
 
     auto* cfg = welcome->mutable_config();
     cfg->set_tick_rate(config_.tick_rate);
@@ -387,14 +383,15 @@ void World::on_disconnect(std::uint64_t session_id) {
 ::game::v1::ServerMessage World::make_map_state() const {
     ::game::v1::ServerMessage msg;
     auto* map = msg.mutable_map_state();
-    map->set_tick(tick_);
-    map->set_owners(owners_.data(), owners_.size());
-    for (std::uint32_t index : active_captures_) {
+    map->set_tick(state_.tick);
+    map->set_owners(state_.territory.owners.data(), state_.territory.owners.size());
+    for (std::uint32_t index : state_.territory.active) {
         auto* cu = map->add_captures();
         cu->set_index(index);
-        cu->set_owner(owners_[index]);
-        cu->set_capture_faction(capture_faction_[index]);
-        cu->set_capture_progress(static_cast<std::uint32_t>(capture_progress_[index]));
+        cu->set_owner(state_.territory.owners[index]);
+        cu->set_capture_faction(state_.territory.capture_faction[index]);
+        cu->set_capture_progress(
+            static_cast<std::uint32_t>(state_.territory.capture_progress[index]));
     }
     return msg;
 }
@@ -402,7 +399,7 @@ void World::on_disconnect(std::uint64_t session_id) {
 ::game::v1::ServerMessage World::make_full_roster() const {
     ::game::v1::ServerMessage msg;
     auto* roster = msg.mutable_roster();
-    for (const auto& [session_id, player] : players_) {
+    for (const auto& [session_id, player] : state_.players) {
         fill_player_info(roster->add_upsert(), player);
     }
     return msg;
@@ -415,16 +412,16 @@ void World::on_disconnect(std::uint64_t session_id) {
 }
 
 void World::send_snapshots() {
-    if (snapshot_interval_ == 0 || tick_ % snapshot_interval_ != 0) {
+    if (snapshot_interval_ == 0 || state_.tick % snapshot_interval_ != 0) {
         return;
     }
 
     // Every connected player gets a Snapshot (they need to see the world even
     // before spawning); `players` lists everyone alive, `you` is per-recipient.
-    for (const auto& [session_id, self] : players_) {
+    for (const auto& [session_id, self] : state_.players) {
         ::game::v1::ServerMessage msg;
         auto* snap = msg.mutable_snapshot();
-        snap->set_tick(tick_);
+        snap->set_tick(state_.tick);
 
         auto* you = snap->mutable_you();
         you->set_life(self.life);
@@ -432,7 +429,7 @@ void World::send_snapshots() {
         you->set_respawn_tick(self.respawn_tick);
         you->set_attack_ready_tick(self.attack_ready_tick);
 
-        for (const auto& [sid, p] : players_) {
+        for (const auto& [sid, p] : state_.players) {
             if (p.life == ::game::v1::LIFE_STATE_NOT_SPAWNED) {
                 continue;  // no body yet; alive players and dead bodies are both shown
             }
@@ -442,20 +439,21 @@ void World::send_snapshots() {
             ps->set_y(static_cast<std::uint32_t>(p.y));
             ps->set_hp(p.hp);  // 0 for a dead body
         }
-        for (std::uint32_t index : dirty_cells_) {
+        for (std::uint32_t index : state_.territory.dirty) {
             auto* cu = snap->add_cells();
             cu->set_index(index);
-            cu->set_owner(owners_[index]);
-            cu->set_capture_faction(capture_faction_[index]);
-            cu->set_capture_progress(static_cast<std::uint32_t>(capture_progress_[index]));
+            cu->set_owner(state_.territory.owners[index]);
+            cu->set_capture_faction(state_.territory.capture_faction[index]);
+            cu->set_capture_progress(
+                static_cast<std::uint32_t>(state_.territory.capture_progress[index]));
         }
-        for (const auto& ev : events_) {
+        for (const auto& ev : state_.events) {
             *snap->add_events() = ev;
         }
         send(session_id, msg);
     }
-    dirty_cells_.clear();
-    events_.clear();
+    state_.territory.dirty.clear();
+    state_.events.clear();
 }
 
 void World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {
@@ -468,13 +466,13 @@ void World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg)
 }
 
 void World::broadcast(const ::game::v1::ServerMessage& msg) {
-    for (const auto& [session_id, player] : players_) {
+    for (const auto& [session_id, player] : state_.players) {
         send(session_id, msg);
     }
 }
 
 void World::broadcast_except(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {
-    for (const auto& [sid, player] : players_) {
+    for (const auto& [sid, player] : state_.players) {
         if (sid != session_id) {
             send(sid, msg);
         }
