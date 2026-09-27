@@ -71,6 +71,7 @@ void World::tick(double dt) {
     consume_inputs(state_);
     integrate_movement(state_, config_, dt);
     index_alive_players();                           // positions are final for this tick
+    activate_blocks(state_, config_);                // before attacks: same-tick blocks count
     resolve_attacks(state_, config_, alive_index_);  // melee hits + projectile launches
     update_projectiles(state_, config_, alive_index_, dt);
     update_captures(state_, config_);

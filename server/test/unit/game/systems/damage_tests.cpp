@@ -105,3 +105,39 @@ TEST(Damage, TargetThatIsNotAliveIsIgnored) {
     EXPECT_EQ(body.respawn_tick, 50u);  // not killed a second time
     EXPECT_TRUE(state.events.empty());  // no hit on a body
 }
+
+TEST(Damage, BlockingTargetTakesNoDamage) {
+    lit::game::WorldState state;
+    state.tick = 20;
+    auto config = damage_config();
+    auto target = alive_player(2, 20);  // this hit would kill without the block
+    target.block_until_tick = 21;       // blocking through tick 20
+
+    const bool killed = lit::game::apply_damage(state, config, target, 30, 1);
+
+    EXPECT_FALSE(killed);
+    EXPECT_EQ(target.hp, 20u);
+    EXPECT_EQ(target.life, ::game::v1::LIFE_STATE_ALIVE);
+    ASSERT_EQ(state.events.size(), 1u);  // a blocked hit, no death
+    const auto& ev = state.events[0];
+    EXPECT_EQ(ev.tick(), 20u);
+    ASSERT_TRUE(ev.has_hit());
+    EXPECT_EQ(ev.hit().attacker_id(), 1u);
+    EXPECT_EQ(ev.hit().target_id(), 2u);
+    EXPECT_EQ(ev.hit().damage(), 0u);
+    EXPECT_TRUE(ev.hit().blocked());
+}
+
+TEST(Damage, BlockEndsAtItsUntilTick) {
+    lit::game::WorldState state;
+    state.tick = 21;
+    auto config = damage_config();
+    auto target = alive_player(2, 100);
+    target.block_until_tick = 21;  // covered ticks up to 20
+
+    lit::game::apply_damage(state, config, target, 30, 1);
+
+    EXPECT_EQ(target.hp, 70u);
+    ASSERT_EQ(state.events.size(), 1u);
+    EXPECT_FALSE(state.events[0].hit().blocked());
+}

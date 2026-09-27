@@ -31,6 +31,16 @@ void melee_strike(WorldState& state, const GameConfig& config, const SpatialInde
         apply_damage(state, config, target, ability.damage, self.id);
     });
 }
+
+// Tell every client this player used the ability (for its effect).
+void announce_use(WorldState& state, const Player& player, const AbilityConfig& ability) {
+    auto& ev = state.events.emplace_back();
+    ev.set_tick(state.tick);
+    auto* use = ev.mutable_ability();
+    use->set_player_id(player.id);
+    use->set_ability_id(ability.id);
+}
+
 // Launch a projectile from the player's centre along its aim. Returns false (and
 // launches nothing) when there is no aim.
 bool launch_projectile(WorldState& state, const Player& self, const AbilityConfig& ability) {
@@ -68,6 +78,22 @@ void resolve_attacks(WorldState& state, const GameConfig& config, const SpatialI
         // Used: the shared cooldown starts, with this ability's length.
         attacker.attack_ready_tick = state.tick + ability->cooldown_ticks;
         attacker.cooldown_ticks = ability->cooldown_ticks;
+        announce_use(state, attacker, *ability);
+    }
+}
+
+void activate_blocks(WorldState& state, const GameConfig& config) {
+    for (auto& [sid, player] : state.players) {
+        if (player.life != ::game::v1::LIFE_STATE_ALIVE) continue;
+        if (!player.attack) continue;                        // attack key not held
+        if (state.tick < player.block_ready_tick) continue;  // block on cooldown
+        const AbilityConfig* ability = find_ability(config, player.ability);
+        if (ability == nullptr || ability->kind != AbilityKind::Block) continue;
+
+        player.block_until_tick = state.tick + ability->duration_ticks;
+        player.block_ready_tick = state.tick + ability->cooldown_ticks;
+        player.block_cooldown_ticks = ability->cooldown_ticks;
+        announce_use(state, player, *ability);
     }
 }
 }  // namespace lit::game

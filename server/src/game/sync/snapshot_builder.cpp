@@ -18,6 +18,8 @@ namespace lit::game {
     you->set_respawn_tick(recipient.respawn_tick);
     you->set_attack_ready_tick(recipient.attack_ready_tick);
     you->set_attack_cooldown_ticks(recipient.cooldown_ticks);
+    you->set_block_ready_tick(recipient.block_ready_tick);
+    you->set_block_cooldown_ticks(recipient.block_cooldown_ticks);
 
     for (const auto& [session_id, p] : state.players) {
         if (p.life == ::game::v1::LIFE_STATE_NOT_SPAWNED) {

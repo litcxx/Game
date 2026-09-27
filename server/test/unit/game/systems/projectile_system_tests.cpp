@@ -206,3 +206,18 @@ TEST(Projectiles, NothingIsHitBeyondTheRange) {
     EXPECT_EQ(a.hp(2), 100u);
     EXPECT_TRUE(a.state.projectiles.empty());
 }
+
+TEST(Projectiles, AreSpentOnABlockWithoutDamage) {
+    Arena a;
+    a.add_player(2, 2, 300, 500).block_until_tick = 5;  // blocking (tick 0 < 5)
+    a.add_player(3, 2, 380, 500);                       // right behind it
+    a.fire(1, 1, 100, 500, 3000, 0, 1000);
+
+    a.step(0.1);
+
+    EXPECT_EQ(a.hp(2), 100u);
+    EXPECT_EQ(a.hp(3), 100u);  // the shot stopped at the block
+    EXPECT_TRUE(a.state.projectiles.empty());
+    ASSERT_EQ(a.state.events.size(), 1u);
+    EXPECT_TRUE(a.state.events[0].hit().blocked());
+}

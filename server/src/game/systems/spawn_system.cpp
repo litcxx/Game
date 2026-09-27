@@ -42,6 +42,9 @@ bool try_spawn(const WorldState& state, const GameConfig& config, Player& player
     player.attack = false;
     player.attack_ready_tick = 0;
     player.cooldown_ticks = 0;
+    player.block_until_tick = 0;
+    player.block_ready_tick = 0;
+    player.block_cooldown_ticks = 0;
     player.respawn_tick = 0;
     player.inputs.clear();  // drop stale pre-spawn commands (last_enqueued_seq stays monotonic)
     return true;

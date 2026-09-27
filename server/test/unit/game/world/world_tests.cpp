@@ -1,9 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "game/mock_client_gateway.hpp"
@@ -345,6 +347,29 @@ int count_deaths(const lit::test::MockClientGateway& gw, std::uint64_t session_i
             for (const auto& e : m.snapshot().events())
                 if (e.has_death()) ++n;
     return n;
+}
+
+// Hits on `id` seen by `session_id`, split into blocked and landed.
+std::pair<int, int> blocked_and_landed_hits(const lit::test::MockClientGateway& gw,
+                                            std::uint64_t session_id, std::uint32_t id) {
+    int blocked = 0;
+    int landed = 0;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_snapshot())
+            for (const auto& e : m.snapshot().events())
+                if (e.has_hit() && e.hit().target_id() == id) (e.hit().blocked() ? blocked : landed)++;
+    return {blocked, landed};
+}
+
+// AbilityEvents (player id, ability id) seen by `session_id`, in order.
+std::vector<std::pair<std::uint32_t, std::uint32_t>> ability_events(
+    const lit::test::MockClientGateway& gw, std::uint64_t session_id) {
+    std::vector<std::pair<std::uint32_t, std::uint32_t>> out;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_snapshot())
+            for (const auto& e : m.snapshot().events())
+                if (e.has_ability()) out.emplace_back(e.ability().player_id(), e.ability().ability_id());
+    return out;
 }
 
 void run_ticks(lit::game::World& world, int n, double dt) {
@@ -966,4 +991,121 @@ TEST(WorldRanged, SharedCooldownBlocksOtherAbilities) {
     victim = player_state_in(gw, 2, 2);
     ASSERT_TRUE(victim.has_value());
     EXPECT_EQ(victim->hp(), 60u);
+}
+
+// --- Block: its own cooldown, no damage while it lasts ----------------------
+// test_config() ability 3 "Guard": cooldown 10, lasts 9 ticks. Melee (1):
+// cooldown 10, 40 dmg. Cells: 4 -> (50,150), 5 -> (150,150), 6 -> (250,150).
+
+TEST(WorldBlock, BlockPressedWithASwingStopsIt) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "atk"));
+    incoming.push(hello_event(2, "def"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // within melee range
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/3));  // block on tick 1...
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));  // ...the swing on tick 1 too
+    run_ticks(world, 3, 0.016);
+
+    auto def = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(def.has_value());
+    EXPECT_EQ(def->hp(), 100u);
+    EXPECT_EQ(blocked_and_landed_hits(gw, 2, 2), std::make_pair(1, 0));
+}
+
+TEST(WorldBlock, BlockExpires) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "atk"));
+    incoming.push(hello_event(2, "def"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/3));  // block once: ticks 1..9
+    incoming.push(input_event(2, 0, 0, /*seq=*/2));            // then let go
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));  // swings on ticks 1 and 11
+    run_ticks(world, 12, 0.016);
+
+    auto def = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(def.has_value());
+    EXPECT_EQ(def->hp(), 60u);  // the second swing landed
+    EXPECT_EQ(blocked_and_landed_hits(gw, 2, 2), std::make_pair(1, 1));
+}
+
+TEST(WorldBlock, BlockStopsAProjectile) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "shooter"));
+    incoming.push(hello_event(2, "def"));
+    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    // The shot arrives on tick 19; block on tick 15 (active 15..23), idle before.
+    for (std::uint32_t seq = 1; seq <= 14; ++seq) incoming.push(input_event(2, 0, 0, seq));
+    incoming.push(attack_event(2, /*seq=*/15, /*ability=*/3));
+    incoming.push(input_event(2, 0, 0, /*seq=*/16));
+    run_ticks(world, 30, 0.016);
+
+    auto def = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(def.has_value());
+    EXPECT_EQ(def->hp(), 100u);
+    EXPECT_EQ(blocked_and_landed_hits(gw, 2, 2), std::make_pair(1, 0));
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->projectiles_size(), 0);  // spent on the block
+}
+
+TEST(WorldBlock, BlockHasItsOwnCooldown) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/3));  // block on tick 1
+    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/1));  // switch: swing on tick 2
+    run_ticks(world, 3, 0.016);
+
+    auto enemy = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(enemy.has_value());
+    EXPECT_EQ(enemy->hp(), 60u);  // the block did not delay the swing
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().block_ready_tick(), 11u);  // 1 + 10
+    EXPECT_EQ(snap->you().block_cooldown_ticks(), 10u);
+    EXPECT_EQ(snap->you().attack_ready_tick(), 12u);  // 2 + 10
+    EXPECT_EQ(snap->you().attack_cooldown_ticks(), 10u);
+}
+
+TEST(WorldAbility, EveryUseIsAnnounced) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/1));  // far away, an ally
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));    // a swing that hits nobody
+    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/3));    // a block
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    run_ticks(world, 3, 0.016);
+
+    auto seen = ability_events(gw, 1);
+    std::sort(seen.begin(), seen.end());
+    const std::vector<std::pair<std::uint32_t, std::uint32_t>> expected{{1, 1}, {1, 3}, {2, 2}};
+    EXPECT_EQ(seen, expected);
 }

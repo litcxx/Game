@@ -10,6 +10,16 @@ bool apply_damage(WorldState& state, const GameConfig& config, Player& target, s
     if (target.life != ::game::v1::LIFE_STATE_ALIVE) {
         return false;  // a body (or an unspawned player) takes no damage
     }
+    if (state.tick < target.block_until_tick) {  // blocking: the hit is stopped
+        auto& blocked_ev = state.events.emplace_back();
+        blocked_ev.set_tick(state.tick);
+        auto* hit = blocked_ev.mutable_hit();
+        hit->set_attacker_id(attacker_id);
+        hit->set_target_id(target.id);
+        hit->set_damage(0);
+        hit->set_blocked(true);
+        return false;
+    }
     const std::uint32_t dmg = std::min(amount, target.hp);
     target.hp -= dmg;
 

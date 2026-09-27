@@ -38,9 +38,12 @@ struct Player {
     std::uint32_t ability{0};  // selected Ability.id (0 = the first)
     std::int32_t aim_x{0};     // aim direction (projectiles)
     std::int32_t aim_y{0};
-    std::uint32_t attack_ready_tick{0};  // next tick this player may attack (shared cooldown)
-    std::uint32_t cooldown_ticks{0};     // length of the current cooldown (last ability used)
-    std::uint32_t respawn_tick{0};       // when DEAD: tick from which respawn is allowed
+    std::uint32_t attack_ready_tick{0};     // next tick this player may attack (shared cooldown)
+    std::uint32_t cooldown_ticks{0};        // length of the current cooldown (last ability used)
+    std::uint32_t block_until_tick{0};      // blocking (no damage) while tick < this
+    std::uint32_t block_ready_tick{0};      // next tick a block may start (its own cooldown)
+    std::uint32_t block_cooldown_ticks{0};  // length of the current block cooldown
+    std::uint32_t respawn_tick{0};          // when DEAD: tick from which respawn is allowed
 
     std::deque<InputCommand> inputs;     // pending per-tick commands (FIFO by seq)
     std::uint32_t last_enqueued_seq{0};  // highest seq accepted into the queue
