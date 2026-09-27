@@ -3,11 +3,11 @@ import { Application, Container, Graphics } from "pixi.js";
 import type { CellUpdate, PlayerInfo, PlayerState } from "../gen/game/v1/protocol_pb.js";
 import { Camera, UNITS_PER_CELL } from "./camera.js";
 
-// Renders the territory grid (owned cells tinted by faction, in-progress captures
-// by progress) and a coloured dot per player, through a Camera that either
-// follows the player (zoomed) or shows the whole map (press M). The world is
-// drawn in screen space each frame via the camera; player markers stay a fixed
-// pixel size, while the attack-range ring scales with the world.
+// Renders the territory grid and a coloured dot per player through a Camera
+// (follow / full-map). Driven per frame by main's ticker: the local player uses
+// its predicted position, remote players their interpolated position. Markers
+// stay a fixed pixel size; the attack-range ring scales with the world. The world
+// (grid) is only redrawn when the camera moved or territory changed.
 export class Scene {
   private readonly field = new Graphics();
   private readonly grid = new Graphics();
@@ -27,11 +27,17 @@ export class Scene {
   private attackRange = 0;          // world units; ring around self
   private attackCooldownTicks = 1;  // for the self cooldown bar
 
-  // Last snapshot, kept so the world can be re-rendered on camera changes
-  // (resize / mode toggle) without waiting for the next snapshot.
-  private lastPlayers: readonly PlayerState[] = [];
-  private lastReadyTick = 0;
-  private lastServerTick = 0;
+  // Per-frame positions: self is predicted, remotes are interpolated.
+  private selfPredicted = { x: 0, y: 0 };
+  private remotePositions = new Map<number, { x: number; y: number }>();
+  // Non-positional per-player state from snapshots (hp, fallback position).
+  private readonly meta = new Map<number, { x: number; y: number; hp: number }>();
+  private selfReadyTick = 0;
+  private serverTick = 0;
+
+  // Redraw the world only when the camera moved or territory changed.
+  private worldDirty = true;
+  private lastWorld = { scale: -1, cx: Number.NaN, cy: Number.NaN };
 
   constructor(private readonly app: Application) {
     app.stage.addChild(this.field);
@@ -40,7 +46,7 @@ export class Scene {
     this.camera.setScreen(app.screen.width, app.screen.height);
     app.renderer.on("resize", () => {
       this.camera.setScreen(this.app.screen.width, this.app.screen.height);
-      this.render();
+      this.worldDirty = true;
     });
   }
 
@@ -51,7 +57,6 @@ export class Scene {
   // The local player's own faction (spawn/roster don't echo it back to us).
   setSelfFaction(factionId: number): void {
     this.playerFaction.set(this.selfId, factionId);
-    this.drawPlayers();
   }
 
   setFactions(factions: readonly { id: number; color: number }[]): void {
@@ -72,13 +77,13 @@ export class Scene {
     this.attackCooldownTicks = Math.max(1, attackCooldownTicks);
     this.camera.setWorld(this.mapCols, this.mapRows);
     this.camera.setScreen(this.app.screen.width, this.app.screen.height);
-    this.render();
+    this.worldDirty = true;
   }
 
   // Toggle between following the player and the full-map overview (M key).
   toggleMap(): void {
     this.camera.toggle();
-    this.render();
+    this.worldDirty = true;
   }
 
   get mapMode(): boolean {
@@ -91,7 +96,7 @@ export class Scene {
     this.captureFaction = new Uint8Array(owners.length);
     this.captureProgress = new Uint8Array(owners.length);
     for (const c of captures) this.setCapture(c);
-    this.drawWorld();
+    this.worldDirty = true;
   }
 
   // Incremental territory changes from Snapshot.cells.
@@ -101,29 +106,39 @@ export class Scene {
       if (c.index < this.owners.length) this.owners[c.index] = c.owner;
       this.setCapture(c);
     }
-    this.drawWorld();
+    this.worldDirty = true;
   }
 
   upsertRoster(players: readonly PlayerInfo[]): void {
     for (const p of players) this.playerFaction.set(p.id, p.factionId);
-    this.drawPlayers();
   }
 
   removeFromRoster(ids: readonly number[]): void {
     for (const id of ids) this.playerFaction.delete(id);
   }
 
-  // `selfReadyTick`/`serverTick` drive the self cooldown bar.
-  applySnapshot(players: readonly PlayerState[], selfReadyTick = 0, serverTick = 0): void {
-    this.lastPlayers = players;
-    this.lastReadyTick = selfReadyTick;
-    this.lastServerTick = serverTick;
-    const self = players.find((p) => p.id === this.selfId);
-    if (self) this.camera.setTarget(self.x, self.y);
-    // Follow mode: the camera tracks the player, so the world shifts each
-    // snapshot. Map mode: the camera is static, so only the markers move.
-    if (this.camera.mode === "follow") this.drawWorld();
-    this.drawPlayers();
+  // Per-frame positions supplied by main.
+  setSelfPredicted(x: number, y: number): void {
+    this.selfPredicted = { x, y };
+  }
+  setRemotePositions(positions: Map<number, { x: number; y: number }>): void {
+    this.remotePositions = positions;
+  }
+
+  // Snapshot meta: hp + fallback position per player, and the self cooldown.
+  updateMeta(players: readonly PlayerState[], selfReadyTick: number, serverTick: number): void {
+    this.selfReadyTick = selfReadyTick;
+    this.serverTick = serverTick;
+    const seen = new Set<number>();
+    for (const p of players) {
+      seen.add(p.id);
+      this.meta.set(p.id, { x: p.x, y: p.y, hp: p.hp });
+    }
+    for (const id of [...this.meta.keys()]) if (!seen.has(id)) this.meta.delete(id);
+  }
+
+  remoteIds(): number[] {
+    return [...this.meta.keys()].filter((id) => id !== this.selfId);
   }
 
   // Canvas pixel -> cell (col, row). Caller validates bounds.
@@ -132,8 +147,20 @@ export class Scene {
     return [Math.floor(wx / UNITS_PER_CELL), Math.floor(wy / UNITS_PER_CELL)];
   }
 
-  private render(): void {
-    this.drawWorld();
+  // Draw one frame (called by main's ticker).
+  frame(): void {
+    const cam = this.camera;
+    cam.setTarget(this.selfPredicted.x, this.selfPredicted.y);
+    if (
+      this.worldDirty ||
+      cam.scale !== this.lastWorld.scale ||
+      cam.centerX !== this.lastWorld.cx ||
+      cam.centerY !== this.lastWorld.cy
+    ) {
+      this.drawWorld();
+      this.lastWorld = { scale: cam.scale, cx: cam.centerX, cy: cam.centerY };
+      this.worldDirty = false;
+    }
     this.drawPlayers();
   }
 
@@ -200,32 +227,33 @@ export class Scene {
   private drawPlayers(): void {
     const cam = this.camera;
     const seen = new Set<number>();
-    for (const p of this.lastPlayers) {
-      seen.add(p.id);
-      let g = this.sprites.get(p.id);
+    for (const [id, mp] of this.meta) {
+      seen.add(id);
+      let g = this.sprites.get(id);
       if (!g) {
         g = new Graphics();
         this.playersLayer.addChild(g);
-        this.sprites.set(p.id, g);
+        this.sprites.set(id, g);
       }
-      const isSelf = p.id === this.selfId;
+      const isSelf = id === this.selfId;
+      const pos = isSelf ? this.selfPredicted : (this.remotePositions.get(id) ?? { x: mp.x, y: mp.y });
       g.clear();
-      if (p.hp <= 0) {
+      if (mp.hp <= 0) {
         // Dead body: a faded, crossed-out marker with no bars until respawn.
         g.circle(0, 0, 5).fill({ color: 0x555555, alpha: 0.6 });
         g.moveTo(-4, -4).lineTo(4, 4).moveTo(-4, 4).lineTo(4, -4).stroke({ width: 1.5, color: 0x1a1a1a });
       } else {
-        const color = this.factionColors.get(this.playerFaction.get(p.id) ?? 0) ?? 0xaaaaaa;
+        const color = this.factionColors.get(this.playerFaction.get(id) ?? 0) ?? 0xaaaaaa;
         if (isSelf && this.attackRange > 0) {
           // Own attack area — scales with the world zoom.
           g.circle(0, 0, this.attackRange * cam.scale).stroke({ width: 1, color: 0xffffff, alpha: 0.22 });
         }
         g.circle(0, 0, 5).fill(color);
         if (isSelf) g.circle(0, 0, 8).stroke({ width: 2, color: 0xffffff });
-        this.drawHpBar(g, p.hp);
-        if (isSelf) this.drawCooldownBar(g, this.lastReadyTick, this.lastServerTick);
+        this.drawHpBar(g, mp.hp);
+        if (isSelf) this.drawCooldownBar(g, this.selfReadyTick, this.serverTick);
       }
-      const [sx, sy] = cam.worldToScreen(p.x, p.y);
+      const [sx, sy] = cam.worldToScreen(pos.x, pos.y);
       g.position.set(sx, sy);
     }
     for (const [id, g] of this.sprites) {

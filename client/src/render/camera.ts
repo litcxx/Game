@@ -53,6 +53,13 @@ export class Camera {
     this.setMode(this.mode === "follow" ? "map" : "follow");
   }
 
+  get centerX(): number {
+    return this.camX;
+  }
+  get centerY(): number {
+    return this.camY;
+  }
+
   worldToScreen(x: number, y: number): [number, number] {
     return [
       (x - this.camX) * this.scale + this.screenW / 2,

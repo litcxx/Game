@@ -59,6 +59,13 @@ export class GameClient {
     );
   }
 
+  // Send a batch of already-sequenced input frames (the predictor owns the seqs).
+  sendInputFrames(
+    frames: { seq: number; moveX: number; moveY: number; capturing: boolean; attack: boolean }[],
+  ): void {
+    this.dispatch(create(ClientMessageSchema, { payload: { case: "input", value: { frames } } }));
+  }
+
   private dispatch(msg: ClientMessage): void {
     this.ws?.send(toBinary(ClientMessageSchema, msg));
   }

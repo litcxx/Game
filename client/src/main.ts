@@ -3,7 +3,11 @@ import { Application, Graphics, Text } from "pixi.js";
 import { LifeState } from "./gen/game/v1/protocol_pb.js";
 import { installInput } from "./input/keyboard.js";
 import { GameClient } from "./net/client.js";
+import { Predictor, type PendingInput } from "./net/prediction.js";
 import { Scene } from "./render/scene.js";
+
+const FIXED_DT = 1 / 60;
+const MAX_ACCUM = 0.25;
 
 async function main(): Promise<void> {
   const app = new Application();
@@ -22,23 +26,12 @@ async function main(): Promise<void> {
   });
   status.position.set(34, 12);
   app.stage.addChild(status);
-
-  // FPS counter (top-right), refreshed a few times a second.
   const fps = new Text({
     text: "FPS —",
     style: { fill: "#8fce8f", fontFamily: "monospace", fontSize: 14 },
   });
   fps.anchor.set(1, 0);
   app.stage.addChild(fps);
-  let fpsAccum = 0;
-  app.ticker.add((ticker) => {
-    fps.position.set(app.screen.width - 12, 12);
-    fpsAccum += ticker.deltaMS;
-    if (fpsAccum >= 250) {
-      fpsAccum = 0;
-      fps.text = `FPS ${Math.round(ticker.FPS)}`;
-    }
-  });
 
   let myId = 0;
   let mapWidth = 0;
@@ -49,14 +42,17 @@ async function main(): Promise<void> {
   let tickRate = 60;
   const factionColors = new Map<number, number>();
 
-  // Local input intent; the server holds it until the next Input arrives.
-  const move = { x: 0, y: 0, capturing: false };
+  const readKeys = installInput();
   let attacking = false;
 
-  // Latest self state, refreshed from each snapshot.
   let alive = false;
   let serverTick = 0;
   let respawnTick = 0;
+  let predictor: Predictor | undefined;
+
+  let acc = 0;
+  let fpsAccum = 0;
+  const outbox: PendingInput[] = [];
 
   const drawSwatch = (factionId: number): void => {
     const color = factionColors.get(factionId);
@@ -88,6 +84,12 @@ async function main(): Promise<void> {
           );
         }
         scene.setFactions(w.factions.map((f) => ({ id: f.id, color: f.color })));
+        const speed = w.config?.moveSpeed ?? 300;
+        predictor = new Predictor(speed, FIXED_DT, {
+          maxX: mapWidth * 100 - 1,
+          maxY: mapHeight * 100 - 1,
+        });
+        predictor.reset({ x: (mapWidth * 100) / 2, y: (mapHeight * 100) / 2 }); // centre pre-spawn
         break;
       }
       case "mapState":
@@ -101,16 +103,26 @@ async function main(): Promise<void> {
         const s = msg.payload.value;
         serverTick = s.tick;
         const life = s.you?.life ?? LifeState.NOT_SPAWNED;
+        const wasAlive = alive;
         alive = life === LifeState.ALIVE;
         respawnTick = s.you?.respawnTick ?? 0;
-        scene.applySnapshot(s.players, s.you?.attackReadyTick ?? 0, serverTick);
+
+        const self = s.players.find((p) => p.id === myId);
+        if (predictor) {
+          if (alive && self) {
+            if (wasAlive) predictor.reconcile({ x: self.x, y: self.y }, s.you?.lastInputSeq ?? 0);
+            else predictor.reset({ x: self.x, y: self.y }); // just (re)spawned -> snap
+          } else if (self) {
+            predictor.reset({ x: self.x, y: self.y }); // dead body -> snap, stop predicting
+          }
+        }
+        scene.updateMeta(s.players, s.you?.attackReadyTick ?? 0, serverTick);
         scene.applyCellUpdates(s.cells);
 
         const mapHint = `M — ${scene.mapMode ? "к игроку" : "вся карта"}`;
-        const me = s.players.find((p) => p.id === myId);
-        if (alive && me) {
+        if (alive && self) {
           drawSwatch(myFaction);
-          status.text = `id=${myId} · hp=${me.hp} · фракция ${myFaction} · WASD ход · E захват · ЛКМ атака · ${mapHint}`;
+          status.text = `id=${myId} · hp=${self.hp} · фракция ${myFaction} · WASD ход · E захват · ЛКМ атака · ${mapHint}`;
         } else if (life === LifeState.DEAD) {
           drawSwatch(myFaction);
           const left = Math.max(0, Math.ceil((respawnTick - serverTick) / tickRate));
@@ -131,31 +143,21 @@ async function main(): Promise<void> {
 
   client.connect("player");
 
-  const pushInput = () => client.sendInput(move.x, move.y, move.capturing, attacking);
-
   window.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
     if (key === "m") {
       scene.toggleMap();
       return;
     }
-    // Faction selection (keys 1..N map to faction ids 1..N in config).
     const n = Number(e.key);
     if (Number.isInteger(n) && n >= 1 && n <= factionCount) selectedFaction = n;
   });
 
-  // Attack: hold the left mouse button while alive (area hit around you, the
-  // server fires each cooldown). A quick click still lands one swing — we hold
-  // attack=true for a minimum window so mousedown+mouseup can't collapse into a
-  // single server tick and cancel out.
+  // Attack: hold the left mouse button while alive. The fixed-step loop samples
+  // `attacking`; a min-hold keeps a quick click alive long enough to be sampled.
   const MIN_ATTACK_HOLD_MS = 60;
   let attackDownAt = 0;
   let releaseTimer: ReturnType<typeof setTimeout> | undefined;
-  const releaseAttack = () => {
-    releaseTimer = undefined;
-    attacking = false;
-    pushInput();
-  };
   app.canvas.addEventListener("mousedown", (e) => {
     if (e.button !== 0 || !alive) return;
     if (releaseTimer !== undefined) {
@@ -164,13 +166,16 @@ async function main(): Promise<void> {
     }
     attackDownAt = performance.now();
     attacking = true;
-    pushInput();
   });
   window.addEventListener("mouseup", (e) => {
     if (e.button !== 0 || !attacking || releaseTimer !== undefined) return;
     const held = performance.now() - attackDownAt;
-    if (held >= MIN_ATTACK_HOLD_MS) releaseAttack();
-    else releaseTimer = setTimeout(releaseAttack, MIN_ATTACK_HOLD_MS - held);
+    const release = () => {
+      releaseTimer = undefined;
+      attacking = false;
+    };
+    if (held >= MIN_ATTACK_HOLD_MS) release();
+    else releaseTimer = setTimeout(release, MIN_ATTACK_HOLD_MS - held);
   });
 
   // Click a cell to spawn / respawn — only when not alive (alive clicks attack).
@@ -181,15 +186,38 @@ async function main(): Promise<void> {
     if (col < 0 || row < 0 || col >= mapWidth || row >= mapHeight) return;
     myFaction = selectedFaction;
     scene.setSelfFaction(myFaction);
+    predictor?.reset({ x: col * 100 + 50, y: row * 100 + 50 }); // snap to the chosen cell centre
     client.sendSpawn(row * mapWidth + col, selectedFaction);
   });
 
-  // Movement + capture ('e'); merged with the current attack intent.
-  installInput((moveX, moveY, capturing) => {
-    move.x = moveX;
-    move.y = moveY;
-    move.capturing = capturing;
-    pushInput();
+  // Fixed-step input + local prediction, then render every frame.
+  app.ticker.add((ticker) => {
+    fpsAccum += ticker.deltaMS;
+    if (fpsAccum >= 250) {
+      fpsAccum = 0;
+      fps.text = `FPS ${Math.round(ticker.FPS)}`;
+    }
+    fps.position.set(app.screen.width - 12, 12);
+
+    if (predictor) {
+      acc = Math.min(acc + ticker.deltaMS / 1000, MAX_ACCUM);
+      while (acc >= FIXED_DT) {
+        acc -= FIXED_DT;
+        const k = readKeys();
+        outbox.push(
+          predictor.step({
+            moveX: alive ? k.moveX : 0,
+            moveY: alive ? k.moveY : 0,
+            capturing: k.capturing,
+            attack: alive && attacking,
+          }),
+        );
+      }
+      while (outbox.length > 0) client.sendInputFrames(outbox.splice(0, 8)); // protocol caps at 8
+      predictor.decayError(ticker.deltaMS / 1000);
+      scene.setSelfPredicted(predictor.renderPosition.x, predictor.renderPosition.y);
+    }
+    scene.frame();
   });
 }
 
