@@ -6,9 +6,9 @@ lives on the server; the browser client predicts, interpolates, and renders.
 
 > **Status: MVP, work in progress.** Transport (WebSocket + Protobuf + Asio
 > coroutines) and the authoritative game loop are in place: a **fixed-timestep**
-> simulation with movement, combat — data-driven abilities (a melee area attack
-> and a dodgeable projectile) with one shared cooldown — death/respawn, and
-> territory capture, all covered by unit tests. Input is consumed **one command per tick**
+> simulation with movement, combat — data-driven abilities: a melee area attack
+> and a dodgeable projectile on one shared cooldown, and a short block on its
+> own cooldown — death/respawn, and territory capture, all covered by unit tests. Input is consumed **one command per tick**
 > (deterministic replay), which the client uses for prediction. A TypeScript +
 > PixiJS client renders the map with client-side prediction/interpolation, a
 > follow camera, HUD, and minimap. Authentication is intentionally parked.
@@ -50,9 +50,9 @@ lives on the server; the browser client predicts, interpolates, and renders.
   timestep** (accumulator). It only orchestrates: each tick it drains the inbound
   queue (dispatch → handlers, input frames → per-player queue), then runs the
   systems in order — consume one input command per player, integrate movement,
-  rebuild the spatial index, resolve attacks (melee hits, projectile launches),
-  fly projectiles (swept hits), advance territory capture — and sends a
-  per-recipient snapshot.
+  rebuild the spatial index, start blocks, resolve attacks (melee hits,
+  projectile launches), fly projectiles (swept hits), advance territory
+  capture — and sends a per-recipient snapshot.
   `SelfState.last_input_seq` acks the consumed command so the client can
   reconcile its prediction.
 - **Systems over plain data.** All simulation state is one plain struct,
@@ -71,7 +71,12 @@ lives on the server; the browser client predicts, interpolates, and renders.
   flies from the shooter's centre along the aim; each tick its step is swept
   against alive enemies (segment vs body + projectile radius, first contact
   wins), so fast shots can't tunnel and a target that moves out of the line
-  dodges it.
+  dodges it. A `block` ability runs on its own timer, independent of the attack
+  cooldown: for `duration_ticks` the player takes no damage — `apply_damage()`
+  records a blocked hit instead (a projectile is spent on it). Blocks start
+  before attacks in the tick, so one pressed together with a swing already
+  stops it. Every ability use is announced (`AbilityEvent`) so clients can show
+  what others pressed.
 - **Seam.** `World` depends only on the abstract `IClientGateway`
   (`src/shared/net`), not on the network layer — so the game code stays testable
   (mockable gateway) and free of transport details.
@@ -84,8 +89,8 @@ src/net/       server, session — WebSocket transport + coroutines
 src/game/      the simulation:
   world/         World — tick orchestration, event dispatch, delivery; fixed step
   state/         WorldState, Player, Territory — plain data
-  systems/       input, movement, combat (abilities: melee + projectile launch),
-                 projectiles (flight, swept hits), damage, capture, spawn
+  systems/       input, movement, combat (abilities: blocks, melee, projectile
+                 launch), projectiles (flight, swept hits), damage, capture, spawn
   spatial/       SpatialIndex — uniform-grid broad phase over player positions;
                  geometry — swept segment-vs-circle hit test
   sync/          ServerMessage builders + per-recipient snapshot
@@ -129,7 +134,7 @@ ctest --preset debug-asan      # or run the binary directly:
 ./build/bin/unit_tests
 ```
 
-The `World` suites (presence, spawn, movement, combat, abilities, ranged,
+The `World` suites (presence, spawn, movement, combat, abilities, ranged, block,
 capture, input) test the game end to end through a mock gateway; `Damage`,
 `SpatialIndex`, `SegmentCircle`, `Projectiles` and `GameConfigParse` test those
 units directly. They all run by default.

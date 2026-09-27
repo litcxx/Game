@@ -123,11 +123,12 @@ flowchart LR
     consume["consume_inputs(state)<br/>одна команда/тик на игрока"]
     move["integrate_movement(state, dt)<br/>движение живых по интенту"]
     index["index_alive_players()<br/>SpatialIndex живых"]
+    blocks["activate_blocks(state)<br/>блок: своя перезарядка, до атак"]
     combat["resolve_attacks(state, index)<br/>способность: удар по площади / запуск снаряда"]
     proj["update_projectiles(state, index, dt)<br/>полёт + свип-попадания → apply_damage"]
     cap["update_captures(state)<br/>захват клетки под центром"]
     snap["send_snapshots()<br/>build_snapshot(state, получатель)"]
-    drain --> consume --> move --> index --> combat --> proj --> cap --> snap
+    drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> snap
 ```
 
 **Бой: способности.** Набор способностей задаёт конфиг сервера (`abilities`: вид
@@ -151,6 +152,14 @@ flowchart LR
 пути получает урон через `apply_damage` (зачёт стрелку), снаряд исчезает. Так
 быстрый снаряд не «проскакивает» цель, а цель, ушедшая с линии, уворачивается —
 компенсации лага нет намеренно.
+
+**Блок** (`block`): своя перезарядка, не общая с атаками — можно поставить блок,
+переключиться и сразу ударить. Блок начинается в `activate_blocks` раньше атак
+того же тика (нажатый одновременно с ударом уже защищает) и длится
+`duration_ticks`: всё это время `apply_damage` не снимает hp, а пишет `HitEvent`
+с `blocked = true` и `damage = 0`; снаряд, попавший в блок, гаснет. Каждое
+применение способности — удар (даже мимо), блок, выстрел — уходит всем как
+`AbilityEvent`: по нему клиенты рисуют удар и блок других игроков.
 
 ```mermaid
 sequenceDiagram
@@ -207,7 +216,7 @@ sequenceDiagram
 | `Session` | `src/net/session/session.cpp` | Транспорт: чтение/парсинг кадра, запись из канала |
 | `World` | `src/game/world/world.cpp` | Игровой цикл: диспатч событий, порядок систем в тике, доставка сообщений |
 | `WorldState` | `src/game/state/*` | Всё состояние симуляции как данные: игроки, сетка территорий, события |
-| системы | `src/game/systems/*` | Правила тика: ввод, движение, атаки (способности: удар, запуск снаряда), полёт снарядов, урон (`apply_damage`), захват, спавн |
+| системы | `src/game/systems/*` | Правила тика: ввод, движение, блоки, атаки (способности: удар, запуск снаряда), полёт снарядов, урон (`apply_damage`, в т.ч. блок), захват, спавн |
 | `SpatialIndex`, geometry | `src/game/spatial/*` | Равномерная сетка корзин: запросы «кто в радиусе r»; свип-тест «отрезок против окружности» |
 | sync | `src/game/sync/*` | Сборка `ServerMessage`; снапшот — на каждого получателя (шов для тумана войны) |
 | `IClientGateway` / `ClientEvent` | `src/shared/net/*` | Шов game↔net: отправка байт и событие `{session_id, kind, msg}` |

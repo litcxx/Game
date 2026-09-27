@@ -7,8 +7,9 @@ PixiJS + protobuf-es** over a WebSocket.
 
 > **Status: MVP, work in progress.** The full MVP loop works: faction choice,
 > spawn, movement, territory capture, combat — a melee area attack and a ranged
-> attack (a dodgeable projectile aimed with the mouse) on a 1–5 ability bar with
-> a shared cooldown — and death/respawn. Play is smooth via client-side
+> attack (a dodgeable projectile aimed with the mouse) on a shared cooldown, and
+> a block on its own cooldown, on a 1–5 ability bar — and death/respawn.
+> Everyone sees what others press: swings, blocks and blocked hits are drawn. Play is smooth via client-side
 > prediction + reconciliation (local player) and interpolation (remotes and
 > projectiles). Rendering follows the design concept: a tinted,
 > coordinate-labelled territory grid; glowing player tokens with grounding
@@ -48,6 +49,11 @@ positions.
 - **`src/abilities.ts`** — the ability model from `Welcome.abilities` (bar
   order), slot selection for keys 1–5, the aim vector sent in each input frame
   (unit vector × 1000 toward the cursor) and the cooldown-arc progress.
+- **`src/effects.ts`** — turns snapshot events into timed effects: a melee
+  swing, a block's shield (exactly its duration) and a blocked hit; remote
+  players' effects start after the interpolation delay so they match what is
+  drawn. **`src/render/effects.ts`** (`EffectsView`) draws them: a swing ring out
+  to the melee reach, a pale-gold shield ring, a burst with a rising "БЛОК".
 - **`src/render/camera.ts`** — `Camera`: world↔screen mapping in two modes —
   **follow** (exactly 15 cells wide, clamped to the map) and **map** (whole map).
 - **`src/render/scene.ts`** — `Scene`: camera-driven world (tonal territory cells,
@@ -58,7 +64,8 @@ positions.
 - **`src/render/projectiles.ts`** — `ProjectileView`: each projectile as a glowing
   dot in the shooter's faction colour at its real radius, with a short trail.
 - **`src/render/abilityBar.ts`** — `AbilityBar`: the bottom-centre 1–5 bar (◆ melee,
-  ● ranged, empty slots), the active slot gold-rimmed; shown while alive.
+  ● ranged, a shield for block, empty slots), the active slot gold-rimmed, each
+  slot darkened from the top while its cooldown runs; shown while alive.
 - **`src/render/factionPicker.ts`** — `FactionPicker`: faction cards (badge +
   name) above the hint line while not alive; click routing via the pure layout
   in `src/render/cardRow.ts`.
@@ -79,14 +86,16 @@ positions.
 |-------|--------|
 | **WASD** / arrows | Move |
 | Hold **E** | Capture the cell under you |
-| Hold **left mouse** | Use the active ability, repeating each cooldown: slot 1 hits every enemy around you, slot 2 fires a projectile toward the cursor |
-| Keys **1–5** | Pick the ability bar slot (1 melee, 2 ranged; 3–5 empty for now) |
+| Hold **left mouse** | Use the active ability, repeating each cooldown: slot 1 hits every enemy around you, slot 2 fires a projectile toward the cursor, slot 3 blocks |
+| Keys **1–5** | Pick the ability bar slot (1 melee, 2 ranged, 3 block; 4–5 empty for now) |
 | **Click** a faction card | Pick the faction for the next spawn (while not alive) |
 | **Click** a cell | Spawn / respawn there (while not alive) |
 | **M** | Toggle the full-map overview |
 
-The cooldown is shared: using an ability blocks every ability for that
+The attack cooldown is shared: using an attack blocks every attack for that
 ability's cooldown (melee 0.75 s, ranged 1.5 s by default — server config).
+The block has its own (0.75 s) and lasts 0.15 s: during it no hit, melee or
+projectile, deals damage — so you can block, switch and attack at once.
 
 ## Prerequisites
 
@@ -120,6 +129,7 @@ npx tsx scripts/interpolation_check.ts  # snapshot interpolation
 npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
 npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
+npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked effects, timing
 ```
 
 **End-to-end (start the server first):**
@@ -133,6 +143,7 @@ npx tsx scripts/combat_smoke.ts     # area attack -> hit -> death
 npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
 npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit
 npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
+npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
 ```
 
 ## Layout
@@ -140,9 +151,10 @@ npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 ```
 ../protocol/game/v1/protocol.proto   wire protocol (shared with the server)
 src/abilities.ts  ability model, slot keys, aim vector, cooldown progress
+src/effects.ts    snapshot events -> timed visual effects
 src/net/       GameClient (transport), Predictor (prediction), InterpolationBuffer
 src/render/    Camera, Scene (world + minimap), Hud, AbilityBar, FactionPicker,
-               ProjectileView
+               ProjectileView, EffectsView
 src/input/     keyboard (movement + capture), mouse (attack hold + aim cursor)
 src/gen/       generated protobuf-es code (git-ignored; run `npm run generate`)
 scripts/       headless pure-logic checks + end-to-end smoke tests (tsx)

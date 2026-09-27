@@ -8,8 +8,9 @@ interpolates the others, and renders.
 
 > **Status: MVP, work in progress.** Working today: connection/presence,
 > faction choice, spawn, movement, combat (a melee area attack and a dodgeable
-> ranged projectile on a 1–5 ability bar with a shared cooldown), death/respawn,
-> and territory capture — end to end from the C++ server to the browser client.
+> ranged projectile on a shared cooldown, and a block on its own, on a 1–5
+> ability bar), death/respawn, and territory capture — end to end from the C++
+> server to the browser client.
 > The server runs a fixed-timestep authoritative simulation; the client adds
 > client-side prediction and interpolation for smooth play, plus a follow
 > camera, HUD, and minimap.
@@ -57,8 +58,8 @@ npm run dev          # open the printed URL
 
 **Controls:** WASD move · hold **E** capture the cell under you · hold **left
 mouse** to use the active ability (**1** melee area attack, **2** ranged shot
-toward the cursor) · keys **1–5** pick the ability · click a faction card, then a
-cell to spawn/respawn · **M** toggle the full-map view.
+toward the cursor, **3** block) · keys **1–5** pick the ability · click a faction
+card, then a cell to spawn/respawn · **M** toggle the full-map view.
 
 ## Documentation
 
