@@ -1,6 +1,7 @@
 import { Application } from "pixi.js";
 
 import { abilitiesFromWelcome, aimVector, selectSlot, type AbilityInfo } from "./abilities.js";
+import { effectsFromEvents } from "./effects.js";
 import { LifeState } from "./gen/game/v1/protocol_pb.js";
 import { installInput } from "./input/keyboard.js";
 import { installMouse } from "./input/mouse.js";
@@ -154,7 +155,18 @@ async function main(): Promise<void> {
             predictor.reset({ x: self.x, y: self.y });
           }
         }
-        scene.updateMeta(s.players, s.you?.attackReadyTick ?? 0, s.you?.attackCooldownTicks ?? 0, serverTick);
+        scene.updateMeta(
+          s.players,
+          {
+            attackReadyTick: s.you?.attackReadyTick ?? 0,
+            attackCooldownTicks: s.you?.attackCooldownTicks ?? 0,
+            blockReadyTick: s.you?.blockReadyTick ?? 0,
+            blockCooldownTicks: s.you?.blockCooldownTicks ?? 0,
+          },
+          serverTick,
+        );
+        // What others (and you) pressed: swings, blocks, blocked hits.
+        scene.addEffects(effectsFromEvents(s.events, abilities, myId, performance.now(), INTERP_DELAY, 1000 / tickRate));
         scene.applyCellUpdates(s.cells);
         const remoteStates = new Map<number, RemoteState>();
         for (const p of s.players) if (p.id !== myId) remoteStates.set(p.id, { x: p.x, y: p.y });
@@ -265,6 +277,8 @@ async function main(): Promise<void> {
       if (pos && meta) shots.push({ ...pos, vx: meta.vx, vy: meta.vy, factionId: meta.factionId, radius: projectileRadius });
     }
     scene.setProjectiles(shots);
+    const cd = scene.cooldowns();
+    bar.setCooldowns(cd.attack, cd.block);
     const cur = mouse.cursor();
     if (cur) {
       const [wx, wy] = scene.screenToWorld(cur.x, cur.y);

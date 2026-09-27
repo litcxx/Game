@@ -3,6 +3,8 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import { cooldownProgress, type AbilityInfo } from "../abilities.js";
 import type { CellUpdate, PlayerInfo, PlayerState } from "../gen/game/v1/protocol_pb.js";
 import { Camera, UNITS_PER_CELL } from "./camera.js";
+import type { Effect } from "../effects.js";
+import { EffectsView } from "./effects.js";
 import { ProjectileView, type ProjectileSprite } from "./projectiles.js";
 
 interface PlayerSprite {
@@ -23,6 +25,7 @@ export class Scene {
   private readonly coordsLayer = new Container();
   private readonly playersLayer = new Container();
   private readonly projectileView = new ProjectileView();
+  private readonly effectsView = new EffectsView();
   private projectiles: readonly ProjectileSprite[] = [];
   private readonly sprites = new Map<number, PlayerSprite>();
   private readonly coordPool: Text[] = [];      // reused per-cell coordinate labels
@@ -51,7 +54,9 @@ export class Scene {
   private maxHp = 100;
   private activeAbility: AbilityInfo | undefined; // its range is the ring around self
   private aimTarget: { x: number; y: number } | undefined; // cursor in world units
-  private selfCooldownTicks = 0; // length of the current cooldown (SelfState)
+  private selfCooldownTicks = 0; // length of the current attack cooldown (SelfState)
+  private selfBlockReadyTick = 0; // the block's own cooldown (SelfState)
+  private selfBlockCooldownTicks = 0;
   private tickRate = 60;            // to interpolate the current server tick between snapshots
   private serverTickAtMs = 0;       // performance.now() when serverTick was last set
 
@@ -73,6 +78,7 @@ export class Scene {
     app.stage.addChild(this.coordsLayer);
     app.stage.addChild(this.playersLayer);
     app.stage.addChild(this.projectileView.gfx); // shots fly over the tokens
+    app.stage.addChild(this.effectsView.root); // swings, shields, blocked hits
     app.stage.addChild(this.minimapLayer);
     this.minimapLayer.addChild(this.minimapBg, this.minimapTerritory, this.minimapOverlay, this.minimapMask);
     this.minimapLayer.mask = this.minimapMask; // clip cells/dots to the box
@@ -202,6 +208,21 @@ export class Scene {
     }
   }
 
+  // Effects from snapshot events (see ../effects.ts), drawn until they end.
+  addEffects(effects: readonly Effect[]): void {
+    this.effectsView.add(effects);
+  }
+
+  // Cooldown progress now (0 just used .. 1 ready): the shared attack cooldown and
+  // the block's own — for the ring and the ability bar.
+  cooldowns(): { attack: number; block: number } {
+    const now = this.currentTick();
+    return {
+      attack: cooldownProgress(this.selfReadyTick, now, this.selfCooldownTicks),
+      block: cooldownProgress(this.selfBlockReadyTick, now, this.selfBlockCooldownTicks),
+    };
+  }
+
   // Projectiles to draw this frame (interpolated positions), supplied by main.
   setProjectiles(items: readonly ProjectileSprite[]): void {
     this.projectiles = items;
@@ -215,16 +236,17 @@ export class Scene {
     this.remotePositions = positions;
   }
 
-  // Snapshot meta: hp + fallback position per player, and the self cooldown
-  // (ready tick + the length of the ability used last).
+  // Snapshot meta: hp + fallback position per player, and the self cooldowns
+  // (ready tick + length): the shared attack one and the block's own.
   updateMeta(
     players: readonly PlayerState[],
-    selfReadyTick: number,
-    selfCooldownTicks: number,
+    cooldowns: { attackReadyTick: number; attackCooldownTicks: number; blockReadyTick: number; blockCooldownTicks: number },
     serverTick: number,
   ): void {
-    this.selfReadyTick = selfReadyTick;
-    this.selfCooldownTicks = selfCooldownTicks;
+    this.selfReadyTick = cooldowns.attackReadyTick;
+    this.selfCooldownTicks = cooldowns.attackCooldownTicks;
+    this.selfBlockReadyTick = cooldowns.blockReadyTick;
+    this.selfBlockCooldownTicks = cooldowns.blockCooldownTicks;
     this.serverTick = serverTick;
     this.serverTickAtMs = performance.now();
     const seen = new Set<number>();
@@ -270,6 +292,13 @@ export class Scene {
       (x, y) => cam.worldToScreen(x, y),
       cam.scale,
       (faction) => this.factionColors.get(faction) ?? 0xd8d8d0,
+    );
+    this.effectsView.draw(
+      performance.now(),
+      (id) => this.positionOf(id),
+      (x, y) => cam.worldToScreen(x, y),
+      cam.scale,
+      (id) => this.factionColors.get(this.playerFaction.get(id) ?? 0) ?? 0xd8d8d0,
     );
     this.drawMinimap();
   }
@@ -411,14 +440,22 @@ export class Scene {
         // Soft glow (layered translucent discs — cheaper than a blur filter).
         gfx.circle(0, 0, 11).fill({ color, alpha: 0.06 });
         gfx.circle(0, 0, 8).fill({ color, alpha: 0.1 });
-        // Active ability's reach (faint) + the cooldown arc sweeping around it;
-        // a projectile ability also shows the aim line toward the cursor.
+        // Active ability's reach (faint) + its cooldown arc sweeping around it; a
+        // projectile ability also shows the aim line toward the cursor. A block
+        // has no reach: a small guard circle carries the block's own cooldown.
         const ability = this.activeAbility;
-        if (isSelf && ability !== undefined && ability.range > 0) {
-          const rr = ability.range * cam.scale;
-          gfx.circle(0, 0, rr).stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
-          this.drawCooldownRing(gfx, rr, color);
-          if (ability.kind === "projectile") this.drawAimLine(gfx, pos, rr, color);
+        if (isSelf && ability !== undefined) {
+          const cd = this.cooldowns();
+          if (ability.kind === "block") {
+            const rr = 22;
+            gfx.circle(0, 0, rr).stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
+            this.drawCooldownRing(gfx, rr, color, cd.block);
+          } else if (ability.range > 0) {
+            const rr = ability.range * cam.scale;
+            gfx.circle(0, 0, rr).stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
+            this.drawCooldownRing(gfx, rr, color, cd.attack);
+            if (ability.kind === "projectile") this.drawAimLine(gfx, pos, rr, color);
+          }
         }
         // Grounding shadow: over the glow (so it isn't washed out) and under the
         // token; darker/larger so it reads against the dark map.
@@ -460,6 +497,13 @@ export class Scene {
     }
   }
 
+  // Where a player's token is drawn this frame: self predicted, others interpolated.
+  private positionOf(id: number): { x: number; y: number } | undefined {
+    if (id === this.selfId) return this.selfPredicted;
+    const mp = this.meta.get(id);
+    return this.remotePositions.get(id) ?? (mp ? { x: mp.x, y: mp.y } : undefined);
+  }
+
   // Mix a colour toward white by `amt` (0..1) — used for the token rim.
   private lighten(color: number, amt: number): number {
     const r = (color >> 16) & 0xff;
@@ -474,12 +518,10 @@ export class Scene {
     return this.serverTick + ((performance.now() - this.serverTickAtMs) / 1000) * this.tickRate;
   }
 
-  // Cooldown as an arc sweeping clockwise from the top around the ability's range
-  // ring; a full ring means the next attack is ready. The length is the cooldown
-  // of the ability used last (shared cooldown).
-  private drawCooldownRing(gfx: Graphics, radius: number, color: number): void {
-    const frac = cooldownProgress(this.selfReadyTick, this.currentTick(), this.selfCooldownTicks);
-    if (frac <= 0) return; // just attacked -> empty
+  // Cooldown as an arc sweeping clockwise from the top around the ring; a full
+  // ring means the ability is ready. `frac` comes from cooldowns().
+  private drawCooldownRing(gfx: Graphics, radius: number, color: number, frac: number): void {
+    if (frac <= 0) return; // just used -> empty
     const start = -Math.PI / 2; // top (12 o'clock)
     const arcColor = this.lighten(color, 0.4);
     if (frac >= 1) {
