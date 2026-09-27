@@ -3,6 +3,13 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import type { CellUpdate, PlayerInfo, PlayerState } from "../gen/game/v1/protocol_pb.js";
 import { Camera, UNITS_PER_CELL } from "./camera.js";
 
+interface PlayerSprite {
+  root: Container;
+  gfx: Graphics;
+  label: Text;
+  name: string; // last name set on the label (avoid re-rasterizing text each frame)
+}
+
 // Renders the territory grid and a coloured dot per player through a Camera
 // (follow / full-map). Driven per frame by main's ticker: the local player uses
 // its predicted position, remote players their interpolated position. Markers
@@ -13,11 +20,12 @@ export class Scene {
   private readonly grid = new Graphics();
   private readonly coordsLayer = new Container();
   private readonly playersLayer = new Container();
-  private readonly sprites = new Map<number, Graphics>();
+  private readonly sprites = new Map<number, PlayerSprite>();
   private readonly coordPool: Text[] = [];      // reused per-cell coordinate labels
   private readonly coordCellIdx: number[] = [];  // cell index each pooled label shows
   private readonly factionColors = new Map<number, number>();
   private readonly playerFaction = new Map<number, number>();
+  private readonly playerNames = new Map<number, string>();
   private readonly camera = new Camera();
 
   private mapCols = 1;
@@ -114,11 +122,17 @@ export class Scene {
   }
 
   upsertRoster(players: readonly PlayerInfo[]): void {
-    for (const p of players) this.playerFaction.set(p.id, p.factionId);
+    for (const p of players) {
+      this.playerFaction.set(p.id, p.factionId);
+      this.playerNames.set(p.id, p.name);
+    }
   }
 
   removeFromRoster(ids: readonly number[]): void {
-    for (const id of ids) this.playerFaction.delete(id);
+    for (const id of ids) {
+      this.playerFaction.delete(id);
+      this.playerNames.delete(id);
+    }
   }
 
   // Per-frame positions supplied by main.
@@ -278,52 +292,85 @@ export class Scene {
     const seen = new Set<number>();
     for (const [id, mp] of this.meta) {
       seen.add(id);
-      let g = this.sprites.get(id);
-      if (!g) {
-        g = new Graphics();
-        this.playersLayer.addChild(g);
-        this.sprites.set(id, g);
+      let s = this.sprites.get(id);
+      if (s === undefined) {
+        const root = new Container();
+        const gfx = new Graphics();
+        const label = new Text({ text: "", style: { fill: "#d8d8d0", fontFamily: "monospace", fontSize: 11 } });
+        label.anchor.set(0.5, 0);
+        root.addChild(gfx);
+        root.addChild(label);
+        this.playersLayer.addChild(root);
+        s = { root, gfx, label, name: "" };
+        this.sprites.set(id, s);
       }
+      const { root, gfx, label } = s;
       const isSelf = id === this.selfId;
       const pos = isSelf ? this.selfPredicted : (this.remotePositions.get(id) ?? { x: mp.x, y: mp.y });
-      g.clear();
+      gfx.clear();
+
       if (mp.hp <= 0) {
-        // Dead body: a faded, crossed-out marker with no bars until respawn.
-        g.circle(0, 0, 5).fill({ color: 0x555555, alpha: 0.6 });
-        g.moveTo(-4, -4).lineTo(4, 4).moveTo(-4, 4).lineTo(4, -4).stroke({ width: 1.5, color: 0x1a1a1a });
+        // Dead body: faded, crossed-out marker; no name/bars until respawn.
+        gfx.circle(0, 0, 5).fill({ color: 0x555555, alpha: 0.6 });
+        gfx.moveTo(-4, -4).lineTo(4, 4).moveTo(-4, 4).lineTo(4, -4).stroke({ width: 1.5, color: 0x1a1a1a });
+        label.visible = false;
       } else {
         const color = this.factionColors.get(this.playerFaction.get(id) ?? 0) ?? 0xaaaaaa;
+        // Grounding shadow.
+        gfx.ellipse(0, 7, 8, 3).fill({ color: 0x000000, alpha: 0.35 });
+        // Soft glow (layered translucent discs — cheaper than a blur filter).
+        gfx.circle(0, 0, 11).fill({ color, alpha: 0.06 });
+        gfx.circle(0, 0, 8).fill({ color, alpha: 0.1 });
+        // Own attack area — scales with the world zoom.
         if (isSelf && this.attackRange > 0) {
-          // Own attack area — scales with the world zoom.
-          g.circle(0, 0, this.attackRange * cam.scale).stroke({ width: 1, color: 0xffffff, alpha: 0.22 });
+          gfx.circle(0, 0, this.attackRange * cam.scale).stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
         }
-        g.circle(0, 0, 5).fill(color);
-        if (isSelf) g.circle(0, 0, 8).stroke({ width: 2, color: 0xffffff });
-        this.drawHpBar(g, mp.hp);
-        if (isSelf) this.drawCooldownBar(g, this.selfReadyTick, this.serverTick);
+        // Token.
+        gfx.circle(0, 0, 6).fill(color).stroke({ width: 1, color: this.lighten(color, 0.45), alpha: 0.9 });
+        if (isSelf) gfx.circle(0, 0, 9).stroke({ width: 1.5, color: 0xffffff, alpha: 0.85 });
+
+        // Name pill (above the head) + hp bar beneath it.
+        const name = this.playerNames.get(id) ?? "";
+        if (s.name !== name) {
+          label.text = name;
+          s.name = name;
+        }
+        const hasName = name.length > 0;
+        label.visible = hasName;
+        const pillW = hasName ? Math.max(label.width + 10, 20) : 16;
+        const pillY = -24;
+        if (hasName) {
+          gfx.roundRect(-pillW / 2, pillY, pillW, 15, 3).fill({ color: 0x0a0a0f, alpha: 0.6 });
+          label.position.set(0, pillY + 2);
+        }
+        const barY = hasName ? pillY + 15 : -13;
+        const frac = Math.max(0, Math.min(1, mp.hp / this.maxHp));
+        gfx.rect(-pillW / 2, barY, pillW, 2).fill({ color: 0x000000, alpha: 0.5 });
+        if (frac > 0) {
+          const hc = frac > 0.5 ? 0x37c837 : frac > 0.25 ? 0xd8a038 : 0xd83838;
+          gfx.rect(-pillW / 2, barY, pillW * frac, 2).fill(hc);
+        }
+        if (isSelf) this.drawCooldownBar(gfx, this.selfReadyTick, this.serverTick);
       }
+
       const [sx, sy] = cam.worldToScreen(pos.x, pos.y);
-      g.position.set(sx, sy);
+      root.position.set(sx, sy);
     }
-    for (const [id, g] of this.sprites) {
+    for (const [id, s] of this.sprites) {
       if (!seen.has(id)) {
-        g.destroy();
+        s.root.destroy({ children: true });
         this.sprites.delete(id);
       }
     }
   }
 
-  // Small HP bar above the head, green -> amber -> red as hp drops.
-  private drawHpBar(g: Graphics, hp: number): void {
-    const frac = Math.max(0, Math.min(1, hp / this.maxHp));
-    const w = 16;
-    const h = 3;
-    const y = -12;
-    g.rect(-w / 2, y, w, h).fill({ color: 0x000000, alpha: 0.6 });
-    if (frac > 0) {
-      const color = frac > 0.5 ? 0x37c837 : frac > 0.25 ? 0xd8a038 : 0xd83838;
-      g.rect(-w / 2, y, w * frac, h).fill(color);
-    }
+  // Mix a colour toward white by `amt` (0..1) — used for the token rim.
+  private lighten(color: number, amt: number): number {
+    const r = (color >> 16) & 0xff;
+    const g = (color >> 8) & 0xff;
+    const b = color & 0xff;
+    const m = (c: number) => Math.round(c + (255 - c) * amt);
+    return (m(r) << 16) | (m(g) << 8) | m(b);
   }
 
   // Cooldown bar under the head: fills up as the next attack recharges
@@ -333,7 +380,7 @@ export class Scene {
     const frac = Math.max(0, Math.min(1, 1 - remaining / this.attackCooldownTicks));
     const w = 16;
     const h = 3;
-    const y = 9;
+    const y = 12;
     g.rect(-w / 2, y, w, h).fill({ color: 0x000000, alpha: 0.6 });
     if (frac > 0) {
       const color = frac >= 1 ? 0x37c837 : 0x4a90d8;
