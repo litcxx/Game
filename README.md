@@ -6,11 +6,13 @@ their faction's colour. The **server is authoritative** — it owns all state an
 runs the simulation; the browser client sends intent, predicts its own player,
 interpolates the others, and renders.
 
-> **Status: MVP, work in progress.** Working today: connection/presence, spawn,
-> movement, area-attack combat, death/respawn, and territory capture — end to end
-> from the C++ server to the browser client. The server runs a fixed-timestep
-> authoritative simulation; the client adds client-side prediction and
-> interpolation for smooth play, plus a follow camera, HUD, and minimap.
+> **Status: MVP, work in progress.** Working today: connection/presence,
+> faction choice, spawn, movement, combat (a melee area attack and a dodgeable
+> ranged projectile on a 1–5 ability bar with a shared cooldown), death/respawn,
+> and territory capture — end to end from the C++ server to the browser client.
+> The server runs a fixed-timestep authoritative simulation; the client adds
+> client-side prediction and interpolation for smooth play, plus a follow
+> camera, HUD, and minimap.
 > Authentication is intentionally parked; fog of war and the fuller
 > faction/economy systems come later.
 
@@ -54,8 +56,9 @@ npm run dev          # open the printed URL
 ```
 
 **Controls:** WASD move · hold **E** capture the cell under you · hold **left
-mouse** for an area attack · click a cell to spawn/respawn · keys **1–N** pick a
-faction · **M** toggle the full-map view.
+mouse** to use the active ability (**1** melee area attack, **2** ranged shot
+toward the cursor) · keys **1–5** pick the ability · click a faction card, then a
+cell to spawn/respawn · **M** toggle the full-map view.
 
 ## Documentation
 

@@ -6,8 +6,9 @@ lives on the server; the browser client predicts, interpolates, and renders.
 
 > **Status: MVP, work in progress.** Transport (WebSocket + Protobuf + Asio
 > coroutines) and the authoritative game loop are in place: a **fixed-timestep**
-> simulation with movement, area-attack combat, death/respawn, and territory
-> capture, all covered by unit tests. Input is consumed **one command per tick**
+> simulation with movement, combat — data-driven abilities (a melee area attack
+> and a dodgeable projectile) with one shared cooldown — death/respawn, and
+> territory capture, all covered by unit tests. Input is consumed **one command per tick**
 > (deterministic replay), which the client uses for prediction. A TypeScript +
 > PixiJS client renders the map with client-side prediction/interpolation, a
 > follow camera, HUD, and minimap. Authentication is intentionally parked.
@@ -49,8 +50,9 @@ lives on the server; the browser client predicts, interpolates, and renders.
   timestep** (accumulator). It only orchestrates: each tick it drains the inbound
   queue (dispatch → handlers, input frames → per-player queue), then runs the
   systems in order — consume one input command per player, integrate movement,
-  rebuild the spatial index, resolve melee (death → respawn timer), advance
-  territory capture — and sends a per-recipient snapshot.
+  rebuild the spatial index, resolve attacks (melee hits, projectile launches),
+  fly projectiles (swept hits), advance territory capture — and sends a
+  per-recipient snapshot.
   `SelfState.last_input_seq` acks the consumed command so the client can
   reconcile its prediction.
 - **Systems over plain data.** All simulation state is one plain struct,
@@ -62,6 +64,14 @@ lives on the server; the browser client predicts, interpolates, and renders.
   scanning every pair. Outbound messages are pure builders in `src/game/sync`;
   the snapshot is built per recipient — the seam for interest management / fog
   of war.
+- **Abilities are data.** The config lists them (`melee` / `projectile` with
+  cooldown, damage, range, projectile speed and radius); Welcome sends them to
+  clients, and each input frame picks one by id plus an aim vector. Using any
+  ability starts one shared cooldown with that ability's length. A projectile
+  flies from the shooter's centre along the aim; each tick its step is swept
+  against alive enemies (segment vs body + projectile radius, first contact
+  wins), so fast shots can't tunnel and a target that moves out of the line
+  dodges it.
 - **Seam.** `World` depends only on the abstract `IClientGateway`
   (`src/shared/net`), not on the network layer — so the game code stays testable
   (mockable gateway) and free of transport details.
@@ -74,8 +84,10 @@ src/net/       server, session — WebSocket transport + coroutines
 src/game/      the simulation:
   world/         World — tick orchestration, event dispatch, delivery; fixed step
   state/         WorldState, Player, Territory — plain data
-  systems/       input, movement, combat (melee), damage, capture, spawn
-  spatial/       SpatialIndex — uniform-grid broad phase over player positions
+  systems/       input, movement, combat (abilities: melee + projectile launch),
+                 projectiles (flight, swept hits), damage, capture, spawn
+  spatial/       SpatialIndex — uniform-grid broad phase over player positions;
+                 geometry — swept segment-vs-circle hit test
   sync/          ServerMessage builders + per-recipient snapshot
 src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue)
 config/        config.json (runtime settings + game rules)
@@ -107,7 +119,8 @@ cmake --build build -j
 
 Presets differ only in build type / sanitizer (`debug-asan` enables
 Address+UB sanitizers). The server reads its address, port, thread count, and the
-game rules (matching `game.v1.GameConfig`) from the config file.
+game rules (matching `game.v1.GameConfig`, plus the factions and the abilities)
+from the config file; invalid abilities stop the server at startup.
 
 ## Tests
 
@@ -116,8 +129,9 @@ ctest --preset debug-asan      # or run the binary directly:
 ./build/bin/unit_tests
 ```
 
-The `World` suites (presence, spawn, movement, combat, capture, input) test the
-game end to end through a mock gateway; `Damage` and `SpatialIndex` test those
+The `World` suites (presence, spawn, movement, combat, abilities, ranged,
+capture, input) test the game end to end through a mock gateway; `Damage`,
+`SpatialIndex`, `SegmentCircle`, `Projectiles` and `GameConfigParse` test those
 units directly. They all run by default.
 Some legacy suites (the old binary protocol and the parked auth/DB integration
 tests) remain disabled in the CMake test lists.

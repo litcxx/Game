@@ -5,12 +5,15 @@ all state; the client sends per-tick input, **predicts** its own player locally,
 **interpolates** everyone else, and renders the world. Built with **TypeScript +
 PixiJS + protobuf-es** over a WebSocket.
 
-> **Status: MVP, work in progress.** The full MVP loop works: spawn, movement,
-> territory capture, area-attack combat, death/respawn. Play is smooth via
-> client-side prediction + reconciliation (local player) and interpolation
-> (remotes). Rendering follows the design concept: a tinted, coordinate-labelled
-> territory grid; glowing player tokens with grounding shadow, name pill and hp
-> bar; an attack-range ring with a cooldown arc; a follow camera (with a full-map
+> **Status: MVP, work in progress.** The full MVP loop works: faction choice,
+> spawn, movement, territory capture, combat — a melee area attack and a ranged
+> attack (a dodgeable projectile aimed with the mouse) on a 1–5 ability bar with
+> a shared cooldown — and death/respawn. Play is smooth via client-side
+> prediction + reconciliation (local player) and interpolation (remotes and
+> projectiles). Rendering follows the design concept: a tinted,
+> coordinate-labelled territory grid; glowing player tokens with grounding
+> shadow, name pill and hp bar; the active ability's range ring with a cooldown
+> arc (plus an aim line for the ranged attack); a follow camera (with a full-map
 > overview on **M**); a corner HUD; and a local minimap.
 
 ## Tech stack
@@ -39,22 +42,36 @@ positions.
   snap to the authoritative position, replay the rest — easing any correction so
   it never pops.
 - **`src/net/interpolation.ts`** — `InterpolationBuffer`: buffers snapshots and
-  returns each remote player's position ~100 ms in the past (smooth motion
-  between 20 Hz snapshots).
+  returns positions ~100 ms in the past (smooth motion between 20 Hz
+  snapshots) — for remote players and, in a second buffer, for projectiles;
+  `ids()` keeps a projectile drawn until render time reaches its last position.
+- **`src/abilities.ts`** — the ability model from `Welcome.abilities` (bar
+  order), slot selection for keys 1–5, the aim vector sent in each input frame
+  (unit vector × 1000 toward the cursor) and the cooldown-arc progress.
 - **`src/render/camera.ts`** — `Camera`: world↔screen mapping in two modes —
   **follow** (exactly 15 cells wide, clamped to the map) and **map** (whole map).
 - **`src/render/scene.ts`** — `Scene`: camera-driven world (tonal territory cells,
   coordinate labels, gridlines), player tokens (shadow, glow, faction dot, name
-  pill, hp bar), the self attack-range ring with its cooldown arc, and the local
-  **minimap** (~1.5× the view, gridded, viewport rect + player dots).
+  pill, hp bar), the self ring showing the **active ability's** range with the
+  shared-cooldown arc (and an aim line for the ranged attack), projectiles, and
+  the local **minimap** (~1.5× the view, gridded, viewport rect + player dots).
+- **`src/render/projectiles.ts`** — `ProjectileView`: each projectile as a glowing
+  dot in the shooter's faction colour at its real radius, with a short trail.
+- **`src/render/abilityBar.ts`** — `AbilityBar`: the bottom-centre 1–5 bar (◆ melee,
+  ● ranged, empty slots), the active slot gold-rimmed; shown while alive.
+- **`src/render/factionPicker.ts`** — `FactionPicker`: faction cards (badge +
+  name) above the hint line while not alive; click routing via the pure layout
+  in `src/render/cardRow.ts`.
 - **`src/render/hud.ts`** — `Hud`: faction badge + territory stats (top-left),
   online + FPS (top-right), an HP gauge (bottom-left), a current-cell gauge
   (bottom-right), and a centered hint line.
 - **`src/input/keyboard.ts`** — `installInput()` returns a reader for the current
   WASD/arrows + **E** intent, sampled once per fixed step.
+- **`src/input/mouse.ts`** — `installMouse()`: left-button hold (with a 60 ms
+  min-hold so quick clicks reach a fixed step) and the cursor position for aiming.
 - **`src/main.ts`** — wires it together: the fixed-step loop (sample → predict →
-  batch-send), snapshot reconciliation, remote interpolation, HUD updates, mouse
-  attack, and click-to-spawn.
+  batch-send, with the active ability and aim), snapshot reconciliation,
+  interpolation, HUD updates, keys 1–5, faction picking and click-to-spawn.
 
 ## Controls
 
@@ -62,10 +79,14 @@ positions.
 |-------|--------|
 | **WASD** / arrows | Move |
 | Hold **E** | Capture the cell under you |
-| Hold **left mouse** | Area attack around you (fires each cooldown) |
-| **Click** a cell | Spawn / respawn there (only while not alive) |
-| Keys **1–N** | Pick faction (before spawning) |
+| Hold **left mouse** | Use the active ability, repeating each cooldown: slot 1 hits every enemy around you, slot 2 fires a projectile toward the cursor |
+| Keys **1–5** | Pick the ability bar slot (1 melee, 2 ranged; 3–5 empty for now) |
+| **Click** a faction card | Pick the faction for the next spawn (while not alive) |
+| **Click** a cell | Spawn / respawn there (while not alive) |
 | **M** | Toggle the full-map overview |
+
+The cooldown is shared: using an ability blocks every ability for that
+ability's cooldown (melee 0.75 s, ranged 1.5 s by default — server config).
 
 ## Prerequisites
 
@@ -97,6 +118,8 @@ npm run build        # generate + typecheck + vite build (-> dist/)
 npx tsx scripts/prediction_check.ts     # integrate / predict / reconcile
 npx tsx scripts/interpolation_check.ts  # snapshot interpolation
 npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
+npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
+npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
 ```
 
 **End-to-end (start the server first):**
@@ -108,15 +131,19 @@ npx tsx scripts/capture_smoke.ts    # hold E -> capture a cell
 npx tsx scripts/takeover_smoke.ts   # capture an enemy-owned cell
 npx tsx scripts/combat_smoke.ts     # area attack -> hit -> death
 npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
+npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit
+npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 ```
 
 ## Layout
 
 ```
 ../protocol/game/v1/protocol.proto   wire protocol (shared with the server)
+src/abilities.ts  ability model, slot keys, aim vector, cooldown progress
 src/net/       GameClient (transport), Predictor (prediction), InterpolationBuffer
-src/render/    Camera, Scene (world + minimap), Hud
-src/input/     keyboard — movement + capture intent reader
+src/render/    Camera, Scene (world + minimap), Hud, AbilityBar, FactionPicker,
+               ProjectileView
+src/input/     keyboard (movement + capture), mouse (attack hold + aim cursor)
 src/gen/       generated protobuf-es code (git-ignored; run `npm run generate`)
 scripts/       headless pure-logic checks + end-to-end smoke tests (tsx)
 docs/          sequence diagram + the design concept

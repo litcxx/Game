@@ -40,19 +40,20 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant tick as app.ticker
-    participant kb as keyboard reader
+    participant kb as keyboard + mouse
     participant pred as Predictor
     participant net as GameClient
     participant scene as Scene + Hud
 
     loop каждый фиксированный шаг (1/60)
-        tick->>kb: sample()  (move / capture / attack)
+        tick->>kb: sample()  (move / capture / attack + активная способность + прицел на курсор)
         tick->>pred: step(input) → предсказать локально, вернуть кадр(seq)
         tick->>net: sendInputFrames(batch ≤ 8)
     end
     tick->>pred: decayError(dt)  (сглаживание коррекции)
     tick->>scene: setSelfPredicted, setRemotePositions(interp.sample)
-    tick->>scene: frame() — мир (камера), токены, миникарта, HUD
+    tick->>scene: setProjectiles(projInterp.ids / sample), setAimTarget(курсор)
+    tick->>scene: frame() — мир (камера), токены, снаряды, кольцо способности, миникарта, HUD
 ```
 
 ## Снапшот → коррекция
@@ -66,17 +67,20 @@ sequenceDiagram
     participant interp as InterpolationBuffer
     participant scene as Scene + Hud
 
-    ws-->>main: Snapshot{you, players, cells, events}
+    ws-->>main: Snapshot{you, players, cells, events, projectiles}
     main->>pred: reconcile(you.pos, you.last_input_seq)
     Note over pred: выкинуть подтверждённые кадры, снап к авторитету, реплей остатка
-    main->>interp: push(now, позиции чужих)
-    main->>scene: updateMeta / applyCellUpdates (hp, владельцы, захват)
+    main->>interp: push(now, позиции чужих) и push(now, позиции снарядов)
+    main->>scene: updateMeta (hp, готовность + длина кулдауна) / applyCellUpdates
     main->>scene: HUD (фракция, клетки/%, В СЕТИ, HP, текущая клетка)
 ```
 
-> Статус: реализован весь цикл MVP — спавн по клику, движение (**WASD**), захват
-> клетки (удержание **E**), атака по площади (удержание **ЛКМ**), смерть/респавн —
-> с клиентским предсказанием/интерполяцией. Рендер по концепту: сетка территорий
-> с координатами, токены со свечением/тенью/именем/hp, кольцо радиуса атаки с
-> дугой кулдауна, follow-камера (обзор всей карты — **M**), угловой HUD и
+> Статус: реализован весь цикл MVP — выбор фракции (карточки внизу), спавн по
+> клику, движение (**WASD**), захват клетки (удержание **E**), бой (удержание
+> **ЛКМ**): способность из панели **1–5** — удар по площади или выстрел снарядом
+> в сторону курсора, общий кулдаун — и смерть/респавн, с клиентским
+> предсказанием/интерполяцией. Рендер по концепту: сетка территорий с
+> координатами, токены со свечением/тенью/именем/hp, кольцо дальности активной
+> способности с дугой кулдауна (и линией прицела для выстрела), снаряды со следом,
+> панель способностей, follow-камера (обзор всей карты — **M**), угловой HUD и
 > локальная миникарта.

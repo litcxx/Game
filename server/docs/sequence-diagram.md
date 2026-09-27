@@ -115,7 +115,7 @@ sequenceDiagram
 `World` только оркестрирует: всё состояние симуляции — простая структура
 `WorldState` (`src/game/state`), а правила — свободные функции-системы над ней
 (`src/game/systems`). После движения `World` перестраивает `SpatialIndex` живых
-игроков — бой спрашивает у него «кто в радиусе», а не перебирает все пары.
+игроков — удар и снаряды спрашивают у него «кто рядом», а не перебирают все пары.
 
 ```mermaid
 flowchart LR
@@ -123,20 +123,58 @@ flowchart LR
     consume["consume_inputs(state)<br/>одна команда/тик на игрока"]
     move["integrate_movement(state, dt)<br/>движение живых по интенту"]
     index["index_alive_players()<br/>SpatialIndex живых"]
-    combat["resolve_melee(state, index)<br/>удар по площади → apply_damage"]
+    combat["resolve_attacks(state, index)<br/>способность: удар по площади / запуск снаряда"]
+    proj["update_projectiles(state, index, dt)<br/>полёт + свип-попадания → apply_damage"]
     cap["update_captures(state)<br/>захват клетки под центром"]
     snap["send_snapshots()<br/>build_snapshot(state, получатель)"]
-    drain --> consume --> move --> index --> combat --> cap --> snap
+    drain --> consume --> move --> index --> combat --> proj --> cap --> snap
 ```
 
-**Бой (area attack).** Пока игрок держит клавишу атаки (`InputFrame.attack`), раз
-в `attack_cooldown_ticks` он бьёт по площади: урон `attack_damage` получают все
-живые враги (иной фракции) в радиусе `attack_range` — кандидатов даёт запрос к
-`SpatialIndex`. Любая потеря hp идёт через единую точку `apply_damage()`: только
+**Бой: способности.** Набор способностей задаёт конфиг сервера (`abilities`: вид
+`melee` / `projectile`, перезарядка, урон, дальность, скорость и радиус снаряда);
+клиент получает его в `Welcome.abilities`. Пока игрок держит клавишу атаки
+(`InputFrame.attack`), выбранная способность (`InputFrame.ability`, 0 = первая)
+срабатывает, как только готова **общая** перезарядка; применение любой способности
+ставит `attack_ready_tick = tick + её cooldown_ticks`, а длину сообщает
+`SelfState.attack_cooldown_ticks`. **Удар** (`melee`): урон получают все живые
+враги (иной фракции) в радиусе `range` — кандидатов даёт запрос к `SpatialIndex`. Любая потеря hp идёт через единую точку `apply_damage()`: только
 по живым, урон не больше остатка hp, `HitEvent`; hp → 0 → `DEAD`, тело остаётся на
 месте, `respawn_tick = tick + respawn_delay_ticks`, `DeathEvent`. `SpawnRequest`
 из `DEAD` принимается после `respawn_tick`. Удары и смерти уходят в
 `Snapshot.events` — для анимаций и ленты боя.
+
+**Выстрел** (`projectile`): снаряд вылетает из центра стрелка вдоль прицела
+(`InputFrame.aim_x/aim_y`; нет прицела — нет выстрела и перезарядка не тратится),
+летит `range` единиц со скоростью `projectile_speed` и исчезает. Каждый тик шаг
+снаряда проверяется «отрезок против окружности» (радиус тела `player_radius` +
+радиус снаряда) по живым врагам — не стрелку и не союзникам; первое касание по
+пути получает урон через `apply_damage` (зачёт стрелку), снаряд исчезает. Так
+быстрый снаряд не «проскакивает» цель, а цель, ушедшая с линии, уворачивается —
+компенсации лага нет намеренно.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Стрелок
+    participant world as World.tick
+    participant P as Снаряд
+    participant V as Враг на пути
+
+    A->>world: Input{attack, ability = выстрел, aim}
+    world->>P: resolve_attacks: снаряд из центра A вдоль aim
+    world->>world: attack_ready_tick = tick + cooldown выстрела (общая перезарядка)
+    loop каждый тик, пока летит
+        world->>P: update_projectiles: шаг p0 → p1 (не дальше остатка дальности)
+        world->>V: SpatialIndex → свип «отрезок против окружности»
+        alt первое касание врага
+            world->>V: apply_damage(урон выстрела) → HitEvent (DeathEvent)
+            world->>P: снаряд исчезает
+        else дальность кончилась или вылетел за карту
+            world->>P: снаряд исчезает
+        end
+    end
+    world-->>A: Snapshot.projectiles (позиция, скорость, фракция)
+```
 
 ```mermaid
 sequenceDiagram
@@ -169,8 +207,8 @@ sequenceDiagram
 | `Session` | `src/net/session/session.cpp` | Транспорт: чтение/парсинг кадра, запись из канала |
 | `World` | `src/game/world/world.cpp` | Игровой цикл: диспатч событий, порядок систем в тике, доставка сообщений |
 | `WorldState` | `src/game/state/*` | Всё состояние симуляции как данные: игроки, сетка территорий, события |
-| системы | `src/game/systems/*` | Правила тика: ввод, движение, бой (melee), урон (`apply_damage`), захват, спавн |
-| `SpatialIndex` | `src/game/spatial/*` | Равномерная сетка корзин: запросы «кто в радиусе r» |
+| системы | `src/game/systems/*` | Правила тика: ввод, движение, атаки (способности: удар, запуск снаряда), полёт снарядов, урон (`apply_damage`), захват, спавн |
+| `SpatialIndex`, geometry | `src/game/spatial/*` | Равномерная сетка корзин: запросы «кто в радиусе r»; свип-тест «отрезок против окружности» |
 | sync | `src/game/sync/*` | Сборка `ServerMessage`; снапшот — на каждого получателя (шов для тумана войны) |
 | `IClientGateway` / `ClientEvent` | `src/shared/net/*` | Шов game↔net: отправка байт и событие `{session_id, kind, msg}` |
 | `TSQueue` | `src/shared/utils/ts_queue.hpp` | Потокобезопасная очередь входящих |
