@@ -393,9 +393,10 @@ export class Scene {
     const start = -Math.PI / 2; // top (12 o'clock)
     const arcColor = this.lighten(color, 0.4);
     if (frac >= 1) {
-      gfx.circle(0, 0, radius).stroke({ width: 2, color: arcColor, alpha: 0.9 });
+      gfx.circle(0, 0, radius).stroke({ width: 2, color: arcColor, alpha: 0.76 });
     } else {
-      gfx.arc(0, 0, radius, start, start + frac * Math.PI * 2).stroke({ width: 2, color: arcColor, alpha: 0.9 });
+      gfx.moveTo(0, -radius); // begin at the arc's start -> no line from the centre
+      gfx.arc(0, 0, radius, start, start + frac * Math.PI * 2).stroke({ width: 2, color: arcColor, alpha: 0.76 });
     }
   }
 
