@@ -32,12 +32,6 @@ export class Scene {
   private readonly minimapW = 176;  // fixed width; height follows the screen aspect
   private minimapH = 100;
 
-  private readonly watermarkLayer = new Container();
-  private readonly watermarks = new Map<number, Text>();       // faction id -> big faint label
-  private readonly factionNames = new Map<number, string>();
-  private readonly factionSumCol = new Map<number, number>();  // running centroid sums
-  private readonly factionSumRow = new Map<number, number>();
-  private readonly factionCentroid = new Map<number, { x: number; y: number }>();  // smoothed (world)
   private readonly factionColors = new Map<number, number>();
   private readonly playerFaction = new Map<number, number>();
   private readonly playerNames = new Map<number, string>();
@@ -71,7 +65,6 @@ export class Scene {
   constructor(private readonly app: Application) {
     app.stage.addChild(this.field);
     app.stage.addChild(this.grid);
-    app.stage.addChild(this.watermarkLayer);
     app.stage.addChild(this.coordsLayer);
     app.stage.addChild(this.playersLayer);
     app.stage.addChild(this.minimapLayer);
@@ -95,11 +88,8 @@ export class Scene {
     this.playerFaction.set(this.selfId, factionId);
   }
 
-  setFactions(factions: readonly { id: number; color: number; name: string }[]): void {
-    for (const f of factions) {
-      this.factionColors.set(f.id, f.color);
-      this.factionNames.set(f.id, f.name);
-    }
+  setFactions(factions: readonly { id: number; color: number }[]): void {
+    for (const f of factions) this.factionColors.set(f.id, f.color);
   }
 
   setConfig(
@@ -137,16 +127,9 @@ export class Scene {
     this.captureFaction = new Uint8Array(owners.length);
     this.captureProgress = new Uint8Array(owners.length);
     this.ownedCount.clear();
-    this.factionSumCol.clear();
-    this.factionSumRow.clear();
     for (let i = 0; i < owners.length; i++) {
       const o = owners[i]!;
-      if (o === 0) continue;
-      const col = i % this.mapCols;
-      const row = (i / this.mapCols) | 0;
-      this.ownedCount.set(o, (this.ownedCount.get(o) ?? 0) + 1);
-      this.factionSumCol.set(o, (this.factionSumCol.get(o) ?? 0) + col);
-      this.factionSumRow.set(o, (this.factionSumRow.get(o) ?? 0) + row);
+      if (o !== 0) this.ownedCount.set(o, (this.ownedCount.get(o) ?? 0) + 1);
     }
     for (const c of captures) this.setCapture(c);
     this.worldDirty = true;
@@ -159,18 +142,8 @@ export class Scene {
       if (c.index < this.owners.length) {
         const old = this.owners[c.index]!;
         if (old !== c.owner) {
-          const col = c.index % this.mapCols;
-          const row = (c.index / this.mapCols) | 0;
-          if (old !== 0) {
-            this.ownedCount.set(old, (this.ownedCount.get(old) ?? 1) - 1);
-            this.factionSumCol.set(old, (this.factionSumCol.get(old) ?? 0) - col);
-            this.factionSumRow.set(old, (this.factionSumRow.get(old) ?? 0) - row);
-          }
-          if (c.owner !== 0) {
-            this.ownedCount.set(c.owner, (this.ownedCount.get(c.owner) ?? 0) + 1);
-            this.factionSumCol.set(c.owner, (this.factionSumCol.get(c.owner) ?? 0) + col);
-            this.factionSumRow.set(c.owner, (this.factionSumRow.get(c.owner) ?? 0) + row);
-          }
+          if (old !== 0) this.ownedCount.set(old, (this.ownedCount.get(old) ?? 1) - 1);
+          if (c.owner !== 0) this.ownedCount.set(c.owner, (this.ownedCount.get(c.owner) ?? 0) + 1);
           this.owners[c.index] = c.owner;
         }
       }
@@ -268,7 +241,6 @@ export class Scene {
       this.worldDirty = false;
     }
     this.drawPlayers();
-    this.drawWatermarks();
     this.drawMinimap();
   }
 
@@ -556,53 +528,6 @@ export class Scene {
       const pos = isSelf ? this.selfPredicted : (this.remotePositions.get(id) ?? { x: mp.x, y: mp.y });
       const color = isSelf ? 0xffffff : (this.factionColors.get(this.playerFaction.get(id) ?? 0) ?? 0xaaaaaa);
       g.circle(toX(pos.x), toY(pos.y), isSelf ? 2.5 : 1.8).fill({ color });
-    }
-  }
-
-  // Big, faint faction name over its territory centroid; the centroid is smoothed
-  // so it drifts slowly instead of jumping when cells change hands.
-  private drawWatermarks(): void {
-    const cam = this.camera;
-    if (cam.mode === "map") {
-      for (const wm of this.watermarks.values()) wm.visible = false;
-      return;
-    }
-    for (const [faction, count] of this.ownedCount) {
-      const existing = this.watermarks.get(faction);
-      if (count <= 0) {
-        if (existing) existing.visible = false;
-        this.factionCentroid.delete(faction);
-        continue;
-      }
-      const targetX = ((this.factionSumCol.get(faction) ?? 0) / count + 0.5) * UNITS_PER_CELL;
-      const targetY = ((this.factionSumRow.get(faction) ?? 0) / count + 0.5) * UNITS_PER_CELL;
-      let c = this.factionCentroid.get(faction);
-      if (c === undefined) {
-        c = { x: targetX, y: targetY }; // snap on first appearance
-        this.factionCentroid.set(faction, c);
-      } else {
-        c.x += (targetX - c.x) * 0.02; // slow drift -> no jumping
-        c.y += (targetY - c.y) * 0.02;
-      }
-      let wm = existing;
-      if (wm === undefined) {
-        wm = new Text({
-          text: this.factionNames.get(faction) ?? "",
-          style: {
-            fill: this.factionColors.get(faction) ?? 0xaaaaaa,
-            fontFamily: "serif",
-            fontWeight: "bold",
-            fontSize: 46,
-          },
-        });
-        wm.anchor.set(0.5);
-        wm.alpha = 0.14;
-        this.watermarkLayer.addChild(wm);
-        this.watermarks.set(faction, wm);
-      }
-      const [sx, sy] = cam.worldToScreen(c.x, c.y);
-      wm.position.set(sx, sy);
-      wm.visible = true;
     }
   }
 

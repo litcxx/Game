@@ -105,7 +105,7 @@ async function main(): Promise<void> {
             w.config.tickRate,
           );
         }
-        scene.setFactions(w.factions.map((f) => ({ id: f.id, color: f.color, name: f.name })));
+        scene.setFactions(w.factions.map((f) => ({ id: f.id, color: f.color })));
         const speed = w.config?.moveSpeed ?? 300;
         predictor = new Predictor(speed, FIXED_DT, {
           maxX: mapWidth * 100 - 1,
