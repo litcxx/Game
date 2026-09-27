@@ -70,7 +70,7 @@ void World::tick(double dt) {
     consume_inputs(state_);
     integrate_movement(state_, config_, dt);
     index_alive_players();  // positions are final for this tick
-    resolve_melee(state_, config_, alive_index_);
+    resolve_attacks(state_, config_, alive_index_);
     update_captures(state_, config_);
     send_snapshots();
 }

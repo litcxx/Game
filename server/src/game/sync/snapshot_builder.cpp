@@ -15,6 +15,7 @@ namespace lit::game {
     you->set_last_input_seq(recipient.last_input_seq);
     you->set_respawn_tick(recipient.respawn_tick);
     you->set_attack_ready_tick(recipient.attack_ready_tick);
+    you->set_attack_cooldown_ticks(recipient.cooldown_ticks);
 
     for (const auto& [session_id, p] : state.players) {
         if (p.life == ::game::v1::LIFE_STATE_NOT_SPAWNED) {

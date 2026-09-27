@@ -6,7 +6,8 @@ void enqueue_frames(Player& player, const ::game::v1::Input& input) {
         if (frame.seq() <= player.last_enqueued_seq) continue;  // out-of-order / duplicate
         player.last_enqueued_seq = frame.seq();
         player.inputs.push_back(InputCommand{frame.seq(), frame.move_x(), frame.move_y(),
-                                             frame.capturing(), frame.attack()});
+                                             frame.capturing(), frame.attack(), frame.ability(),
+                                             frame.aim_x(), frame.aim_y()});
     }
 }
 
@@ -21,6 +22,9 @@ void consume_inputs(WorldState& state) {
         p.move_y = cmd.move_y;
         p.capturing = cmd.capturing;
         p.attack = cmd.attack;
+        p.ability = cmd.ability;
+        p.aim_x = cmd.aim_x;
+        p.aim_y = cmd.aim_y;
         p.last_input_seq = cmd.seq;
     }
 }

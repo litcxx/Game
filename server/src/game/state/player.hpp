@@ -14,6 +14,9 @@ struct InputCommand {
     std::int32_t move_y{0};
     bool capturing{false};
     bool attack{false};
+    std::uint32_t ability{0};  // Ability.id to use; 0 = the first (default) ability
+    std::int32_t aim_x{0};     // aim direction from the player's centre (any length)
+    std::int32_t aim_y{0};
 };
 
 // Per-connection game state. The session_id (its key in WorldState::players) is
@@ -30,9 +33,13 @@ struct Player {
     std::uint32_t last_input_seq{0};
     std::int32_t move_x{0};  // current intent, set from the consumed InputCommand
     std::int32_t move_y{0};
-    bool capturing{false};  // holding the capture key: captures the cell under the center
-    bool attack{false};     // holding the attack key: area hit around the player when ready
-    std::uint32_t attack_ready_tick{0};  // next tick this player may attack
+    bool capturing{false};     // holding the capture key: captures the cell under the center
+    bool attack{false};        // holding the attack key: use the selected ability when ready
+    std::uint32_t ability{0};  // selected Ability.id (0 = the first)
+    std::int32_t aim_x{0};     // aim direction (projectiles)
+    std::int32_t aim_y{0};
+    std::uint32_t attack_ready_tick{0};  // next tick this player may attack (shared cooldown)
+    std::uint32_t cooldown_ticks{0};     // length of the current cooldown (last ability used)
     std::uint32_t respawn_tick{0};       // when DEAD: tick from which respawn is allowed
 
     std::deque<InputCommand> inputs;     // pending per-tick commands (FIFO by seq)

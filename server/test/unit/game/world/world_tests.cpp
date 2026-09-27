@@ -279,6 +279,17 @@ lit::ClientEvent input_event(std::uint64_t session_id, std::int32_t move_x, std:
 }
 
 // The last Snapshot delivered to a session (snapshots are periodic).
+// A held attack with the given ability (and aim, for projectiles).
+lit::ClientEvent attack_event(std::uint64_t session_id, std::uint32_t seq, std::uint32_t ability,
+                              std::int32_t aim_x = 0, std::int32_t aim_y = 0) {
+    auto ev = input_event(session_id, 0, 0, seq, /*capturing=*/false, /*attack=*/true);
+    auto* frame = ev.msg.mutable_input()->mutable_frames(0);
+    frame->set_ability(ability);
+    frame->set_aim_x(aim_x);
+    frame->set_aim_y(aim_y);
+    return ev;
+}
+
 std::optional<::game::v1::Snapshot> last_snapshot_to(const lit::test::MockClientGateway& gw,
                                                     std::uint64_t session_id) {
     std::optional<::game::v1::Snapshot> snap;
@@ -771,4 +782,66 @@ TEST(FixedStep, ClampsSpiralOfDeath) {
   const double f = 1.0 / 60;
   EXPECT_EQ(lit::game::fixed_steps(acc, 10.0, f, 0.25), 15);  // 0.25s / (1/60) = 15
   EXPECT_LT(acc, f);
+}
+
+// --- Abilities: selection by id, shared cooldown ---------------------------
+// InputFrame.ability picks the ability (0 = the first); using one starts the
+// shared cooldown with that ability's length, reported in SelfState.
+
+TEST(WorldAbility, UsesTheSelectedAbility) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.abilities.push_back({3, lit::AbilityKind::Melee, "Heavy", 20, 70, 120, 0, 0});
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/3));
+    run_ticks(world, 3, 0.016);
+
+    auto victim = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), 30u);  // 100 - 70: the Heavy strike, not the default 40
+}
+
+TEST(WorldAbility, SelfStateReportsCooldownLength) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));
+    run_ticks(world, 3, 0.016);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().attack_cooldown_ticks(), 10u);  // Strike's cooldown
+    EXPECT_EQ(snap->you().attack_ready_tick(), 11u);      // swung on tick 1
+}
+
+TEST(WorldAbility, UnknownAbilityDoesNothing) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/99));
+    run_ticks(world, 3, 0.016);
+
+    auto victim = player_state_in(gw, 2, 2);
+    ASSERT_TRUE(victim.has_value());
+    EXPECT_EQ(victim->hp(), 100u);
+    EXPECT_EQ(count_hits(gw, 2), 0);
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().attack_ready_tick(), 0u);  // cooldown untouched
 }

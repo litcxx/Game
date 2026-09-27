@@ -5,9 +5,11 @@
 #include "state/world_state.hpp"
 
 namespace lit::game {
-// Melee area attack, once per tick. An alive player holding attack whose cooldown
-// is ready swings — consuming the cooldown even if nothing is in range — and hits
-// every enemy (another faction) within the melee range through apply_damage.
-// `index` holds this tick's alive players (session id keys) after movement.
-void resolve_melee(WorldState& state, const GameConfig& config, const SpatialIndex& index);
+// Attacks, once per tick. An alive player holding attack whose shared cooldown is
+// ready uses the selected ability (InputFrame.ability; 0 = the first, unknown =
+// nothing): melee hits every enemy (another faction) within the ability's range
+// through apply_damage. Using an ability starts the shared cooldown with that
+// ability's length — even when nothing is hit. `index` holds this tick's alive
+// players (session id keys) after movement.
+void resolve_attacks(WorldState& state, const GameConfig& config, const SpatialIndex& index);
 }  // namespace lit::game
