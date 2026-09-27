@@ -1,12 +1,13 @@
 import { Application, Container, Graphics } from "pixi.js";
 
 import type { CellUpdate, PlayerInfo, PlayerState } from "../gen/game/v1/protocol_pb.js";
+import { Camera, UNITS_PER_CELL } from "./camera.js";
 
-const UNITS_PER_CELL = 100;
-
-// Renders the whole map scaled to fit the viewport: the territory grid (owned
-// cells tinted by faction, in-progress captures tinted by progress) beneath a
-// coloured dot per player.
+// Renders the territory grid (owned cells tinted by faction, in-progress captures
+// by progress) and a coloured dot per player, through a Camera that either
+// follows the player (zoomed) or shows the whole map (press M). The world is
+// drawn in screen space each frame via the camera; player markers stay a fixed
+// pixel size, while the attack-range ring scales with the world.
 export class Scene {
   private readonly field = new Graphics();
   private readonly grid = new Graphics();
@@ -14,26 +15,43 @@ export class Scene {
   private readonly sprites = new Map<number, Graphics>();
   private readonly factionColors = new Map<number, number>();
   private readonly playerFaction = new Map<number, number>();
+  private readonly camera = new Camera();
+
   private mapCols = 1;
   private mapRows = 1;
   private owners: Uint8Array = new Uint8Array(0);           // owner faction id (0 = neutral)
   private captureFaction: Uint8Array = new Uint8Array(0);   // who is capturing (0 = none)
   private captureProgress: Uint8Array = new Uint8Array(0);  // 0..100
-  private scale = 1;
   private selfId = 0;
   private maxHp = 100;
-  private attackRange = 0;          // world units; shown as a ring around self
-  private attackCooldownTicks = 1;  // ticks between swings, for the self cooldown bar
+  private attackRange = 0;          // world units; ring around self
+  private attackCooldownTicks = 1;  // for the self cooldown bar
+
+  // Last snapshot, kept so the world can be re-rendered on camera changes
+  // (resize / mode toggle) without waiting for the next snapshot.
+  private lastPlayers: readonly PlayerState[] = [];
+  private lastReadyTick = 0;
+  private lastServerTick = 0;
 
   constructor(private readonly app: Application) {
     app.stage.addChild(this.field);
     app.stage.addChild(this.grid);
     app.stage.addChild(this.playersLayer);
-    app.renderer.on("resize", () => this.layout());
+    this.camera.setScreen(app.screen.width, app.screen.height);
+    app.renderer.on("resize", () => {
+      this.camera.setScreen(this.app.screen.width, this.app.screen.height);
+      this.render();
+    });
   }
 
   setSelf(id: number): void {
     this.selfId = id;
+  }
+
+  // The local player's own faction (spawn/roster don't echo it back to us).
+  setSelfFaction(factionId: number): void {
+    this.playerFaction.set(this.selfId, factionId);
+    this.drawPlayers();
   }
 
   setFactions(factions: readonly { id: number; color: number }[]): void {
@@ -52,7 +70,19 @@ export class Scene {
     this.maxHp = Math.max(1, maxHp);
     this.attackRange = Math.max(0, attackRange);
     this.attackCooldownTicks = Math.max(1, attackCooldownTicks);
-    this.layout();
+    this.camera.setWorld(this.mapCols, this.mapRows);
+    this.camera.setScreen(this.app.screen.width, this.app.screen.height);
+    this.render();
+  }
+
+  // Toggle between following the player and the full-map overview (M key).
+  toggleMap(): void {
+    this.camera.toggle();
+    this.render();
+  }
+
+  get mapMode(): boolean {
+    return this.camera.mode === "map";
   }
 
   // Full territory state (owners + any in-progress captures).
@@ -61,7 +91,7 @@ export class Scene {
     this.captureFaction = new Uint8Array(owners.length);
     this.captureProgress = new Uint8Array(owners.length);
     for (const c of captures) this.setCapture(c);
-    this.drawGrid();
+    this.drawWorld();
   }
 
   // Incremental territory changes from Snapshot.cells.
@@ -71,11 +101,12 @@ export class Scene {
       if (c.index < this.owners.length) this.owners[c.index] = c.owner;
       this.setCapture(c);
     }
-    this.drawGrid();
+    this.drawWorld();
   }
 
   upsertRoster(players: readonly PlayerInfo[]): void {
     for (const p of players) this.playerFaction.set(p.id, p.factionId);
+    this.drawPlayers();
   }
 
   removeFromRoster(ids: readonly number[]): void {
@@ -84,8 +115,92 @@ export class Scene {
 
   // `selfReadyTick`/`serverTick` drive the self cooldown bar.
   applySnapshot(players: readonly PlayerState[], selfReadyTick = 0, serverTick = 0): void {
+    this.lastPlayers = players;
+    this.lastReadyTick = selfReadyTick;
+    this.lastServerTick = serverTick;
+    const self = players.find((p) => p.id === this.selfId);
+    if (self) this.camera.setTarget(self.x, self.y);
+    // Follow mode: the camera tracks the player, so the world shifts each
+    // snapshot. Map mode: the camera is static, so only the markers move.
+    if (this.camera.mode === "follow") this.drawWorld();
+    this.drawPlayers();
+  }
+
+  // Canvas pixel -> cell (col, row). Caller validates bounds.
+  screenToCell(sx: number, sy: number): [number, number] {
+    const [wx, wy] = this.camera.screenToWorld(sx, sy);
+    return [Math.floor(wx / UNITS_PER_CELL), Math.floor(wy / UNITS_PER_CELL)];
+  }
+
+  private render(): void {
+    this.drawWorld();
+    this.drawPlayers();
+  }
+
+  private drawWorld(): void {
+    const cam = this.camera;
+
+    // Map background rectangle.
+    const [x0, y0] = cam.worldToScreen(0, 0);
+    const [x1, y1] = cam.worldToScreen(this.mapCols * UNITS_PER_CELL, this.mapRows * UNITS_PER_CELL);
+    this.field.clear();
+    this.field.rect(x0, y0, x1 - x0, y1 - y0).fill(0x181820).stroke({ width: 1, color: 0x3a3a48 });
+
+    // Only the cells currently on screen.
+    this.grid.clear();
+    const [c0, c1] = cam.visibleCols();
+    const [r0, r1] = cam.visibleRows();
+    const cellPx = UNITS_PER_CELL * cam.scale;
+    for (let row = r0; row <= r1; row++) {
+      for (let col = c0; col <= c1; col++) {
+        const i = row * this.mapCols + col;
+        const owner = this.owners[i] ?? 0;
+        const capFaction = this.captureFaction[i] ?? 0;
+        const capProgress = this.captureProgress[i] ?? 0;
+        if (owner === 0 && capProgress === 0) continue; // neutral, untouched
+
+        const [sx, sy] = cam.worldToScreen(col * UNITS_PER_CELL, row * UNITS_PER_CELL);
+        const taking = capProgress > 0 && capFaction !== 0;
+        const p = Math.min(100, capProgress) / 100;
+
+        // Current owner: fades out as a takeover progresses (cross-fade).
+        if (owner !== 0) {
+          const color = this.factionColors.get(owner);
+          const alpha = taking ? 0.4 * (1 - p) : 0.4;
+          if (color !== undefined && alpha > 0) {
+            this.grid.rect(sx, sy, cellPx, cellPx).fill({ color, alpha });
+          }
+        }
+        // Capturing faction: fades in with progress (neutral claim or takeover).
+        if (taking) {
+          const color = this.factionColors.get(capFaction);
+          if (color !== undefined) {
+            this.grid.rect(sx, sy, cellPx, cellPx).fill({ color, alpha: 0.08 + 0.32 * p });
+          }
+        }
+      }
+    }
+
+    // Gridlines across the visible block (constant 1px).
+    const [, sTop] = cam.worldToScreen(0, r0 * UNITS_PER_CELL);
+    const [, sBot] = cam.worldToScreen(0, (r1 + 1) * UNITS_PER_CELL);
+    for (let col = c0; col <= c1 + 1; col++) {
+      const [sx] = cam.worldToScreen(col * UNITS_PER_CELL, 0);
+      this.grid.moveTo(sx, sTop).lineTo(sx, sBot);
+    }
+    const [sLeft] = cam.worldToScreen(c0 * UNITS_PER_CELL, 0);
+    const [sRight] = cam.worldToScreen((c1 + 1) * UNITS_PER_CELL, 0);
+    for (let row = r0; row <= r1 + 1; row++) {
+      const [, sy] = cam.worldToScreen(0, row * UNITS_PER_CELL);
+      this.grid.moveTo(sLeft, sy).lineTo(sRight, sy);
+    }
+    this.grid.stroke({ width: 1, color: 0x2c2c38, alpha: 0.6 });
+  }
+
+  private drawPlayers(): void {
+    const cam = this.camera;
     const seen = new Set<number>();
-    for (const p of players) {
+    for (const p of this.lastPlayers) {
       seen.add(p.id);
       let g = this.sprites.get(p.id);
       if (!g) {
@@ -102,15 +217,16 @@ export class Scene {
       } else {
         const color = this.factionColors.get(this.playerFaction.get(p.id) ?? 0) ?? 0xaaaaaa;
         if (isSelf && this.attackRange > 0) {
-          // Own attack area (drawn under the dot).
-          g.circle(0, 0, this.attackRange * this.scale).stroke({ width: 1, color: 0xffffff, alpha: 0.22 });
+          // Own attack area — scales with the world zoom.
+          g.circle(0, 0, this.attackRange * cam.scale).stroke({ width: 1, color: 0xffffff, alpha: 0.22 });
         }
         g.circle(0, 0, 5).fill(color);
         if (isSelf) g.circle(0, 0, 8).stroke({ width: 2, color: 0xffffff });
         this.drawHpBar(g, p.hp);
-        if (isSelf) this.drawCooldownBar(g, selfReadyTick, serverTick);
+        if (isSelf) this.drawCooldownBar(g, this.lastReadyTick, this.lastServerTick);
       }
-      g.position.set(p.x * this.scale, p.y * this.scale);
+      const [sx, sy] = cam.worldToScreen(p.x, p.y);
+      g.position.set(sx, sy);
     }
     for (const [id, g] of this.sprites) {
       if (!seen.has(id)) {
@@ -148,58 +264,9 @@ export class Scene {
     }
   }
 
-  // Canvas pixel -> cell (col, row). Caller validates bounds.
-  screenToCell(sx: number, sy: number): [number, number] {
-    const col = Math.floor(sx / this.scale / UNITS_PER_CELL);
-    const row = Math.floor(sy / this.scale / UNITS_PER_CELL);
-    return [col, row];
-  }
-
   private setCapture(c: CellUpdate): void {
     if (c.index >= this.captureFaction.length) return;
     this.captureFaction[c.index] = c.captureFaction;
     this.captureProgress[c.index] = Math.min(100, c.captureProgress);
-  }
-
-  private layout(): void {
-    const worldW = this.mapCols * UNITS_PER_CELL;
-    const worldH = this.mapRows * UNITS_PER_CELL;
-    this.scale = Math.min(this.app.screen.width / worldW, this.app.screen.height / worldH);
-
-    this.field.clear();
-    this.field
-      .rect(0, 0, worldW * this.scale, worldH * this.scale)
-      .fill(0x181820)
-      .stroke({ width: 1, color: 0x3a3a48 });
-
-    this.drawGrid();
-  }
-
-  private drawGrid(): void {
-    this.grid.clear();
-    const cell = UNITS_PER_CELL * this.scale;  // pixels per cell
-    const w = this.mapCols * cell;
-    const h = this.mapRows * cell;
-
-    for (let i = 0; i < this.owners.length; i++) {
-      const col = i % this.mapCols;
-      const row = Math.floor(i / this.mapCols);
-      const owner = this.owners[i]!;
-      if (owner !== 0) {
-        const color = this.factionColors.get(owner);
-        if (color !== undefined) this.grid.rect(col * cell, row * cell, cell, cell).fill({ color, alpha: 0.4 });
-      } else if (this.captureProgress[i]! > 0) {
-        const color = this.factionColors.get(this.captureFaction[i]!);
-        if (color !== undefined) {
-          const alpha = 0.08 + 0.32 * (this.captureProgress[i]! / 100);
-          this.grid.rect(col * cell, row * cell, cell, cell).fill({ color, alpha });
-        }
-      }
-    }
-
-    // Cell gridlines (one path, one stroke).
-    for (let c = 0; c <= this.mapCols; c++) this.grid.moveTo(c * cell, 0).lineTo(c * cell, h);
-    for (let r = 0; r <= this.mapRows; r++) this.grid.moveTo(0, r * cell).lineTo(w, r * cell);
-    this.grid.stroke({ width: 1, color: 0x2c2c38, alpha: 0.6 });
   }
 }
