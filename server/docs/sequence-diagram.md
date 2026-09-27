@@ -104,19 +104,23 @@ sequenceDiagram
 
 ---
 
-## 4. Тик симуляции (после разбора входящих)
+## 4. Тик симуляции (фиксированный шаг)
 
-После диспатча событий `World::tick(dt)` прогоняет симуляцию в фиксированном
-порядке и рассылает снапшоты по кадансу (`tick_rate / snapshot_rate`).
+`World::run` крутит **фиксированный шаг** (аккумулятор): `tick(fixedDt)` вызывается
+0+ раз за итерацию, `fixedDt = 1/tick_rate`. Детерминизм — основа клиентского
+предсказания. Ввод копится в пер-игроковую очередь; `consume_inputs` снимает
+**одну команду за тик** и выставляет `last_input_seq` (ack для реконсиляции на
+клиенте). Снапшоты — по кадансу (`tick_rate / snapshot_rate`).
 
 ```mermaid
 flowchart LR
-    drain["drain: process_event<br/>hello / spawn / input / ping / disconnect"]
+    drain["drain: process_event<br/>hello / spawn / input(→очередь) / ping / disconnect"]
+    consume["consume_inputs()<br/>одна команда/тик на игрока"]
     move["update(dt)<br/>движение живых по интенту"]
     combat["update_combat()<br/>удар по площади"]
     cap["update_captures()<br/>захват клетки под центром"]
     snap["send_snapshots()<br/>you + players + cells + events"]
-    drain --> move --> combat --> cap --> snap
+    drain --> consume --> move --> combat --> cap --> snap
 ```
 
 **Бой (area attack).** Пока игрок держит клавишу атаки (`InputFrame.attack`), раз

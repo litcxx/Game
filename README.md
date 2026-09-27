@@ -3,13 +3,16 @@
 A minimalist top-down multiplayer browser game. Players join a shared **100×100
 grid**, pick a faction, move around, fight, and capture territory painted in
 their faction's colour. The **server is authoritative** — it owns all state and
-runs the simulation; the browser client is a thin renderer that sends intent and
-draws the snapshots it gets back.
+runs the simulation; the browser client sends intent, predicts its own player,
+interpolates the others, and renders.
 
 > **Status: MVP, work in progress.** Working today: connection/presence, spawn,
 > movement, area-attack combat, death/respawn, and territory capture — end to end
-> from the C++ server to the browser client. Authentication is intentionally
-> parked; fog of war and the fuller faction/economy systems come later.
+> from the C++ server to the browser client. The server runs a fixed-timestep
+> authoritative simulation; the client adds client-side prediction and
+> interpolation for smooth play, plus a follow camera, HUD, and minimap.
+> Authentication is intentionally parked; fog of war and the fuller
+> faction/economy systems come later.
 
 ## Repository layout
 
@@ -52,7 +55,7 @@ npm run dev          # open the printed URL
 
 **Controls:** WASD move · hold **E** capture the cell under you · hold **left
 mouse** for an area attack · click a cell to spawn/respawn · keys **1–N** pick a
-faction.
+faction · **M** toggle the full-map view.
 
 ## Documentation
 

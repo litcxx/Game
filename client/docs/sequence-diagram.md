@@ -5,6 +5,10 @@
 Схема протокола генерируется из `../../protocol/game/v1/protocol.proto`
 (`npm run generate`, buf + protoc-gen-es) в `src/gen/`.
 
+Клиент **предсказывает** своего игрока и **интерполирует** остальных: рендер идёт
+каждый кадр из предсказанной (свой) и интерполированной (чужие) позиций, а
+снапшоты сервера только корректируют.
+
 ## Подключение и приветствие (Hello → Welcome)
 
 ```mermaid
@@ -17,43 +21,62 @@ sequenceDiagram
     participant world as World
 
     main->>net: new GameClient(url, onMessage)
-    main->>net: connect("alice")
+    main->>net: connect("player")
     net->>ws: new WebSocket, binaryType = "arraybuffer"
-
     ws-->>net: onopen
-    net->>net: create ClientMessage{hello}, toBinary
-    net->>ws: send(bytes) — 1 бинарный кадр = 1 сообщение
+    net->>ws: send(ClientMessage{hello}) — 1 кадр = 1 сообщение
     ws->>srv: WS binary frame
-
-    srv->>srv: Session.do_read: async_read + parse ClientMessage
-    srv->>world: push_packet(session_id, msg) → очередь событий
-    world->>world: tick → on_hello: новый игрок, player_id
-    world->>srv: send_to(id): Welcome, затем MapState, Roster
+    srv->>world: push_packet(session_id, msg)
+    world->>srv: send_to(id): Welcome, MapState, Roster
     srv->>ws: WS binary frames
-
-    ws-->>net: onmessage (Welcome / MapState / Roster)
-    net->>net: fromBinary(ServerMessage)
-    net->>main: onMessage(msg)
-    main->>main: рендер статуса (player_id, размер карты, фракции)
+    ws-->>net: onmessage
+    net->>main: onMessage(Welcome / MapState / Roster)
+    main->>main: setConfig(camera/HUD), new Predictor(speed, fixedDt, bounds)
 ```
 
-## Отправка сообщения (обобщённо)
+## Игровой цикл (тикер PixiJS, фиксированный шаг)
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant app as UI / игровой ввод
+    participant tick as app.ticker
+    participant kb as keyboard reader
+    participant pred as Predictor
     participant net as GameClient
-    participant ws as WebSocket
+    participant scene as Scene + Hud
 
-    app->>net: sendHello / sendSpawn / sendInput(move, capturing, attack)
-    net->>net: create(ClientMessageSchema, {payload:{case, value}})
-    net->>net: toBinary(ClientMessageSchema, msg)
-    net->>ws: ws.send(bytes)
+    loop каждый фиксированный шаг (1/60)
+        tick->>kb: sample()  (move / capture / attack)
+        tick->>pred: step(input) → предсказать локально, вернуть кадр(seq)
+        tick->>net: sendInputFrames(batch ≤ 8)
+    end
+    tick->>pred: decayError(dt)  (сглаживание коррекции)
+    tick->>scene: setSelfPredicted, setRemotePositions(interp.sample)
+    tick->>scene: frame() — мир (камера), токены, миникарта, HUD
+```
+
+## Снапшот → коррекция
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant ws as WebSocket
+    participant main as main.ts
+    participant pred as Predictor
+    participant interp as InterpolationBuffer
+    participant scene as Scene + Hud
+
+    ws-->>main: Snapshot{you, players, cells, events}
+    main->>pred: reconcile(you.pos, you.last_input_seq)
+    Note over pred: выкинуть подтверждённые кадры, снап к авторитету, реплей остатка
+    main->>interp: push(now, позиции чужих)
+    main->>scene: updateMeta / applyCellUpdates (hp, владельцы, захват)
+    main->>scene: HUD (фракция, клетки/%, В СЕТИ, HP, текущая клетка)
 ```
 
 > Статус: реализован весь цикл MVP — спавн по клику, движение (**WASD**), захват
-> клетки (удержание **E**), атака по площади (удержание **ЛКМ**), смерть/респавн.
-> Клиент рендерит сетку территорий, игроков (с HP-баром над головой), радиус
-> атаки и шкалу кулдауна вокруг своего игрока; `Snapshot` обновляет позиции, hp,
-> клетки и события боя (`HitEvent` / `DeathEvent`).
+> клетки (удержание **E**), атака по площади (удержание **ЛКМ**), смерть/респавн —
+> с клиентским предсказанием/интерполяцией. Рендер по концепту: сетка территорий
+> с координатами, токены со свечением/тенью/именем/hp, кольцо радиуса атаки с
+> дугой кулдауна, follow-камера (обзор всей карты — **M**), угловой HUD и
+> локальная миникарта.

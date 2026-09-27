@@ -2,14 +2,15 @@
 
 Authoritative server for a minimalist multiplayer browser game: players move on a
 shared 100×100 grid, fight, and paint territory in their faction's colour. State
-lives on the server; the browser client is a thin renderer.
+lives on the server; the browser client predicts, interpolates, and renders.
 
 > **Status: MVP, work in progress.** Transport (WebSocket + Protobuf + Asio
-> coroutines) and the authoritative game loop are in place, with movement,
-> area-attack combat, death/respawn, and territory capture implemented and
-> covered by unit tests. A thin TypeScript + PixiJS client renders the map and
-> players (with HP bars) and drives spawn / movement / capture / attack.
-> Authentication is intentionally parked.
+> coroutines) and the authoritative game loop are in place: a **fixed-timestep**
+> simulation with movement, area-attack combat, death/respawn, and territory
+> capture, all covered by unit tests. Input is consumed **one command per tick**
+> (deterministic replay), which the client uses for prediction. A TypeScript +
+> PixiJS client renders the map with client-side prediction/interpolation, a
+> follow camera, HUD, and minimap. Authentication is intentionally parked.
 
 ## Tech stack
 
@@ -44,10 +45,12 @@ lives on the server; the browser client is a thin renderer.
   is supervised by one coroutine that runs `do_read` and `do_send` together
   (`co_await (a || b)`) and removes the session only after **both** finish — so
   teardown never frees a session out from under a live coroutine.
-- **World** (`src/game/world`) is the authoritative loop. Each tick it drains the
-  inbound queue, dispatches by message type, then simulates: integrate movement,
-  resolve area-attack combat (death → respawn timer), advance territory capture,
-  and emit a per-recipient snapshot.
+- **World** (`src/game/world`) is the authoritative loop, run at a **fixed
+  timestep** (accumulator). Each tick it drains the inbound queue and enqueues
+  input frames, then simulates in order: consume one input command per player,
+  integrate movement, resolve area-attack combat (death → respawn timer), advance
+  territory capture, and emit a per-recipient snapshot. `SelfState.last_input_seq`
+  acks the consumed command so the client can reconcile its prediction.
 - **Seam.** `World` depends only on the abstract `IClientGateway`
   (`src/shared/net`), not on the network layer — so the game code stays testable
   (mockable gateway) and free of transport details.
