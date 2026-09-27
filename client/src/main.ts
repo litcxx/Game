@@ -90,6 +90,7 @@ async function main(): Promise<void> {
             w.config.maxHp,
             w.config.attackRange,
             w.config.attackCooldownTicks,
+            w.config.tickRate,
           );
         }
         scene.setFactions(w.factions.map((f) => ({ id: f.id, color: f.color })));

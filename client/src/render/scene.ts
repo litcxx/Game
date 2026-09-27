@@ -36,7 +36,9 @@ export class Scene {
   private selfId = 0;
   private maxHp = 100;
   private attackRange = 0;          // world units; ring around self
-  private attackCooldownTicks = 1;  // for the self cooldown bar
+  private attackCooldownTicks = 1;  // for the self cooldown ring
+  private tickRate = 60;            // to interpolate the current server tick between snapshots
+  private serverTickAtMs = 0;       // performance.now() when serverTick was last set
 
   // Per-frame positions: self is predicted, remotes are interpolated.
   private selfPredicted = { x: 0, y: 0 };
@@ -81,12 +83,14 @@ export class Scene {
     maxHp: number,
     attackRange: number,
     attackCooldownTicks: number,
+    tickRate: number,
   ): void {
     this.mapCols = Math.max(1, mapWidth);
     this.mapRows = Math.max(1, mapHeight);
     this.maxHp = Math.max(1, maxHp);
     this.attackRange = Math.max(0, attackRange);
     this.attackCooldownTicks = Math.max(1, attackCooldownTicks);
+    this.tickRate = Math.max(1, tickRate);
     this.camera.setWorld(this.mapCols, this.mapRows);
     this.camera.setScreen(this.app.screen.width, this.app.screen.height);
     this.worldDirty = true;
@@ -147,6 +151,7 @@ export class Scene {
   updateMeta(players: readonly PlayerState[], selfReadyTick: number, serverTick: number): void {
     this.selfReadyTick = selfReadyTick;
     this.serverTick = serverTick;
+    this.serverTickAtMs = performance.now();
     const seen = new Set<number>();
     for (const p of players) {
       seen.add(p.id);
@@ -321,9 +326,11 @@ export class Scene {
         // Soft glow (layered translucent discs — cheaper than a blur filter).
         gfx.circle(0, 0, 11).fill({ color, alpha: 0.06 });
         gfx.circle(0, 0, 8).fill({ color, alpha: 0.1 });
-        // Own attack area — scales with the world zoom.
+        // Own attack area (faint) + the cooldown arc sweeping around it.
         if (isSelf && this.attackRange > 0) {
-          gfx.circle(0, 0, this.attackRange * cam.scale).stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
+          const rr = this.attackRange * cam.scale;
+          gfx.circle(0, 0, rr).stroke({ width: 1, color: 0xffffff, alpha: 0.18 });
+          this.drawCooldownRing(gfx, rr, color);
         }
         // Token.
         gfx.circle(0, 0, 6).fill(color).stroke({ width: 1, color: this.lighten(color, 0.45), alpha: 0.9 });
@@ -350,7 +357,6 @@ export class Scene {
           const hc = frac > 0.5 ? 0x37c837 : frac > 0.25 ? 0xd8a038 : 0xd83838;
           gfx.rect(-pillW / 2, barY, pillW * frac, 2).fill(hc);
         }
-        if (isSelf) this.drawCooldownBar(gfx, this.selfReadyTick, this.serverTick);
       }
 
       const [sx, sy] = cam.worldToScreen(pos.x, pos.y);
@@ -373,18 +379,23 @@ export class Scene {
     return (m(r) << 16) | (m(g) << 8) | m(b);
   }
 
-  // Cooldown bar under the head: fills up as the next attack recharges
-  // (blue while charging, green when ready).
-  private drawCooldownBar(g: Graphics, readyTick: number, serverTick: number): void {
-    const remaining = Math.max(0, readyTick - serverTick);
+  // Smoothly-interpolated current server tick (advances between snapshots).
+  private currentTick(): number {
+    return this.serverTick + ((performance.now() - this.serverTickAtMs) / 1000) * this.tickRate;
+  }
+
+  // Cooldown as an arc sweeping clockwise from the top around the attack-range
+  // ring; a full ring means the next attack is ready.
+  private drawCooldownRing(gfx: Graphics, radius: number, color: number): void {
+    const remaining = Math.max(0, this.selfReadyTick - this.currentTick());
     const frac = Math.max(0, Math.min(1, 1 - remaining / this.attackCooldownTicks));
-    const w = 16;
-    const h = 3;
-    const y = 12;
-    g.rect(-w / 2, y, w, h).fill({ color: 0x000000, alpha: 0.6 });
-    if (frac > 0) {
-      const color = frac >= 1 ? 0x37c837 : 0x4a90d8;
-      g.rect(-w / 2, y, w * frac, h).fill(color);
+    if (frac <= 0) return; // just attacked -> empty
+    const start = -Math.PI / 2; // top (12 o'clock)
+    const arcColor = this.lighten(color, 0.4);
+    if (frac >= 1) {
+      gfx.circle(0, 0, radius).stroke({ width: 2, color: arcColor, alpha: 0.9 });
+    } else {
+      gfx.arc(0, 0, radius, start, start + frac * Math.PI * 2).stroke({ width: 2, color: arcColor, alpha: 0.9 });
     }
   }
 
