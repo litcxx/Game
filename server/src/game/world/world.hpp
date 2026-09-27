@@ -7,6 +7,7 @@
 #include "game/v1/protocol.pb.h"
 #include "net/client_event.hpp"
 #include "net/i_client_gateway.hpp"
+#include "spatial/spatial_index.hpp"
 #include "state/world_state.hpp"
 #include "utils/ts_queue.hpp"
 #include "world/fixed_step.hpp"
@@ -37,8 +38,8 @@ class World {
     void on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping);
     void on_disconnect(std::uint64_t session_id);
 
-    // Per-tick combat: alive attackers hit their target when in range and off cooldown.
-    void update_combat();
+    // Rebuild the spatial index of alive players (after movement, before combat).
+    void index_alive_players();
 
     // Message builders.
     ::game::v1::ServerMessage make_welcome(const Player& player) const;
@@ -58,5 +59,6 @@ class World {
 
     std::uint32_t snapshot_interval_{1};  // ticks between snapshots (tick_rate / snapshot_rate)
     WorldState state_;                    // all simulation state (plain data)
+    SpatialIndex alive_index_;            // alive players by position, rebuilt each tick
 };
 }  // namespace lit::game

@@ -1,5 +1,7 @@
 add_library(game
+  spatial/spatial_index.cpp
   systems/capture_system.cpp
+  systems/combat_system.cpp
   systems/damage.cpp
   systems/input_system.cpp
   systems/movement_system.cpp

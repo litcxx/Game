@@ -13,6 +13,7 @@ FetchContent_MakeAvailable(googletest)
 set(SOURCES
   main.cpp
   shared/ts_queue_tests.cpp
+  game/spatial/spatial_index_tests.cpp
   game/systems/damage_tests.cpp
   game/world/world_tests.cpp
   # Disabled until their subjects are ready:

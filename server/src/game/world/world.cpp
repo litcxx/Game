@@ -2,19 +2,21 @@
 
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <vector>
 
 #include "systems/capture_system.hpp"
-#include "systems/damage.hpp"
+#include "systems/combat_system.hpp"
 #include "systems/input_system.hpp"
 #include "systems/movement_system.hpp"
 #include "systems/spawn_system.hpp"
 
 namespace lit::game {
 namespace {
+// Spatial-index bucket edge: 2 cells, so a melee query spans at most 3x3 buckets.
+constexpr double kIndexBucketUnits = 2.0 * kUnitsPerCell;
+
 void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
     info->set_id(player.id);
     info->set_name(player.name);
@@ -23,7 +25,11 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
 }  // namespace
 
 World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config)
-    : incoming_{incoming}, gateway_{gateway}, config_{config} {
+    : incoming_{incoming},
+      gateway_{gateway},
+      config_{config},
+      alive_index_{static_cast<double>(config.map_width * kUnitsPerCell),
+                   static_cast<double>(config.map_height * kUnitsPerCell), kIndexBucketUnits} {
     state_.territory.reset(config_.map_width, config_.map_height);
 
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
@@ -67,7 +73,8 @@ void World::tick(double dt) {
 
     consume_inputs(state_);
     integrate_movement(state_, config_, dt);
-    update_combat();
+    index_alive_players();  // positions are final for this tick
+    resolve_melee(state_, config_, alive_index_);
     update_captures(state_, config_);
     send_snapshots();
 }
@@ -140,34 +147,10 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
     enqueue_frames(it->second, input);  // applied one per tick by consume_inputs
 }
 
-void World::update_combat() {
-    const double range = static_cast<double>(config_.attack_range);
-    const double range_sq = range * range;
-
-    for (auto& [attacker_sid, attacker] : state_.players) {
-        if (attacker.life != ::game::v1::LIFE_STATE_ALIVE) continue;
-        if (!attacker.attack) continue;                          // attack key not held
-        if (state_.tick < attacker.attack_ready_tick) continue;  // on cooldown
-
-        // A swing fires: it consumes the cooldown even if nothing is in range.
-        attacker.attack_ready_tick = state_.tick + config_.attack_cooldown_ticks;
-        const double ax = attacker.x;
-        const double ay = attacker.y;
-        const std::uint32_t attacker_id = attacker.id;
-        const std::uint32_t attacker_faction = attacker.faction_id;
-
-        // Area hit: every alive enemy within attack_range of the attacker is struck.
-        for (auto& [target_sid, target] : state_.players) {
-            if (target_sid == attacker_sid) continue;
-            if (target.life != ::game::v1::LIFE_STATE_ALIVE) continue;
-            if (target.faction_id == attacker_faction) continue;  // no friendly fire
-
-            const double dx = target.x - ax;
-            const double dy = target.y - ay;
-            if (dx * dx + dy * dy > range_sq) continue;  // outside the area
-
-            apply_damage(state_, config_, target, config_.attack_damage, attacker_id);
-        }
+void World::index_alive_players() {
+    alive_index_.clear();
+    for (const auto& [session_id, p] : state_.players) {
+        if (p.life == ::game::v1::LIFE_STATE_ALIVE) alive_index_.insert(session_id, p.x, p.y);
     }
 }
 
