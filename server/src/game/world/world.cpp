@@ -34,19 +34,23 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
 }
 
 void World::run(std::stop_token stop) {
-    const double tick_seconds = 1.0 / config_.tick_rate;
-    const auto tick_duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-        std::chrono::duration<double>(tick_seconds));
+    const double fixed_dt = 1.0 / config_.tick_rate;
+    const double max_accum = 0.25;
+    const auto step_duration = std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        std::chrono::duration<double>(fixed_dt));
 
+    double accumulator = 0.0;
     auto last = std::chrono::steady_clock::now();
     while (!stop.stop_requested()) {
         const auto now = std::chrono::steady_clock::now();
-        const std::chrono::duration<double> delta = now - last;
+        const std::chrono::duration<double> frame = now - last;
         last = now;
 
-        tick(delta.count());
-
-        std::this_thread::sleep_until(now + tick_duration);
+        const int steps = fixed_steps(accumulator, frame.count(), fixed_dt, max_accum);
+        for (int i = 0; i < steps && !stop.stop_requested(); ++i) {
+            tick(fixed_dt);  // always a fixed step -> deterministic simulation
+        }
+        std::this_thread::sleep_until(now + step_duration);
     }
 }
 

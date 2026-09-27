@@ -710,3 +710,24 @@ TEST(WorldInput, EnqueuesAfterRespawnClear) {
   run_ticks(world, 1, dt);
   EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 10u);  // still enqueued & consumed
 }
+
+// --- Fixed-timestep accumulator ---------------------------------------------
+TEST(FixedStep, RunsOneStepPerInterval) {
+  double acc = 0.0;
+  EXPECT_EQ(lit::game::fixed_steps(acc, 1.0 / 60, 1.0 / 60, 0.25), 1);
+  EXPECT_NEAR(acc, 0.0, 1e-9);
+}
+
+TEST(FixedStep, AccumulatesRemainder) {
+  double acc = 0.0;
+  const double f = 1.0 / 60;
+  EXPECT_EQ(lit::game::fixed_steps(acc, 2.5 * f, f, 0.25), 2);
+  EXPECT_NEAR(acc, 0.5 * f, 1e-9);
+}
+
+TEST(FixedStep, ClampsSpiralOfDeath) {
+  double acc = 0.0;
+  const double f = 1.0 / 60;
+  EXPECT_EQ(lit::game::fixed_steps(acc, 10.0, f, 0.25), 15);  // 0.25s / (1/60) = 15
+  EXPECT_LT(acc, f);
+}
