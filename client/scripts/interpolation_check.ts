@@ -30,5 +30,17 @@ buf2.push(100, m(100, 0)); // id 1 appears
 const joined = buf2.sample(1, 150);
 check("id appearing mid-window resolves", joined !== undefined && approx(joined.x, 100));
 
+// ids(): what is on screen at render time — both snapshots around it, so a
+// projectile gone from the newest snapshot (it hit) is still drawn until the
+// render time passes its last known position.
+const ids = (b: InterpolationBuffer, now: number) => [...b.ids(now)].sort((a, c) => a - c).join(",");
+const buf3 = new InterpolationBuffer(100);
+buf3.push(1000, new Map([[1, { x: 0, y: 0 }], [2, { x: 0, y: 0 }]]));
+buf3.push(1050, new Map([[2, { x: 0, y: 0 }], [3, { x: 0, y: 0 }]]));
+check("between snapshots: ids of both", ids(buf3, 1125) === "1,2,3");
+check("past the newest: its ids only", ids(buf3, 1200) === "2,3");
+check("before the oldest: its ids only", ids(buf3, 1050) === "1,2");
+check("empty buffer: no ids", ids(new InterpolationBuffer(100), 500) === "");
+
 console.log("VERDICT:", failures === 0 ? "PASS" : "FAIL");
 process.exit(failures === 0 ? 0 : 1);

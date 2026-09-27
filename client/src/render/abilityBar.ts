@@ -75,7 +75,7 @@ export class AbilityBar {
       if (isActive) s.frame.roundRect(-4, -4, SLOT + 8, SLOT + 8, 7).fill({ color: ACTIVE, alpha: 0.12 });
       s.frame
         .roundRect(0, 0, SLOT, SLOT, 4)
-        .fill({ color: 0x0a0a0f, alpha: 0.75 })
+        .fill({ color: 0x0a0a0f, alpha: 0.92 }) // opaque enough to hide cell labels
         .stroke({
           width: isActive ? 2 : 1,
           color: isActive ? ACTIVE : BORDER,

@@ -3,6 +3,7 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import { cooldownProgress, type AbilityInfo } from "../abilities.js";
 import type { CellUpdate, PlayerInfo, PlayerState } from "../gen/game/v1/protocol_pb.js";
 import { Camera, UNITS_PER_CELL } from "./camera.js";
+import { ProjectileView, type ProjectileSprite } from "./projectiles.js";
 
 interface PlayerSprite {
   root: Container;
@@ -21,6 +22,8 @@ export class Scene {
   private readonly grid = new Graphics();
   private readonly coordsLayer = new Container();
   private readonly playersLayer = new Container();
+  private readonly projectileView = new ProjectileView();
+  private projectiles: readonly ProjectileSprite[] = [];
   private readonly sprites = new Map<number, PlayerSprite>();
   private readonly coordPool: Text[] = [];      // reused per-cell coordinate labels
   private readonly coordCellIdx: number[] = [];  // cell index each pooled label shows
@@ -69,6 +72,7 @@ export class Scene {
     app.stage.addChild(this.grid);
     app.stage.addChild(this.coordsLayer);
     app.stage.addChild(this.playersLayer);
+    app.stage.addChild(this.projectileView.gfx); // shots fly over the tokens
     app.stage.addChild(this.minimapLayer);
     this.minimapLayer.addChild(this.minimapBg, this.minimapTerritory, this.minimapOverlay, this.minimapMask);
     this.minimapLayer.mask = this.minimapMask; // clip cells/dots to the box
@@ -198,6 +202,11 @@ export class Scene {
     }
   }
 
+  // Projectiles to draw this frame (interpolated positions), supplied by main.
+  setProjectiles(items: readonly ProjectileSprite[]): void {
+    this.projectiles = items;
+  }
+
   // Per-frame positions supplied by main.
   setSelfPredicted(x: number, y: number): void {
     this.selfPredicted = { x, y };
@@ -256,6 +265,12 @@ export class Scene {
       this.worldDirty = false;
     }
     this.drawPlayers();
+    this.projectileView.draw(
+      this.projectiles,
+      (x, y) => cam.worldToScreen(x, y),
+      cam.scale,
+      (faction) => this.factionColors.get(faction) ?? 0xd8d8d0,
+    );
     this.drawMinimap();
   }
 

@@ -50,6 +50,12 @@ async function main(): Promise<void> {
   let respawnTick = 0;
   let predictor: Predictor | undefined;
   const interp = new InterpolationBuffer(INTERP_DELAY);
+  // Projectiles: positions interpolated like remote players (same delay, so a
+  // shot leaves where its shooter is drawn); velocity/faction from the newest
+  // snapshot that had them.
+  const projInterp = new InterpolationBuffer(INTERP_DELAY);
+  const projMeta = new Map<number, { vx: number; vy: number; factionId: number; seenMs: number }>();
+  let projectileRadius = 0;
 
   let acc = 0;
   let fpsAccum = 0;
@@ -108,6 +114,7 @@ async function main(): Promise<void> {
         picker.setFactions(w.factions.map((f) => ({ id: f.id, name: f.name, color: f.color })));
         picker.setSelected(selectedFaction);
         abilities = abilitiesFromWelcome(w.abilities);
+        projectileRadius = abilities.find((a) => a.kind === "projectile")?.projectileRadius ?? 0;
         activeSlot = 0;
         bar.setAbilities(abilities);
         bar.setActive(activeSlot);
@@ -152,6 +159,15 @@ async function main(): Promise<void> {
         const remoteStates = new Map<number, RemoteState>();
         for (const p of s.players) if (p.id !== myId) remoteStates.set(p.id, { x: p.x, y: p.y });
         interp.push(performance.now(), remoteStates);
+
+        const nowMs = performance.now();
+        const projStates = new Map<number, RemoteState>();
+        for (const p of s.projectiles) {
+          projStates.set(p.id, { x: p.x, y: p.y });
+          projMeta.set(p.id, { vx: p.vx, vy: p.vy, factionId: p.factionId, seenMs: nowMs });
+        }
+        projInterp.push(nowMs, projStates);
+        for (const [id, m] of projMeta) if (nowMs - m.seenMs > 2000) projMeta.delete(id);
 
         updateHud(life, self?.hp ?? 0);
         break;
@@ -242,6 +258,13 @@ async function main(): Promise<void> {
       if (r) remotes.set(id, r);
     }
     scene.setRemotePositions(remotes);
+    const shots = [];
+    for (const id of projInterp.ids(now)) {
+      const pos = projInterp.sample(id, now);
+      const meta = projMeta.get(id);
+      if (pos && meta) shots.push({ ...pos, vx: meta.vx, vy: meta.vy, factionId: meta.factionId, radius: projectileRadius });
+    }
+    scene.setProjectiles(shots);
     const cur = mouse.cursor();
     if (cur) {
       const [wx, wy] = scene.screenToWorld(cur.x, cur.y);
