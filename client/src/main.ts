@@ -3,11 +3,13 @@ import { Application, Graphics, Text } from "pixi.js";
 import { LifeState } from "./gen/game/v1/protocol_pb.js";
 import { installInput } from "./input/keyboard.js";
 import { GameClient } from "./net/client.js";
+import { InterpolationBuffer, type RemoteState } from "./net/interpolation.js";
 import { Predictor, type PendingInput } from "./net/prediction.js";
 import { Scene } from "./render/scene.js";
 
 const FIXED_DT = 1 / 60;
 const MAX_ACCUM = 0.25;
+const INTERP_DELAY = 100; // ms: render remote players ~2 snapshots in the past
 
 async function main(): Promise<void> {
   const app = new Application();
@@ -49,6 +51,7 @@ async function main(): Promise<void> {
   let serverTick = 0;
   let respawnTick = 0;
   let predictor: Predictor | undefined;
+  const interp = new InterpolationBuffer(INTERP_DELAY);
 
   let acc = 0;
   let fpsAccum = 0;
@@ -118,6 +121,9 @@ async function main(): Promise<void> {
         }
         scene.updateMeta(s.players, s.you?.attackReadyTick ?? 0, serverTick);
         scene.applyCellUpdates(s.cells);
+        const remoteStates = new Map<number, RemoteState>();
+        for (const p of s.players) if (p.id !== myId) remoteStates.set(p.id, { x: p.x, y: p.y });
+        interp.push(performance.now(), remoteStates);
 
         const mapHint = `M — ${scene.mapMode ? "к игроку" : "вся карта"}`;
         if (alive && self) {
@@ -217,6 +223,13 @@ async function main(): Promise<void> {
       predictor.decayError(ticker.deltaMS / 1000);
       scene.setSelfPredicted(predictor.renderPosition.x, predictor.renderPosition.y);
     }
+    const now = performance.now();
+    const remotes = new Map<number, { x: number; y: number }>();
+    for (const id of scene.remoteIds()) {
+      const r = interp.sample(id, now);
+      if (r) remotes.set(id, r);
+    }
+    scene.setRemotePositions(remotes);
     scene.frame();
   });
 }
