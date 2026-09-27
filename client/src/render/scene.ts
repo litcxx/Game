@@ -254,8 +254,8 @@ export class Scene {
         const idx = row * this.mapCols + col;
         let t = this.coordPool[k];
         if (t === undefined) {
-          t = new Text({ text: "", style: { fill: "#8a8a7a", fontFamily: "monospace", fontSize: 10 } });
-          t.alpha = 0.35;
+          t = new Text({ text: "", style: { fill: "#9a9a88", fontFamily: "monospace", fontSize: 10 } });
+          t.alpha = 0.5;
           this.coordsLayer.addChild(t);
           this.coordPool[k] = t;
           this.coordCellIdx[k] = -1;
@@ -265,7 +265,7 @@ export class Scene {
           this.coordCellIdx[k] = idx;
         }
         const [sx, sy] = cam.worldToScreen(col * UNITS_PER_CELL + 8, row * UNITS_PER_CELL + 8);
-        t.position.set(sx, sy);
+        t.position.set(Math.round(sx), Math.round(sy)); // integer pixels -> no sub-pixel blur
         t.visible = true;
         k++;
       }

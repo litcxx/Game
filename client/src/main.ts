@@ -13,7 +13,13 @@ const INTERP_DELAY = 100; // ms: render remote players ~2 snapshots in the past
 
 async function main(): Promise<void> {
   const app = new Application();
-  await app.init({ resizeTo: window, background: "#101015", antialias: true });
+  await app.init({
+    resizeTo: window,
+    background: "#101015",
+    antialias: true,
+    resolution: window.devicePixelRatio || 1, // crisp on HiDPI (fixes blurry text)
+    autoDensity: true,
+  });
   document.getElementById("app")!.appendChild(app.canvas);
 
   const scene = new Scene(app);
