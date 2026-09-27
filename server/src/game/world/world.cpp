@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "systems/capture_system.hpp"
+#include "systems/damage.hpp"
 #include "systems/input_system.hpp"
 #include "systems/movement_system.hpp"
 #include "systems/spawn_system.hpp"
@@ -165,33 +166,7 @@ void World::update_combat() {
             const double dy = target.y - ay;
             if (dx * dx + dy * dy > range_sq) continue;  // outside the area
 
-            const std::uint32_t dmg = std::min(config_.attack_damage, target.hp);
-            target.hp -= dmg;
-
-            auto& hit_ev = state_.events.emplace_back();
-            hit_ev.set_tick(state_.tick);
-            auto* hit = hit_ev.mutable_hit();
-            hit->set_attacker_id(attacker_id);
-            hit->set_target_id(target.id);
-            hit->set_damage(dmg);
-
-            if (target.hp == 0) {
-                target.life = ::game::v1::LIFE_STATE_DEAD;
-                target.respawn_tick = state_.tick + config_.respawn_delay_ticks;
-                target.move_x = 0;
-                target.move_y = 0;
-                target.capturing = false;
-                target.attack = false;
-
-                auto& death_ev = state_.events.emplace_back();
-                death_ev.set_tick(state_.tick);
-                auto* death = death_ev.mutable_death();
-                death->set_victim_id(target.id);
-                death->set_killer_id(attacker_id);
-
-                spdlog::info("World::update_combat player_id={} killed player_id={}", attacker_id,
-                             target.id);
-            }
+            apply_damage(state_, config_, target, config_.attack_damage, attacker_id);
         }
     }
 }

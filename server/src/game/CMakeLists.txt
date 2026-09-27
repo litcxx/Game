@@ -1,5 +1,6 @@
 add_library(game
   systems/capture_system.cpp
+  systems/damage.cpp
   systems/input_system.cpp
   systems/movement_system.cpp
   systems/spawn_system.cpp
