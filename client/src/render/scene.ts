@@ -23,6 +23,13 @@ export class Scene {
   private readonly sprites = new Map<number, PlayerSprite>();
   private readonly coordPool: Text[] = [];      // reused per-cell coordinate labels
   private readonly coordCellIdx: number[] = [];  // cell index each pooled label shows
+
+  private readonly minimapLayer = new Container();
+  private readonly minimapBg = new Graphics();
+  private readonly minimapTerritory = new Graphics();
+  private readonly minimapOverlay = new Graphics();
+  private minimapDirty = true;
+  private readonly minimapSize = 140;
   private readonly factionColors = new Map<number, number>();
   private readonly playerFaction = new Map<number, number>();
   private readonly playerNames = new Map<number, string>();
@@ -58,9 +65,17 @@ export class Scene {
     app.stage.addChild(this.grid);
     app.stage.addChild(this.coordsLayer);
     app.stage.addChild(this.playersLayer);
+    app.stage.addChild(this.minimapLayer);
+    this.minimapLayer.addChild(this.minimapBg, this.minimapTerritory, this.minimapOverlay);
+    this.minimapBg
+      .rect(0, 0, this.minimapSize, this.minimapSize)
+      .fill({ color: 0x0a0a0f, alpha: 0.7 })
+      .stroke({ width: 1, color: 0x3a3a46 });
     this.camera.setScreen(app.screen.width, app.screen.height);
+    this.layoutMinimap();
     app.renderer.on("resize", () => {
       this.camera.setScreen(this.app.screen.width, this.app.screen.height);
+      this.layoutMinimap();
       this.worldDirty = true;
     });
   }
@@ -95,6 +110,7 @@ export class Scene {
     this.camera.setWorld(this.mapCols, this.mapRows);
     this.camera.setScreen(this.app.screen.width, this.app.screen.height);
     this.worldDirty = true;
+    this.minimapDirty = true;
   }
 
   // Toggle between following the player and the full-map overview (M key).
@@ -119,6 +135,7 @@ export class Scene {
     }
     for (const c of captures) this.setCapture(c);
     this.worldDirty = true;
+    this.minimapDirty = true;
   }
 
   // Incremental territory changes from Snapshot.cells.
@@ -136,6 +153,7 @@ export class Scene {
       this.setCapture(c);
     }
     this.worldDirty = true;
+    this.minimapDirty = true;
   }
 
   // --- HUD data accessors ---------------------------------------------------
@@ -227,6 +245,11 @@ export class Scene {
       this.worldDirty = false;
     }
     this.drawPlayers();
+    if (this.minimapDirty) {
+      this.drawMinimapTerritory();
+      this.minimapDirty = false;
+    }
+    this.drawMinimapOverlay();
   }
 
   private drawWorld(): void {
@@ -439,6 +462,58 @@ export class Scene {
     } else {
       gfx.moveTo(0, -radius); // begin at the arc's start -> no line from the centre
       gfx.arc(0, 0, radius, start, start + frac * Math.PI * 2).stroke({ width: 2, color: arcColor, alpha: 0.76 });
+    }
+  }
+
+  private layoutMinimap(): void {
+    const s = this.minimapSize;
+    this.minimapLayer.position.set(this.app.screen.width - 16 - s, 52);
+  }
+
+  private drawMinimapTerritory(): void {
+    const s = this.minimapSize;
+    const cw = s / this.mapCols;
+    const ch = s / this.mapRows;
+    this.minimapTerritory.clear();
+    for (let i = 0; i < this.owners.length; i++) {
+      const o = this.owners[i]!;
+      if (o === 0) continue;
+      const color = this.factionColors.get(o);
+      if (color === undefined) continue;
+      const col = i % this.mapCols;
+      const row = (i / this.mapCols) | 0;
+      this.minimapTerritory.rect(col * cw, row * ch, cw + 0.6, ch + 0.6).fill({ color, alpha: 0.7 });
+    }
+  }
+
+  private drawMinimapOverlay(): void {
+    const s = this.minimapSize;
+    const worldW = this.mapCols * UNITS_PER_CELL;
+    const worldH = this.mapRows * UNITS_PER_CELL;
+    const toX = (wx: number) => (wx / worldW) * s;
+    const toY = (wy: number) => (wy / worldH) * s;
+    const g = this.minimapOverlay;
+    g.clear();
+
+    // Current viewport rectangle (clamped to the minimap).
+    const cam = this.camera;
+    const halfW = this.app.screen.width / (2 * cam.scale);
+    const halfH = this.app.screen.height / (2 * cam.scale);
+    const x0 = Math.max(0, toX(cam.centerX - halfW));
+    const y0 = Math.max(0, toY(cam.centerY - halfH));
+    const x1 = Math.min(s, toX(cam.centerX + halfW));
+    const y1 = Math.min(s, toY(cam.centerY + halfH));
+    if (x1 > x0 && y1 > y0) {
+      g.rect(x0, y0, x1 - x0, y1 - y0).stroke({ width: 1, color: 0xffffff, alpha: 0.65 });
+    }
+
+    // Player dots (self brighter).
+    for (const [id, mp] of this.meta) {
+      if (mp.hp <= 0) continue;
+      const isSelf = id === this.selfId;
+      const pos = isSelf ? this.selfPredicted : (this.remotePositions.get(id) ?? { x: mp.x, y: mp.y });
+      const color = isSelf ? 0xffffff : (this.factionColors.get(this.playerFaction.get(id) ?? 0) ?? 0xaaaaaa);
+      g.circle(toX(pos.x), toY(pos.y), isSelf ? 2.5 : 1.8).fill({ color });
     }
   }
 
