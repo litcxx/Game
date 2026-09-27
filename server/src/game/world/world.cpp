@@ -6,6 +6,8 @@
 #include <thread>
 #include <vector>
 
+#include "sync/messages.hpp"
+#include "sync/snapshot_builder.hpp"
 #include "systems/capture_system.hpp"
 #include "systems/combat_system.hpp"
 #include "systems/input_system.hpp"
@@ -16,12 +18,6 @@ namespace lit::game {
 namespace {
 // Spatial-index bucket edge: 2 cells, so a melee query spans at most 3x3 buckets.
 constexpr double kIndexBucketUnits = 2.0 * kUnitsPerCell;
-
-void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
-    info->set_id(player.id);
-    info->set_name(player.name);
-    info->set_faction_id(player.faction_id);
-}
 }  // namespace
 
 World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config)
@@ -79,6 +75,13 @@ void World::tick(double dt) {
     send_snapshots();
 }
 
+void World::index_alive_players() {
+    alive_index_.clear();
+    for (const auto& [session_id, p] : state_.players) {
+        if (p.life == ::game::v1::LIFE_STATE_ALIVE) alive_index_.insert(session_id, p.x, p.y);
+    }
+}
+
 void World::process_event(const ClientEvent& ev) {
     if (ev.kind == ClientEvent::Kind::Disconnected) {
         on_disconnect(ev.session_id);
@@ -112,9 +115,9 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
     state_.players[session_id] = player;
 
     // Greet the joiner: Welcome, then the full map, then the full roster.
-    send(session_id, make_welcome(player));
-    send(session_id, make_map_state());
-    send(session_id, make_full_roster());
+    send(session_id, make_welcome(state_, config_, player));
+    send(session_id, make_map_state(state_));
+    send(session_id, make_full_roster(state_));
 
     // Tell everyone else that a new player joined.
     broadcast_except(session_id, make_roster_upsert(player));
@@ -147,19 +150,8 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
     enqueue_frames(it->second, input);  // applied one per tick by consume_inputs
 }
 
-void World::index_alive_players() {
-    alive_index_.clear();
-    for (const auto& [session_id, p] : state_.players) {
-        if (p.life == ::game::v1::LIFE_STATE_ALIVE) alive_index_.insert(session_id, p.x, p.y);
-    }
-}
-
 void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
-    ::game::v1::ServerMessage reply;
-    auto* pong = reply.mutable_pong();
-    pong->set_client_time_ms(ping.client_time_ms());
-    pong->set_server_tick(state_.tick);
-    send(session_id, reply);
+    send(session_id, make_pong(state_, ping.client_time_ms()));
 }
 
 void World::on_disconnect(std::uint64_t session_id) {
@@ -172,112 +164,21 @@ void World::on_disconnect(std::uint64_t session_id) {
     state_.players.erase(it);
 
     // Tell the remaining players the player left (broadcast now excludes it).
-    ::game::v1::ServerMessage msg;
-    msg.mutable_roster()->add_removed(player_id);
-    broadcast(msg);
+    broadcast(make_roster_removed(player_id));
 
     spdlog::info("World::on_disconnect session={} player_id={}", session_id, player_id);
-}
-
-::game::v1::ServerMessage World::make_welcome(const Player& player) const {
-    ::game::v1::ServerMessage msg;
-    auto* welcome = msg.mutable_welcome();
-    welcome->set_player_id(player.id);
-    welcome->set_server_tick(state_.tick);
-
-    auto* cfg = welcome->mutable_config();
-    cfg->set_tick_rate(config_.tick_rate);
-    cfg->set_snapshot_rate(config_.snapshot_rate);
-    cfg->set_map_width(config_.map_width);
-    cfg->set_map_height(config_.map_height);
-    cfg->set_move_speed(config_.move_speed);
-    cfg->set_max_hp(config_.max_hp);
-    cfg->set_attack_range(config_.attack_range);
-    cfg->set_attack_cooldown_ticks(config_.attack_cooldown_ticks);
-    cfg->set_respawn_delay_ticks(config_.respawn_delay_ticks);
-    cfg->set_reconnect_grace_ms(config_.reconnect_grace_ms);
-
-    for (const auto& f : config_.factions) {
-        auto* faction = welcome->add_factions();
-        faction->set_id(f.id);
-        faction->set_name(f.name);
-        faction->set_color(f.color);
-    }
-    return msg;
-}
-
-::game::v1::ServerMessage World::make_map_state() const {
-    ::game::v1::ServerMessage msg;
-    auto* map = msg.mutable_map_state();
-    map->set_tick(state_.tick);
-    map->set_owners(state_.territory.owners.data(), state_.territory.owners.size());
-    for (std::uint32_t index : state_.territory.active) {
-        auto* cu = map->add_captures();
-        cu->set_index(index);
-        cu->set_owner(state_.territory.owners[index]);
-        cu->set_capture_faction(state_.territory.capture_faction[index]);
-        cu->set_capture_progress(
-            static_cast<std::uint32_t>(state_.territory.capture_progress[index]));
-    }
-    return msg;
-}
-
-::game::v1::ServerMessage World::make_full_roster() const {
-    ::game::v1::ServerMessage msg;
-    auto* roster = msg.mutable_roster();
-    for (const auto& [session_id, player] : state_.players) {
-        fill_player_info(roster->add_upsert(), player);
-    }
-    return msg;
-}
-
-::game::v1::ServerMessage World::make_roster_upsert(const Player& player) const {
-    ::game::v1::ServerMessage msg;
-    fill_player_info(msg.mutable_roster()->add_upsert(), player);
-    return msg;
 }
 
 void World::send_snapshots() {
     if (snapshot_interval_ == 0 || state_.tick % snapshot_interval_ != 0) {
         return;
     }
-
-    // Every connected player gets a Snapshot (they need to see the world even
-    // before spawning); `players` lists everyone alive, `you` is per-recipient.
-    for (const auto& [session_id, self] : state_.players) {
-        ::game::v1::ServerMessage msg;
-        auto* snap = msg.mutable_snapshot();
-        snap->set_tick(state_.tick);
-
-        auto* you = snap->mutable_you();
-        you->set_life(self.life);
-        you->set_last_input_seq(self.last_input_seq);
-        you->set_respawn_tick(self.respawn_tick);
-        you->set_attack_ready_tick(self.attack_ready_tick);
-
-        for (const auto& [sid, p] : state_.players) {
-            if (p.life == ::game::v1::LIFE_STATE_NOT_SPAWNED) {
-                continue;  // no body yet; alive players and dead bodies are both shown
-            }
-            auto* ps = snap->add_players();
-            ps->set_id(p.id);
-            ps->set_x(static_cast<std::uint32_t>(p.x));
-            ps->set_y(static_cast<std::uint32_t>(p.y));
-            ps->set_hp(p.hp);  // 0 for a dead body
-        }
-        for (std::uint32_t index : state_.territory.dirty) {
-            auto* cu = snap->add_cells();
-            cu->set_index(index);
-            cu->set_owner(state_.territory.owners[index]);
-            cu->set_capture_faction(state_.territory.capture_faction[index]);
-            cu->set_capture_progress(
-                static_cast<std::uint32_t>(state_.territory.capture_progress[index]));
-        }
-        for (const auto& ev : state_.events) {
-            *snap->add_events() = ev;
-        }
-        send(session_id, msg);
+    // Every connected player gets a Snapshot — they need to see the world even
+    // before spawning.
+    for (const auto& [session_id, recipient] : state_.players) {
+        send(session_id, build_snapshot(state_, recipient));
     }
+    // This period's cell changes and events are delivered; start the next one.
     state_.territory.dirty.clear();
     state_.events.clear();
 }

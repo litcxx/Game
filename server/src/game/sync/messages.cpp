@@ -1,0 +1,88 @@
+#include "sync/messages.hpp"
+
+namespace lit::game {
+namespace {
+void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
+    info->set_id(player.id);
+    info->set_name(player.name);
+    info->set_faction_id(player.faction_id);
+}
+}  // namespace
+
+::game::v1::ServerMessage make_welcome(const WorldState& state, const GameConfig& config,
+                                       const Player& player) {
+    ::game::v1::ServerMessage msg;
+    auto* welcome = msg.mutable_welcome();
+    welcome->set_player_id(player.id);
+    welcome->set_server_tick(state.tick);
+
+    auto* cfg = welcome->mutable_config();
+    cfg->set_tick_rate(config.tick_rate);
+    cfg->set_snapshot_rate(config.snapshot_rate);
+    cfg->set_map_width(config.map_width);
+    cfg->set_map_height(config.map_height);
+    cfg->set_move_speed(config.move_speed);
+    cfg->set_max_hp(config.max_hp);
+    cfg->set_attack_range(config.attack_range);
+    cfg->set_attack_cooldown_ticks(config.attack_cooldown_ticks);
+    cfg->set_respawn_delay_ticks(config.respawn_delay_ticks);
+    cfg->set_reconnect_grace_ms(config.reconnect_grace_ms);
+
+    for (const auto& f : config.factions) {
+        auto* faction = welcome->add_factions();
+        faction->set_id(f.id);
+        faction->set_name(f.name);
+        faction->set_color(f.color);
+    }
+    return msg;
+}
+
+::game::v1::ServerMessage make_map_state(const WorldState& state) {
+    const Territory& t = state.territory;
+    ::game::v1::ServerMessage msg;
+    auto* map = msg.mutable_map_state();
+    map->set_tick(state.tick);
+    map->set_owners(t.owners.data(), t.owners.size());
+    for (std::uint32_t index : t.active) {
+        fill_cell_update(map->add_captures(), t, index);
+    }
+    return msg;
+}
+
+::game::v1::ServerMessage make_full_roster(const WorldState& state) {
+    ::game::v1::ServerMessage msg;
+    auto* roster = msg.mutable_roster();
+    for (const auto& [session_id, player] : state.players) {
+        fill_player_info(roster->add_upsert(), player);
+    }
+    return msg;
+}
+
+::game::v1::ServerMessage make_roster_upsert(const Player& player) {
+    ::game::v1::ServerMessage msg;
+    fill_player_info(msg.mutable_roster()->add_upsert(), player);
+    return msg;
+}
+
+::game::v1::ServerMessage make_roster_removed(std::uint32_t player_id) {
+    ::game::v1::ServerMessage msg;
+    msg.mutable_roster()->add_removed(player_id);
+    return msg;
+}
+
+::game::v1::ServerMessage make_pong(const WorldState& state, std::uint32_t client_time_ms) {
+    ::game::v1::ServerMessage msg;
+    auto* pong = msg.mutable_pong();
+    pong->set_client_time_ms(client_time_ms);
+    pong->set_server_tick(state.tick);
+    return msg;
+}
+
+void fill_cell_update(::game::v1::CellUpdate* out, const Territory& territory,
+                      std::uint32_t index) {
+    out->set_index(index);
+    out->set_owner(territory.owners[index]);
+    out->set_capture_faction(territory.capture_faction[index]);
+    out->set_capture_progress(static_cast<std::uint32_t>(territory.capture_progress[index]));
+}
+}  // namespace lit::game

@@ -41,12 +41,6 @@ class World {
     // Rebuild the spatial index of alive players (after movement, before combat).
     void index_alive_players();
 
-    // Message builders.
-    ::game::v1::ServerMessage make_welcome(const Player& player) const;
-    ::game::v1::ServerMessage make_map_state() const;
-    ::game::v1::ServerMessage make_full_roster() const;
-    ::game::v1::ServerMessage make_roster_upsert(const Player& player) const;
-
     // Outbound helpers (serialize once, deliver via the gateway).
     void send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg);
     void broadcast(const ::game::v1::ServerMessage& msg);
