@@ -1,4 +1,4 @@
-import { Application, Container, Graphics } from "pixi.js";
+import { Application, Container, Graphics, Text } from "pixi.js";
 
 import type { CellUpdate, PlayerInfo, PlayerState } from "../gen/game/v1/protocol_pb.js";
 import { Camera, UNITS_PER_CELL } from "./camera.js";
@@ -11,8 +11,11 @@ import { Camera, UNITS_PER_CELL } from "./camera.js";
 export class Scene {
   private readonly field = new Graphics();
   private readonly grid = new Graphics();
+  private readonly coordsLayer = new Container();
   private readonly playersLayer = new Container();
   private readonly sprites = new Map<number, Graphics>();
+  private readonly coordPool: Text[] = [];      // reused per-cell coordinate labels
+  private readonly coordCellIdx: number[] = [];  // cell index each pooled label shows
   private readonly factionColors = new Map<number, number>();
   private readonly playerFaction = new Map<number, number>();
   private readonly camera = new Camera();
@@ -42,6 +45,7 @@ export class Scene {
   constructor(private readonly app: Application) {
     app.stage.addChild(this.field);
     app.stage.addChild(this.grid);
+    app.stage.addChild(this.coordsLayer);
     app.stage.addChild(this.playersLayer);
     this.camera.setScreen(app.screen.width, app.screen.height);
     app.renderer.on("resize", () => {
@@ -171,7 +175,7 @@ export class Scene {
     const [x0, y0] = cam.worldToScreen(0, 0);
     const [x1, y1] = cam.worldToScreen(this.mapCols * UNITS_PER_CELL, this.mapRows * UNITS_PER_CELL);
     this.field.clear();
-    this.field.rect(x0, y0, x1 - x0, y1 - y0).fill(0x181820).stroke({ width: 1, color: 0x3a3a48 });
+    this.field.rect(x0, y0, x1 - x0, y1 - y0).fill(0x14141a).stroke({ width: 1, color: 0x33333f });
 
     // Only the cells currently on screen.
     this.grid.clear();
@@ -193,7 +197,8 @@ export class Scene {
         // Current owner: fades out as a takeover progresses (cross-fade).
         if (owner !== 0) {
           const color = this.factionColors.get(owner);
-          const alpha = taking ? 0.4 * (1 - p) : 0.4;
+          const ownAlpha = 0.26 + 0.3 * this.cellShade(i); // per-cell tonal variation
+          const alpha = taking ? ownAlpha * (1 - p) : ownAlpha;
           if (color !== undefined && alpha > 0) {
             this.grid.rect(sx, sy, cellPx, cellPx).fill({ color, alpha });
           }
@@ -221,7 +226,51 @@ export class Scene {
       const [, sy] = cam.worldToScreen(0, row * UNITS_PER_CELL);
       this.grid.moveTo(sLeft, sy).lineTo(sRight, sy);
     }
-    this.grid.stroke({ width: 1, color: 0x2c2c38, alpha: 0.6 });
+    this.grid.stroke({ width: 1, color: 0x2a2a33, alpha: 0.35 });
+
+    this.layoutCoords(c0, c1, r0, r1, cellPx);
+  }
+
+  // Deterministic per-cell brightness in [0,1) for tonal variation (no flicker).
+  private cellShade(i: number): number {
+    let h = (i * 2654435761) >>> 0;
+    h ^= h >>> 15;
+    h = Math.imul(h, 2246822519) >>> 0;
+    h ^= h >>> 13;
+    return (h >>> 8) / 0x1000000;
+  }
+
+  // Dim coordinate label per visible cell (follow mode, when cells are big enough).
+  // Reuses a pool; only rewrites a label's text when its cell changes.
+  private layoutCoords(c0: number, c1: number, r0: number, r1: number, cellPx: number): void {
+    const cam = this.camera;
+    if (cam.mode !== "follow" || cellPx < 40) {
+      for (const t of this.coordPool) t.visible = false;
+      return;
+    }
+    let k = 0;
+    for (let row = r0; row <= r1; row++) {
+      for (let col = c0; col <= c1; col++) {
+        const idx = row * this.mapCols + col;
+        let t = this.coordPool[k];
+        if (t === undefined) {
+          t = new Text({ text: "", style: { fill: "#8a8a7a", fontFamily: "monospace", fontSize: 10 } });
+          t.alpha = 0.35;
+          this.coordsLayer.addChild(t);
+          this.coordPool[k] = t;
+          this.coordCellIdx[k] = -1;
+        }
+        if (this.coordCellIdx[k] !== idx) {
+          t.text = String(idx);
+          this.coordCellIdx[k] = idx;
+        }
+        const [sx, sy] = cam.worldToScreen(col * UNITS_PER_CELL + 8, row * UNITS_PER_CELL + 8);
+        t.position.set(sx, sy);
+        t.visible = true;
+        k++;
+      }
+    }
+    for (; k < this.coordPool.length; k++) this.coordPool[k].visible = false;
   }
 
   private drawPlayers(): void {
