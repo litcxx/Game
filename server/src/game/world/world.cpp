@@ -4,11 +4,13 @@
 
 #include <algorithm>
 #include <chrono>
-#include <cmath>
 #include <thread>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
+
+#include "systems/capture_system.hpp"
+#include "systems/input_system.hpp"
+#include "systems/movement_system.hpp"
+#include "systems/spawn_system.hpp"
 
 namespace lit::game {
 namespace {
@@ -62,10 +64,10 @@ void World::tick(double dt) {
         }
     }
 
-    consume_inputs();
-    update(dt);
+    consume_inputs(state_);
+    integrate_movement(state_, config_, dt);
     update_combat();
-    update_captures();
+    update_captures(state_, config_);
     send_snapshots();
 }
 
@@ -119,44 +121,9 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
         return;  // never sent Hello
     }
     Player& player = it->second;
-
-    if (player.life == ::game::v1::LIFE_STATE_ALIVE) {
-        spdlog::warn("World::on_spawn ignored (already alive) session={}", session_id);
+    if (!try_spawn(state_, config_, player, spawn.cell(), spawn.faction_id())) {
         return;
     }
-    if (player.life == ::game::v1::LIFE_STATE_DEAD && state_.tick < player.respawn_tick) {
-        spdlog::warn("World::on_spawn ignored (respawning) session={} respawn_tick={}", session_id,
-                     player.respawn_tick);
-        return;  // still waiting out the respawn delay
-    }
-    if (spawn.cell() >= config_.map_width * config_.map_height) {
-        spdlog::warn("World::on_spawn invalid cell={} session={}", spawn.cell(), session_id);
-        return;
-    }
-    bool valid_faction = false;
-    for (const auto& f : config_.factions) {
-        if (f.id == spawn.faction_id()) valid_faction = true;
-    }
-    if (!valid_faction) {
-        spdlog::warn("World::on_spawn invalid faction={} session={}", spawn.faction_id(),
-                     session_id);
-        return;
-    }
-
-    const std::uint32_t col = spawn.cell() % config_.map_width;
-    const std::uint32_t row = spawn.cell() / config_.map_width;
-    player.faction_id = spawn.faction_id();
-    player.x = col * kUnitsPerCell + kUnitsPerCell / 2.0;
-    player.y = row * kUnitsPerCell + kUnitsPerCell / 2.0;
-    player.hp = config_.max_hp;
-    player.life = ::game::v1::LIFE_STATE_ALIVE;
-    player.move_x = 0;
-    player.move_y = 0;
-    player.capturing = false;
-    player.attack = false;
-    player.attack_ready_tick = 0;
-    player.respawn_tick = 0;
-    player.inputs.clear();  // drop stale pre-spawn commands (last_enqueued_seq stays monotonic)
 
     // Faction (colour) chosen -> tell everyone else.
     broadcast_except(session_id, make_roster_upsert(player));
@@ -169,106 +136,7 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
     if (it == state_.players.end()) {
         return;
     }
-    Player& player = it->second;
-    // Enqueue frames in seq order; consume_inputs applies one per tick. Enqueue
-    // even when not alive so last_input_seq (the client's ack) keeps advancing.
-    for (const auto& frame : input.frames()) {
-        if (frame.seq() <= player.last_enqueued_seq) continue;  // out-of-order / duplicate
-        player.last_enqueued_seq = frame.seq();
-        player.inputs.push_back(InputCommand{frame.seq(), frame.move_x(), frame.move_y(),
-                                             frame.capturing(), frame.attack()});
-    }
-}
-
-void World::consume_inputs() {
-    for (auto& [session_id, p] : state_.players) {
-        if (p.inputs.empty()) {
-            continue;  // no fresh command this tick -> repeat last intent (fields unchanged)
-        }
-        const InputCommand cmd = p.inputs.front();
-        p.inputs.pop_front();
-        p.move_x = cmd.move_x;
-        p.move_y = cmd.move_y;
-        p.capturing = cmd.capturing;
-        p.attack = cmd.attack;
-        p.last_input_seq = cmd.seq;
-    }
-}
-
-void World::update(double dt) {
-    const double bound_x = static_cast<double>(config_.map_width) * kUnitsPerCell;
-    const double bound_y = static_cast<double>(config_.map_height) * kUnitsPerCell;
-
-    for (auto& [session_id, p] : state_.players) {
-        if (p.life != ::game::v1::LIFE_STATE_ALIVE) {
-            continue;
-        }
-        if (p.move_x == 0 && p.move_y == 0) {
-            continue;  // standing still
-        }
-        const double mx = static_cast<double>(p.move_x);
-        const double my = static_cast<double>(p.move_y);
-        const double len = std::sqrt(mx * mx + my * my);
-        if (len <= 0.0) {
-            continue;
-        }
-        p.x += (mx / len) * config_.move_speed * dt;
-        p.y += (my / len) * config_.move_speed * dt;
-        p.x = std::clamp(p.x, 0.0, bound_x - 1.0);
-        p.y = std::clamp(p.y, 0.0, bound_y - 1.0);
-    }
-}
-
-void World::update_captures() {
-    // Each alive, holding player claims the cell under its center. First iteration:
-    // one faction per cell; mixed factions -> contested (0) -> no progress.
-    std::unordered_map<std::uint32_t, std::uint32_t> claim;  // cell index -> faction
-    for (const auto& [session_id, p] : state_.players) {
-        if (p.life != ::game::v1::LIFE_STATE_ALIVE || !p.capturing) {
-            continue;
-        }
-        const auto col =
-            std::min(static_cast<std::uint32_t>(p.x / kUnitsPerCell), config_.map_width - 1);
-        const auto row =
-            std::min(static_cast<std::uint32_t>(p.y / kUnitsPerCell), config_.map_height - 1);
-        const std::uint32_t index = row * config_.map_width + col;
-        auto [it, inserted] = claim.try_emplace(index, p.faction_id);
-        if (!inserted && it->second != p.faction_id) it->second = 0;  // contested
-    }
-
-    const double step = config_.capture_ticks == 0 ? 100.0 : 100.0 / config_.capture_ticks;
-    std::unordered_set<std::uint32_t> still_active;
-
-    for (const auto& [index, faction] : claim) {
-        if (faction == 0 || state_.territory.owners[index] == faction) {
-            continue;  // contested, or already ours
-        }
-        if (state_.territory.capture_faction[index] != faction) {  // a different faction takes over
-            state_.territory.capture_faction[index] = static_cast<std::uint8_t>(faction);
-            state_.territory.capture_progress[index] = 0.0;
-        }
-        state_.territory.capture_progress[index] += step;
-        state_.territory.dirty.insert(index);
-        if (state_.territory.capture_progress[index] >= 100.0) {
-            state_.territory.owners[index] = static_cast<std::uint8_t>(faction);
-            state_.territory.capture_faction[index] = 0;
-            state_.territory.capture_progress[index] = 0.0;
-        } else {
-            still_active.insert(index);
-        }
-    }
-
-    // Reset any in-progress cell whose capturer stopped this tick.
-    for (std::uint32_t index : state_.territory.active) {
-        if (still_active.count(index) != 0) continue;
-        if (state_.territory.capture_progress[index] != 0.0 ||
-            state_.territory.capture_faction[index] != 0) {
-            state_.territory.capture_progress[index] = 0.0;
-            state_.territory.capture_faction[index] = 0;
-            state_.territory.dirty.insert(index);
-        }
-    }
-    state_.territory.active = std::move(still_active);
+    enqueue_frames(it->second, input);  // applied one per tick by consume_inputs
 }
 
 void World::update_combat() {

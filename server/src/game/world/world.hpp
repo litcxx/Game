@@ -37,14 +37,8 @@ class World {
     void on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping);
     void on_disconnect(std::uint64_t session_id);
 
-    // Pop one queued command per player (repeat last when empty); sets intent + last_input_seq.
-    void consume_inputs();
-    // Per-tick simulation: integrate movement from each alive player's intent.
-    void update(double dt);
     // Per-tick combat: alive attackers hit their target when in range and off cooldown.
     void update_combat();
-    // Per-tick territory capture: advance/flip cells under holding capturers.
-    void update_captures();
 
     // Message builders.
     ::game::v1::ServerMessage make_welcome(const Player& player) const;
