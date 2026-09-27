@@ -220,6 +220,11 @@ export class Scene {
     return [...this.meta.keys()].filter((id) => id !== this.selfId);
   }
 
+  // Canvas pixel -> world units (for aiming).
+  screenToWorld(sx: number, sy: number): [number, number] {
+    return this.camera.screenToWorld(sx, sy);
+  }
+
   // Canvas pixel -> cell (col, row). Caller validates bounds.
   screenToCell(sx: number, sy: number): [number, number] {
     const [wx, wy] = this.camera.screenToWorld(sx, sy);

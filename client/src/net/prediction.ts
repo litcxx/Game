@@ -11,6 +11,9 @@ export interface InputSample {
   moveY: number;
   capturing: boolean;
   attack: boolean;
+  ability: number; // Ability.id of the active bar slot
+  aimX: number; // aim direction (unit vector x 1000), see aimVector()
+  aimY: number;
 }
 export interface PendingInput extends InputSample {
   seq: number;

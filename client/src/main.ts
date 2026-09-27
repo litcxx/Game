@@ -1,7 +1,9 @@
 import { Application } from "pixi.js";
 
+import { abilitiesFromWelcome, aimVector, type AbilityInfo } from "./abilities.js";
 import { LifeState } from "./gen/game/v1/protocol_pb.js";
 import { installInput } from "./input/keyboard.js";
+import { installMouse } from "./input/mouse.js";
 import { GameClient } from "./net/client.js";
 import { InterpolationBuffer, type RemoteState } from "./net/interpolation.js";
 import { Predictor, type PendingInput } from "./net/prediction.js";
@@ -37,7 +39,8 @@ async function main(): Promise<void> {
   const factionInfo = new Map<number, { name: string; color: number }>();
 
   const readKeys = installInput();
-  let attacking = false;
+  let abilities: AbilityInfo[] = [];
+  const activeSlot = 0; // bar slot in use (keys 1–5 arrive with the ability bar)
 
   let alive = false;
   let serverTick = 0;
@@ -94,6 +97,7 @@ async function main(): Promise<void> {
         factionCount = w.factions.length;
         selectedFaction = w.factions[0]?.id ?? 1;
         for (const f of w.factions) factionInfo.set(f.id, { name: f.name, color: f.color });
+        abilities = abilitiesFromWelcome(w.abilities);
         scene.setSelf(myId);
         if (w.config) {
           const first = w.abilities[0]; // bar slot 1 (melee) until the ability bar lands
@@ -165,30 +169,8 @@ async function main(): Promise<void> {
     if (Number.isInteger(n) && n >= 1 && n <= factionCount) selectedFaction = n;
   });
 
-  // Attack: hold the left mouse button while alive. A min-hold keeps a quick
-  // click's attack alive long enough to be sampled by a fixed step.
-  const MIN_ATTACK_HOLD_MS = 60;
-  let attackDownAt = 0;
-  let releaseTimer: ReturnType<typeof setTimeout> | undefined;
-  app.canvas.addEventListener("mousedown", (e) => {
-    if (e.button !== 0 || !alive) return;
-    if (releaseTimer !== undefined) {
-      clearTimeout(releaseTimer);
-      releaseTimer = undefined;
-    }
-    attackDownAt = performance.now();
-    attacking = true;
-  });
-  window.addEventListener("mouseup", (e) => {
-    if (e.button !== 0 || !attacking || releaseTimer !== undefined) return;
-    const held = performance.now() - attackDownAt;
-    const release = () => {
-      releaseTimer = undefined;
-      attacking = false;
-    };
-    if (held >= MIN_ATTACK_HOLD_MS) release();
-    else releaseTimer = setTimeout(release, MIN_ATTACK_HOLD_MS - held);
-  });
+  // Attack: hold the left mouse button while alive; aim follows the cursor.
+  const mouse = installMouse(app.canvas, () => alive);
 
   // Click a cell to spawn / respawn — only when not alive (alive clicks attack).
   app.canvas.addEventListener("click", (e) => {
@@ -214,12 +196,18 @@ async function main(): Promise<void> {
       while (acc >= FIXED_DT) {
         acc -= FIXED_DT;
         const k = readKeys();
+        const cur = mouse.cursor();
+        const [wx, wy] = cur ? scene.screenToWorld(cur.x, cur.y) : [predictor.position.x, predictor.position.y];
+        const aim = aimVector(predictor.position, { x: wx, y: wy });
         outbox.push(
           predictor.step({
             moveX: alive ? k.moveX : 0,
             moveY: alive ? k.moveY : 0,
             capturing: k.capturing,
-            attack: alive && attacking,
+            attack: alive && mouse.attacking(),
+            ability: abilities[activeSlot]?.id ?? 0,
+            aimX: aim.x,
+            aimY: aim.y,
           }),
         );
       }
