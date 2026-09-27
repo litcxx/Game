@@ -26,10 +26,18 @@ export class Scene {
 
   private readonly minimapLayer = new Container();
   private readonly minimapBg = new Graphics();
+  private readonly minimapMask = new Graphics();
   private readonly minimapTerritory = new Graphics();
   private readonly minimapOverlay = new Graphics();
-  private minimapDirty = true;
-  private readonly minimapSize = 140;
+  private readonly minimapW = 176;  // fixed width; height follows the screen aspect
+  private minimapH = 100;
+
+  private readonly watermarkLayer = new Container();
+  private readonly watermarks = new Map<number, Text>();       // faction id -> big faint label
+  private readonly factionNames = new Map<number, string>();
+  private readonly factionSumCol = new Map<number, number>();  // running centroid sums
+  private readonly factionSumRow = new Map<number, number>();
+  private readonly factionCentroid = new Map<number, { x: number; y: number }>();  // smoothed (world)
   private readonly factionColors = new Map<number, number>();
   private readonly playerFaction = new Map<number, number>();
   private readonly playerNames = new Map<number, string>();
@@ -63,14 +71,12 @@ export class Scene {
   constructor(private readonly app: Application) {
     app.stage.addChild(this.field);
     app.stage.addChild(this.grid);
+    app.stage.addChild(this.watermarkLayer);
     app.stage.addChild(this.coordsLayer);
     app.stage.addChild(this.playersLayer);
     app.stage.addChild(this.minimapLayer);
-    this.minimapLayer.addChild(this.minimapBg, this.minimapTerritory, this.minimapOverlay);
-    this.minimapBg
-      .rect(0, 0, this.minimapSize, this.minimapSize)
-      .fill({ color: 0x0a0a0f, alpha: 0.7 })
-      .stroke({ width: 1, color: 0x3a3a46 });
+    this.minimapLayer.addChild(this.minimapBg, this.minimapTerritory, this.minimapOverlay, this.minimapMask);
+    this.minimapLayer.mask = this.minimapMask; // clip cells/dots to the box
     this.camera.setScreen(app.screen.width, app.screen.height);
     this.layoutMinimap();
     app.renderer.on("resize", () => {
@@ -89,8 +95,11 @@ export class Scene {
     this.playerFaction.set(this.selfId, factionId);
   }
 
-  setFactions(factions: readonly { id: number; color: number }[]): void {
-    for (const f of factions) this.factionColors.set(f.id, f.color);
+  setFactions(factions: readonly { id: number; color: number; name: string }[]): void {
+    for (const f of factions) {
+      this.factionColors.set(f.id, f.color);
+      this.factionNames.set(f.id, f.name);
+    }
   }
 
   setConfig(
@@ -110,7 +119,6 @@ export class Scene {
     this.camera.setWorld(this.mapCols, this.mapRows);
     this.camera.setScreen(this.app.screen.width, this.app.screen.height);
     this.worldDirty = true;
-    this.minimapDirty = true;
   }
 
   // Toggle between following the player and the full-map overview (M key).
@@ -129,13 +137,19 @@ export class Scene {
     this.captureFaction = new Uint8Array(owners.length);
     this.captureProgress = new Uint8Array(owners.length);
     this.ownedCount.clear();
+    this.factionSumCol.clear();
+    this.factionSumRow.clear();
     for (let i = 0; i < owners.length; i++) {
       const o = owners[i]!;
-      if (o !== 0) this.ownedCount.set(o, (this.ownedCount.get(o) ?? 0) + 1);
+      if (o === 0) continue;
+      const col = i % this.mapCols;
+      const row = (i / this.mapCols) | 0;
+      this.ownedCount.set(o, (this.ownedCount.get(o) ?? 0) + 1);
+      this.factionSumCol.set(o, (this.factionSumCol.get(o) ?? 0) + col);
+      this.factionSumRow.set(o, (this.factionSumRow.get(o) ?? 0) + row);
     }
     for (const c of captures) this.setCapture(c);
     this.worldDirty = true;
-    this.minimapDirty = true;
   }
 
   // Incremental territory changes from Snapshot.cells.
@@ -145,15 +159,24 @@ export class Scene {
       if (c.index < this.owners.length) {
         const old = this.owners[c.index]!;
         if (old !== c.owner) {
-          if (old !== 0) this.ownedCount.set(old, (this.ownedCount.get(old) ?? 1) - 1);
-          if (c.owner !== 0) this.ownedCount.set(c.owner, (this.ownedCount.get(c.owner) ?? 0) + 1);
+          const col = c.index % this.mapCols;
+          const row = (c.index / this.mapCols) | 0;
+          if (old !== 0) {
+            this.ownedCount.set(old, (this.ownedCount.get(old) ?? 1) - 1);
+            this.factionSumCol.set(old, (this.factionSumCol.get(old) ?? 0) - col);
+            this.factionSumRow.set(old, (this.factionSumRow.get(old) ?? 0) - row);
+          }
+          if (c.owner !== 0) {
+            this.ownedCount.set(c.owner, (this.ownedCount.get(c.owner) ?? 0) + 1);
+            this.factionSumCol.set(c.owner, (this.factionSumCol.get(c.owner) ?? 0) + col);
+            this.factionSumRow.set(c.owner, (this.factionSumRow.get(c.owner) ?? 0) + row);
+          }
           this.owners[c.index] = c.owner;
         }
       }
       this.setCapture(c);
     }
     this.worldDirty = true;
-    this.minimapDirty = true;
   }
 
   // --- HUD data accessors ---------------------------------------------------
@@ -245,11 +268,8 @@ export class Scene {
       this.worldDirty = false;
     }
     this.drawPlayers();
-    if (this.minimapDirty) {
-      this.drawMinimapTerritory();
-      this.minimapDirty = false;
-    }
-    this.drawMinimapOverlay();
+    this.drawWatermarks();
+    this.drawMinimap();
   }
 
   private drawWorld(): void {
@@ -466,54 +486,123 @@ export class Scene {
   }
 
   private layoutMinimap(): void {
-    const s = this.minimapSize;
-    this.minimapLayer.position.set(this.app.screen.width - 16 - s, 52);
+    const w = this.minimapW;
+    const h = Math.round(w * (this.app.screen.height / Math.max(1, this.app.screen.width)));
+    this.minimapH = h;
+    this.minimapLayer.position.set(this.app.screen.width - 16 - w, 52);
+    this.minimapBg.clear().rect(0, 0, w, h).fill({ color: 0x0a0a0f, alpha: 0.7 }).stroke({ width: 1, color: 0x3a3a46 });
+    this.minimapMask.clear().rect(0, 0, w, h).fill(0xffffff);
   }
 
-  private drawMinimapTerritory(): void {
-    const s = this.minimapSize;
-    const cw = s / this.mapCols;
-    const ch = s / this.mapRows;
-    this.minimapTerritory.clear();
-    for (let i = 0; i < this.owners.length; i++) {
-      const o = this.owners[i]!;
-      if (o === 0) continue;
-      const color = this.factionColors.get(o);
-      if (color === undefined) continue;
-      const col = i % this.mapCols;
-      const row = (i / this.mapCols) | 0;
-      this.minimapTerritory.rect(col * cw, row * ch, cw + 0.6, ch + 0.6).fill({ color, alpha: 0.7 });
+  // Local minimap: ~1.5x the player's view around the camera, drawn as cells
+  // (neutral cells are dark-but-visible, not a black void) with a viewport rect
+  // and player dots. Redrawn each frame — small (~a few hundred cells).
+  private drawMinimap(): void {
+    const cam = this.camera;
+    const viewW = this.app.screen.width / cam.scale; // visible world size
+    const viewH = this.app.screen.height / cam.scale;
+    const regionW = viewW * 1.5;
+    const regionH = viewH * 1.5;
+    const originX = cam.centerX - regionW / 2;
+    const originY = cam.centerY - regionH / 2;
+    const mm = this.minimapW / regionW; // px per world unit (uniform: aspects match)
+    const toX = (wx: number) => (wx - originX) * mm;
+    const toY = (wy: number) => (wy - originY) * mm;
+    const cellPx = UNITS_PER_CELL * mm;
+
+    const c0 = Math.max(0, Math.floor(originX / UNITS_PER_CELL));
+    const c1 = Math.min(this.mapCols - 1, Math.floor((originX + regionW) / UNITS_PER_CELL));
+    const r0 = Math.max(0, Math.floor(originY / UNITS_PER_CELL));
+    const r1 = Math.min(this.mapRows - 1, Math.floor((originY + regionH) / UNITS_PER_CELL));
+
+    const t = this.minimapTerritory;
+    t.clear();
+    for (let row = r0; row <= r1; row++) {
+      for (let col = c0; col <= c1; col++) {
+        const o = this.owners[row * this.mapCols + col] ?? 0;
+        const x = toX(col * UNITS_PER_CELL);
+        const y = toY(row * UNITS_PER_CELL);
+        if (o !== 0) {
+          const color = this.factionColors.get(o);
+          if (color !== undefined) t.rect(x, y, cellPx + 0.6, cellPx + 0.6).fill({ color, alpha: 0.75 });
+        } else {
+          t.rect(x, y, cellPx + 0.6, cellPx + 0.6).fill({ color: 0x1c1c24, alpha: 0.85 });
+        }
+      }
     }
-  }
+    // Cell gridlines.
+    const top = toY(r0 * UNITS_PER_CELL);
+    const bot = toY((r1 + 1) * UNITS_PER_CELL);
+    for (let col = c0; col <= c1 + 1; col++) {
+      const x = toX(col * UNITS_PER_CELL);
+      t.moveTo(x, top).lineTo(x, bot);
+    }
+    const left = toX(c0 * UNITS_PER_CELL);
+    const right = toX((c1 + 1) * UNITS_PER_CELL);
+    for (let row = r0; row <= r1 + 1; row++) {
+      const y = toY(row * UNITS_PER_CELL);
+      t.moveTo(left, y).lineTo(right, y);
+    }
+    t.stroke({ width: 1, color: 0x33333f, alpha: 0.4 });
 
-  private drawMinimapOverlay(): void {
-    const s = this.minimapSize;
-    const worldW = this.mapCols * UNITS_PER_CELL;
-    const worldH = this.mapRows * UNITS_PER_CELL;
-    const toX = (wx: number) => (wx / worldW) * s;
-    const toY = (wy: number) => (wy / worldH) * s;
+    // Viewport rect + player dots.
     const g = this.minimapOverlay;
     g.clear();
-
-    // Current viewport rectangle (clamped to the minimap).
-    const cam = this.camera;
-    const halfW = this.app.screen.width / (2 * cam.scale);
-    const halfH = this.app.screen.height / (2 * cam.scale);
-    const x0 = Math.max(0, toX(cam.centerX - halfW));
-    const y0 = Math.max(0, toY(cam.centerY - halfH));
-    const x1 = Math.min(s, toX(cam.centerX + halfW));
-    const y1 = Math.min(s, toY(cam.centerY + halfH));
-    if (x1 > x0 && y1 > y0) {
-      g.rect(x0, y0, x1 - x0, y1 - y0).stroke({ width: 1, color: 0xffffff, alpha: 0.65 });
-    }
-
-    // Player dots (self brighter).
+    g.rect(toX(cam.centerX - viewW / 2), toY(cam.centerY - viewH / 2), viewW * mm, viewH * mm)
+      .stroke({ width: 1, color: 0xffffff, alpha: 0.7 });
     for (const [id, mp] of this.meta) {
       if (mp.hp <= 0) continue;
       const isSelf = id === this.selfId;
       const pos = isSelf ? this.selfPredicted : (this.remotePositions.get(id) ?? { x: mp.x, y: mp.y });
       const color = isSelf ? 0xffffff : (this.factionColors.get(this.playerFaction.get(id) ?? 0) ?? 0xaaaaaa);
       g.circle(toX(pos.x), toY(pos.y), isSelf ? 2.5 : 1.8).fill({ color });
+    }
+  }
+
+  // Big, faint faction name over its territory centroid; the centroid is smoothed
+  // so it drifts slowly instead of jumping when cells change hands.
+  private drawWatermarks(): void {
+    const cam = this.camera;
+    if (cam.mode === "map") {
+      for (const wm of this.watermarks.values()) wm.visible = false;
+      return;
+    }
+    for (const [faction, count] of this.ownedCount) {
+      const existing = this.watermarks.get(faction);
+      if (count <= 0) {
+        if (existing) existing.visible = false;
+        this.factionCentroid.delete(faction);
+        continue;
+      }
+      const targetX = ((this.factionSumCol.get(faction) ?? 0) / count + 0.5) * UNITS_PER_CELL;
+      const targetY = ((this.factionSumRow.get(faction) ?? 0) / count + 0.5) * UNITS_PER_CELL;
+      let c = this.factionCentroid.get(faction);
+      if (c === undefined) {
+        c = { x: targetX, y: targetY }; // snap on first appearance
+        this.factionCentroid.set(faction, c);
+      } else {
+        c.x += (targetX - c.x) * 0.02; // slow drift -> no jumping
+        c.y += (targetY - c.y) * 0.02;
+      }
+      let wm = existing;
+      if (wm === undefined) {
+        wm = new Text({
+          text: this.factionNames.get(faction) ?? "",
+          style: {
+            fill: this.factionColors.get(faction) ?? 0xaaaaaa,
+            fontFamily: "serif",
+            fontWeight: "bold",
+            fontSize: 46,
+          },
+        });
+        wm.anchor.set(0.5);
+        wm.alpha = 0.14;
+        this.watermarkLayer.addChild(wm);
+        this.watermarks.set(faction, wm);
+      }
+      const [sx, sy] = cam.worldToScreen(c.x, c.y);
+      wm.position.set(sx, sy);
+      wm.visible = true;
     }
   }
 
