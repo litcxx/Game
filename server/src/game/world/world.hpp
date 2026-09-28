@@ -13,6 +13,7 @@
 #include "spatial/spatial_index.hpp"
 #include "state/world_state.hpp"
 #include "utils/ts_queue.hpp"
+#include "world/connection.hpp"
 #include "world/fixed_step.hpp"
 
 namespace lit::game {
@@ -59,6 +60,9 @@ class World {
     // End of tick: close the sessions being released (a fatal error, or falling
     // behind again); they leave the world.
     void close_released_sessions();
+    // Every tick: a connection with no Hello in time or silent for too long is
+    // told so (HANDSHAKE_TIMEOUT / IDLE_TIMEOUT) and released.
+    void time_out_connections();
 
     TSQueue<ClientEvent>& incoming_;
     TSQueue<ClientEvent> local_;  // tick-local double buffer
@@ -67,6 +71,9 @@ class World {
 
     std::uint32_t snapshot_interval_{1};    // ticks between snapshots (tick_rate / snapshot_rate)
     std::uint32_t resync_window_ticks_{1};  // config.limits.resync_window_ms in ticks
+    TickLimits limits_;                     // config.limits in ticks
+    // Every open connection, from Connected (or its first message) to Disconnected.
+    std::unordered_map<std::uint64_t, Connection> connections_;
     // Sessions to close at the end of the tick, with the reason (UNSPECIFIED = a
     // plain close); once closed they are released: whatever they still send is
     // ignored until their Disconnected event.

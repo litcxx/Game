@@ -1957,3 +1957,148 @@ TEST(WorldErrors, AnEmptyMessageIsUnsupported) {
 
     expect_refusal(gw, 1, ::game::v1::ERROR_CODE_UNSUPPORTED_MESSAGE, 15);
 }
+
+// --- Connection limits: timeouts and the message budget -----------------------
+// Short limits keep these quick: at 60 ticks/s, 100 ms = 6 ticks, 200 ms = 12.
+
+namespace {
+
+lit::ClientEvent connected_event(std::uint64_t session_id) {
+    lit::ClientEvent ev;
+    ev.session_id = session_id;
+    ev.kind = lit::ClientEvent::Kind::Connected;
+    return ev;
+}
+
+constexpr double kTick = 1.0 / 60.0;
+
+}  // namespace
+
+TEST(WorldLimits, NoHelloInTimeIsAHandshakeTimeout) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.limits.handshake_timeout_ms = 100;  // 6 ticks
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(connected_event(1));  // tick 1, then silence
+    run_ticks(world, 6, kTick);
+    EXPECT_TRUE(errors_to(gw, 1).empty());  // tick 6: 5 ticks in
+
+    world.tick(kTick);  // tick 7: 6 ticks in
+    expect_fatal(gw, 1, ::game::v1::ERROR_CODE_HANDSHAKE_TIMEOUT, 0);
+}
+
+TEST(WorldLimits, HelloInTimeStopsTheHandshakeClock) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.limits.handshake_timeout_ms = 100;
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(connected_event(1));
+    run_ticks(world, 5, kTick);
+    for (std::uint32_t seq = 1; seq <= 20; ++seq) {  // then keeps talking
+        incoming.push(seq == 1 ? hello_event(1, "late") : input_event(1, 0, 0, seq));
+        world.tick(kTick);
+    }
+
+    EXPECT_TRUE(got_welcome(gw, 1));
+    EXPECT_TRUE(errors_to(gw, 1).empty());
+}
+
+TEST(WorldLimits, SilenceIsAnIdleTimeout) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.limits.idle_timeout_ms = 200;  // 12 ticks
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(connected_event(1));
+    incoming.push(hello_event(1, "quiet"));
+    incoming.push(hello_event(2, "other"));
+    run_ticks(world, 1, kTick);
+    for (int i = 0; i < 12; ++i) {  // the other one keeps talking
+        incoming.push(ping_event(2));
+        world.tick(kTick);
+    }
+
+    expect_fatal(gw, 1, ::game::v1::ERROR_CODE_IDLE_TIMEOUT, 0);
+    EXPECT_EQ(roster_news_about(gw, 2, 1).second, 1);  // it left the world
+    EXPECT_TRUE(errors_to(gw, 2).empty());
+}
+
+TEST(WorldLimits, AnyMessageKeepsAConnectionAlive) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.limits.idle_timeout_ms = 200;  // 12 ticks
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(connected_event(1));
+    incoming.push(hello_event(1, "pinger"));
+    for (int i = 0; i < 60; ++i) {
+        if (i % 10 == 0) incoming.push(ping_event(1));  // every 10 ticks, idle at 12
+        world.tick(kTick);
+    }
+
+    EXPECT_TRUE(errors_to(gw, 1).empty());
+    EXPECT_TRUE(gw.disconnected.empty());
+}
+
+TEST(WorldLimits, AFloodIsRateLimited) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.limits.messages_per_second = 10;  // a burst of 10
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "flood"));
+    for (std::uint32_t i = 1; i <= 9; ++i) incoming.push(ping_event(1));  // 10 in all: fine
+    incoming.push(with_request(ping_event(1), 77));                       // the 11th
+    world.tick(kTick);
+
+    expect_fatal(gw, 1, ::game::v1::ERROR_CODE_RATE_LIMITED, 77);
+}
+
+TEST(WorldLimits, TheBudgetRefills) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.limits.messages_per_second = 10;
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "steady"));
+    for (std::uint32_t i = 1; i <= 9; ++i) incoming.push(ping_event(1));  // the whole burst
+    world.tick(kTick);
+    run_ticks(world, 6, kTick);  // 10/s refills one message every 6 ticks
+    incoming.push(ping_event(1));
+    world.tick(kTick);
+
+    EXPECT_TRUE(errors_to(gw, 1).empty());
+}
+
+TEST(WorldLimits, InputBeyondTheLimitsIsDropped) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.snapshot_rate = config.tick_rate;  // a snapshot (and ack) every tick
+    config.limits.max_input_frames = 3;
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "burst"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    auto burst = input_event(1, 1, 0, /*seq=*/1);
+    for (std::uint32_t seq = 2; seq <= 5; ++seq) {
+        auto* frame = burst.msg.mutable_input()->add_frames();
+        frame->set_seq(seq);
+        frame->set_move_x(1);
+    }
+    incoming.push(std::move(burst));
+    run_ticks(world, 10, kTick);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().last_input_seq(), 3u);  // frames 4 and 5 were dropped
+    EXPECT_TRUE(errors_to(gw, 1).empty());        // not an error
+}

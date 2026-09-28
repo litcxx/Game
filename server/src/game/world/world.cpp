@@ -31,6 +31,7 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
     : incoming_{incoming},
       gateway_{gateway},
       config_{config},
+      limits_{TickLimits::from(config.limits, config.tick_rate)},
       alive_index_{static_cast<double>(config.map_width * kUnitsPerCell),
                    static_cast<double>(config.map_height * kUnitsPerCell), kIndexBucketUnits} {
     state_.territory.reset(config_.map_width, config_.map_height);
@@ -86,6 +87,7 @@ void World::tick(double dt) {
     resolve_attacks(state_, config_, alive_index_);  // melee hits + projectile launches
     update_projectiles(state_, config_, alive_index_, dt);
     update_captures(state_, config_);
+    time_out_connections();
     send_snapshots();
     close_released_sessions();
 }
@@ -99,8 +101,13 @@ void World::index_alive_players() {
 
 void World::process_event(const ClientEvent& ev) {
     const std::uint64_t sid = ev.session_id;
+    if (ev.kind == ClientEvent::Kind::Connected) {
+        connections_.try_emplace(sid, open_connection(state_.tick, limits_));
+        return;
+    }
     if (ev.kind == ClientEvent::Kind::Disconnected) {
         released_.erase(sid);
+        connections_.erase(sid);
         on_disconnect(sid);
         return;
     }
@@ -109,6 +116,14 @@ void World::process_event(const ClientEvent& ev) {
     }
 
     const auto& msg = ev.msg;
+    // Opened on its first message if its Connected was not seen (e.g. in tests).
+    Connection& connection =
+        connections_.try_emplace(sid, open_connection(state_.tick, limits_)).first->second;
+    if (!take_message(connection, state_.tick, limits_)) {
+        send_error(sid, ::game::v1::ERROR_CODE_RATE_LIMITED, msg.request_id(),
+                   "over the message budget");
+        return;
+    }
     const bool joined = state_.players.contains(sid);
     if (msg.payload_case() == ::game::v1::ClientMessage::kHello) {
         if (joined) {
@@ -278,6 +293,19 @@ void World::send_error(std::uint64_t session_id, ::game::v1::ErrorCode code,
                  fatal ? "closing with" : "refused:", ::game::v1::ErrorCode_Name(code), detail,
                  request_id);
     if (fatal) closing_.try_emplace(session_id, code);
+}
+
+void World::time_out_connections() {
+    for (const auto& [session_id, connection] : connections_) {
+        if (closing_.contains(session_id) || released_.contains(session_id)) continue;
+        const bool joined = state_.players.contains(session_id);
+        if (const auto code = overdue(connection, joined, state_.tick, limits_)) {
+            send_error(session_id, *code, 0,
+                       *code == ::game::v1::ERROR_CODE_HANDSHAKE_TIMEOUT
+                           ? "no Hello in time"
+                           : "nothing received for too long");
+        }
+    }
 }
 
 void World::close_released_sessions() {
