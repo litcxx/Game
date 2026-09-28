@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <unordered_set>
 #include <utility>
 
 #include "state/units.hpp"
@@ -46,8 +47,15 @@ Vision compute_vision(const WorldState& state, const GameConfig& config, std::ui
     const auto radius = static_cast<double>(config.vision_radius);
     vision.cells.assign(t.owners.size(), 0);
 
+    // Deaths not yet reported: state.events holds this snapshot period's events.
+    std::unordered_set<std::uint32_t> dying;
+    for (const auto& ev : state.events) {
+        if (ev.has_death()) dying.insert(ev.death().victim_id());
+    }
     for (const auto& [session_id, p] : state.players) {
-        if (p.life != ::game::v1::LIFE_STATE_ALIVE || p.faction_id != faction_id) continue;
+        if (p.faction_id != faction_id) continue;
+        const bool alive = p.life == ::game::v1::LIFE_STATE_ALIVE;
+        if (!alive && !dying.contains(p.id)) continue;  // a body, its death already told
         reveal_around(vision, t, p.x, p.y, radius);
     }
     for (std::uint32_t index = 0; index < t.owners.size(); ++index) {

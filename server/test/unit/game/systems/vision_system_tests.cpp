@@ -132,6 +132,14 @@ TEST(Vision, DeadPlayersGiveNoVision) {
     EXPECT_EQ(count_visible(f.of(1)), 0);
 }
 
+TEST(Vision, ABodyKeepsItsSightUntilItsDeathIsReported) {
+    Field f;
+    f.add_player(1, 1, 550, 550, ::game::v1::LIFE_STATE_DEAD);
+    f.state.events.emplace_back().mutable_death()->set_victim_id(1);  // not yet in a snapshot
+
+    EXPECT_EQ(count_visible(f.of(1)), 13);  // the snapshot reporting the death still sees
+}
+
 TEST(Vision, OwnedCellsGiveVision) {
     Field f;
     f.own(2, 2, 1);  // no players at all

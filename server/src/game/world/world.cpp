@@ -4,8 +4,10 @@
 
 #include <chrono>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
+#include "state/vision.hpp"
 #include "sync/messages.hpp"
 #include "sync/snapshot_builder.hpp"
 #include "systems/capture_system.hpp"
@@ -14,6 +16,7 @@
 #include "systems/movement_system.hpp"
 #include "systems/projectile_system.hpp"
 #include "systems/spawn_system.hpp"
+#include "systems/vision_system.hpp"
 
 namespace lit::game {
 namespace {
@@ -117,9 +120,10 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
     player.name = hello.name();
     state_.players[session_id] = player;
 
-    // Greet the joiner: Welcome, then the full map, then the full roster.
+    // Greet the joiner: Welcome, then the map (as far as it sees: nothing yet —
+    // snapshots reveal the rest), then the full roster.
     send(session_id, make_welcome(state_, config_, player));
-    send(session_id, make_map_state(state_));
+    send(session_id, make_map_state(state_, player.vision));
     send(session_id, make_full_roster(state_));
 
     // Tell everyone else that a new player joined.
@@ -176,10 +180,17 @@ void World::send_snapshots() {
     if (snapshot_interval_ == 0 || state_.tick % snapshot_interval_ != 0) {
         return;
     }
-    // Every connected player gets a Snapshot — they need to see the world even
-    // before spawning.
-    for (const auto& [session_id, recipient] : state_.players) {
-        send(session_id, build_snapshot(state_, recipient));
+    // Every connected player gets a Snapshot — even before spawning — filtered by
+    // fog of war: what its faction sees, computed once per faction.
+    std::unordered_map<std::uint32_t, Vision> sight;  // faction id -> its vision
+    for (auto& [session_id, recipient] : state_.players) {
+        const std::uint32_t faction = recipient.faction_id;
+        if (!sight.contains(faction)) {
+            sight.emplace(faction, compute_vision(state_, config_, faction));
+        }
+        const Vision& vision = sight.at(faction);
+        send(session_id, build_snapshot(state_, recipient, vision));
+        recipient.vision = vision;  // what this client now knows it sees
     }
     // This period's cell changes and events are delivered; start the next one.
     state_.territory.dirty.clear();

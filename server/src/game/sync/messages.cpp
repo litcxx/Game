@@ -1,5 +1,8 @@
 #include "sync/messages.hpp"
 
+#include <string>
+#include <utility>
+
 namespace lit::game {
 namespace {
 ::game::v1::AbilityKind to_wire(AbilityKind kind) {
@@ -60,14 +63,18 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
     return msg;
 }
 
-::game::v1::ServerMessage make_map_state(const WorldState& state) {
+::game::v1::ServerMessage make_map_state(const WorldState& state, const Vision& vision) {
     const Territory& t = state.territory;
     ::game::v1::ServerMessage msg;
     auto* map = msg.mutable_map_state();
     map->set_tick(state.tick);
-    map->set_owners(t.owners.data(), t.owners.size());
+    std::string owners(t.owners.size(), '\0');
+    for (std::uint32_t index = 0; index < owners.size(); ++index) {
+        if (vision.sees(index)) owners[index] = static_cast<char>(t.owners[index]);
+    }
+    map->set_owners(std::move(owners));
     for (std::uint32_t index : t.active) {
-        fill_cell_update(map->add_captures(), t, index);
+        if (vision.sees(index)) fill_cell_update(map->add_captures(), t, index);
     }
     return msg;
 }

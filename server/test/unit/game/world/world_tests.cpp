@@ -28,6 +28,8 @@ lit::GameConfig test_config() {
     c.reconnect_grace_ms = 30000;
     c.capture_ticks = 5;  // small so capture tests flip quickly
     c.player_radius = 16;
+    c.vision_radius = 1000;  // sees the whole 4x4 map: fog of war hides nothing here
+                             //   (the WorldFog suite uses fog_config())
     c.factions = {{1, "Red", 0xFF0000}, {2, "Blue", 0x0000FF}};
     // Bar order: abilities[0] is the default (ability 0 in input) — melee.
     // Melee: cooldown 10 -> one swing in a short test window; 40 dmg -> 3 hits kill.
@@ -562,7 +564,12 @@ TEST(WorldCapture, NoCaptureWithoutHoldingKey) {
     incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // spawned, but not capturing
     run_ticks(world, 6, 0.016);
 
-    EXPECT_FALSE(last_cell_update(gw, 7, /*index=*/5).has_value());  // cell never changed
+    // The cell's state arrives once, when spawning reveals it — still untouched.
+    auto cu = last_cell_update(gw, 7, /*index=*/5);
+    ASSERT_TRUE(cu.has_value());
+    EXPECT_EQ(cu->owner(), 0u);
+    EXPECT_EQ(cu->capture_faction(), 0u);
+    EXPECT_EQ(cu->capture_progress(), 0u);
 }
 
 // --- M3: combat (area attack) / death / respawn ---------------------------
@@ -1111,4 +1118,353 @@ TEST(WorldAbility, EveryUseIsAnnounced) {
     std::sort(seen.begin(), seen.end());
     const std::vector<std::pair<std::uint32_t, std::uint32_t>> expected{{1, 1}, {1, 3}, {2, 2}};
     EXPECT_EQ(seen, expected);
+}
+
+// --- Fog of war --------------------------------------------------------------
+// fog_config(): a 10x10 map where sight reaches 2 cells (200 units), so players
+// a few cells apart don't see each other. Cell i is (col, row) = (i % 10, i / 10)
+// with its centre at (col * 100 + 50, row * 100 + 50). A player sees the cells
+// whose centres are within 200 of it; others are visible when their cell is.
+
+namespace {
+
+lit::GameConfig fog_config() {
+    auto c = test_config();
+    c.map_width = 10;
+    c.map_height = 10;
+    c.vision_radius = 200;
+    return c;
+}
+
+std::vector<::game::v1::Snapshot> snapshots_to(const lit::test::MockClientGateway& gw,
+                                               std::uint64_t session_id) {
+    std::vector<::game::v1::Snapshot> out;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_snapshot()) out.push_back(m.snapshot());
+    return out;
+}
+
+bool lists_player(const ::game::v1::Snapshot& snap, std::uint32_t id) {
+    return std::ranges::any_of(snap.players(), [id](const auto& p) { return p.id() == id; });
+}
+
+bool contains(const google::protobuf::RepeatedField<std::uint32_t>& cells, std::uint32_t index) {
+    return std::ranges::find(cells, index) != cells.end();
+}
+
+// Every cell index revealed (or hidden) across all snapshots to a session.
+std::vector<std::uint32_t> all_revealed(const lit::test::MockClientGateway& gw,
+                                        std::uint64_t session_id) {
+    std::vector<std::uint32_t> out;
+    for (const auto& s : snapshots_to(gw, session_id))
+        out.insert(out.end(), s.revealed().begin(), s.revealed().end());
+    return out;
+}
+
+std::vector<std::uint32_t> all_hidden(const lit::test::MockClientGateway& gw,
+                                      std::uint64_t session_id) {
+    std::vector<std::uint32_t> out;
+    for (const auto& s : snapshots_to(gw, session_id))
+        out.insert(out.end(), s.hidden().begin(), s.hidden().end());
+    return out;
+}
+
+bool has(const std::vector<std::uint32_t>& cells, std::uint32_t index) {
+    return std::ranges::find(cells, index) != cells.end();
+}
+
+}  // namespace
+
+TEST(WorldFog, AnEnemyOutOfSightIsNotSent) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/99, /*faction=*/2));  // the far corner
+    run_ticks(world, 3, 0.05);
+
+    auto seen_by_a = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(seen_by_a.has_value());
+    EXPECT_TRUE(lists_player(*seen_by_a, 1));  // itself
+    EXPECT_FALSE(lists_player(*seen_by_a, 2));
+    auto seen_by_b = last_snapshot_to(gw, 2);
+    ASSERT_TRUE(seen_by_b.has_value());
+    EXPECT_FALSE(lists_player(*seen_by_b, 1));
+}
+
+TEST(WorldFog, AnEnemyInSightIsSent) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));  // (50,50)
+    incoming.push(spawn_event(2, /*cell=*/2, /*faction=*/2));  // (250,50): its cell is 200 away
+    run_ticks(world, 3, 0.05);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_TRUE(lists_player(*snap, 2));
+}
+
+TEST(WorldFog, AlliesShareTheirSight) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "enemy"));
+    incoming.push(hello_event(3, "ally"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/19, /*faction=*/2));  // far from a, next to the ally
+    incoming.push(spawn_event(3, /*cell=*/9, /*faction=*/1));
+    run_ticks(world, 3, 0.05);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_TRUE(lists_player(*snap, 3));  // the ally
+    EXPECT_TRUE(lists_player(*snap, 2));  // the enemy, through the ally's eyes
+}
+
+TEST(WorldFog, AnEnemyLeavingSightDisappears) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/2, /*faction=*/2));
+    incoming.push(input_event(2, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));  // 15 units a tick
+    run_ticks(world, 3, 0.05);                                             // b at x = 295
+    auto before = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(before.has_value());
+    EXPECT_TRUE(lists_player(*before, 2));
+
+    run_ticks(world, 3, 0.05);  // b at x = 340: cell 3, out of sight
+    auto after = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(after.has_value());
+    EXPECT_FALSE(lists_player(*after, 2));
+}
+
+TEST(WorldFog, ADeadPlayerGivesNoSightButSeesItsBody) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    melee(config).cooldown_ticks = 1;  // three swings on ticks 1..3 kill
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "victim"));
+    incoming.push(hello_event(2, "killer"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/1, /*faction=*/2));  // right next to it
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    run_ticks(world, 6, 0.016);
+
+    // Tick 3: the snapshot reporting the death still sees — who struck it, too.
+    EXPECT_EQ(count_deaths(gw, 1), 1);
+    // Tick 6: a body sees nothing.
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_DEAD);
+    EXPECT_TRUE(lists_player(*snap, 1));  // its own body, always
+    EXPECT_FALSE(lists_player(*snap, 2));
+}
+
+TEST(WorldFog, SpawningRevealsTheCellsAroundWithTheirState) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/55, /*faction=*/1));  // centre of cell (5,5)
+    run_ticks(world, 3, 0.05);
+
+    auto first = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(first.has_value());
+    EXPECT_EQ(first->revealed_size(), 13);  // the disc of cells within 2 cells
+    EXPECT_TRUE(contains(first->revealed(), 55));
+    EXPECT_TRUE(contains(first->revealed(), 75));  // 2 cells below
+    EXPECT_FALSE(contains(first->revealed(), 76));
+    EXPECT_EQ(first->cells_size(), 13);  // each revealed cell's current state
+    EXPECT_EQ(first->hidden_size(), 0);
+
+    run_ticks(world, 3, 0.05);  // standing still: nothing new
+    auto second = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(second.has_value());
+    EXPECT_EQ(second->revealed_size(), 0);
+    EXPECT_EQ(second->cells_size(), 0);
+}
+
+TEST(WorldFog, MovingRevealsAheadAndHidesBehind) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));  // (50,50)
+    incoming.push(input_event(1, 0, 0, /*seq=*/1));
+    run_ticks(world, 3, 0.05);  // sees cell 20 = (0,2), 200 away
+    ASSERT_TRUE(has(all_revealed(gw, 1), 20));
+    ASSERT_FALSE(has(all_revealed(gw, 1), 3));
+
+    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*seq=*/2));
+    run_ticks(world, 12, 0.05);  // x = 230
+
+    EXPECT_TRUE(has(all_hidden(gw, 1), 20));   // now 269 away
+    EXPECT_TRUE(has(all_revealed(gw, 1), 3));  // cell (3,0), now 120 away
+}
+
+TEST(WorldFog, ChangesInTheFogArriveOnlyOnceSeen) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();  // capture_ticks = 5
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "enemy"));
+    incoming.push(hello_event(3, "ally"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/9, /*faction=*/2));  // far away
+    incoming.push(input_event(2, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 6, 0.016);  // the enemy takes cell 9 unseen
+
+    EXPECT_FALSE(last_cell_update(gw, 1, /*index=*/9).has_value());
+
+    incoming.push(spawn_event(3, /*cell=*/7, /*faction=*/1));  // an ally comes to look
+    run_ticks(world, 3, 0.016);
+
+    auto cu = last_cell_update(gw, 1, /*index=*/9);
+    ASSERT_TRUE(cu.has_value());
+    EXPECT_EQ(cu->owner(), 2u);  // the current state, once it is seen again
+}
+
+TEST(WorldFog, OwnedCellsKeepWatch) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 6, 0.05);  // cell 0 is faction 1's
+    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*seq=*/2));
+    run_ticks(world, 21, 0.05);                                 // a walks off to x = 365
+    incoming.push(spawn_event(2, /*cell=*/20, /*faction=*/2));  // 200 from cell 0's centre
+    run_ticks(world, 3, 0.05);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_TRUE(lists_player(*snap, 2));  // seen from the owned cell, not from a
+}
+
+TEST(WorldFog, RespawningRevealsTheNewSpot) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    melee(config).cooldown_ticks = 1;
+    config.respawn_delay_ticks = 5;
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "killer"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/1, /*faction=*/2));
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));  // a dies on tick 3
+    run_ticks(world, 3, 0.016);
+    incoming.push(input_event(2, 0, 0, /*seq=*/2));
+    run_ticks(world, 6, 0.016);
+    incoming.push(spawn_event(1, /*cell=*/99, /*faction=*/1));  // the far corner
+    run_ticks(world, 3, 0.016);
+
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_ALIVE);
+    EXPECT_TRUE(contains(snap->revealed(), 99));
+    EXPECT_TRUE(contains(snap->revealed(), 97));
+    EXPECT_FALSE(lists_player(*snap, 2));  // the killer stayed by the old spot
+}
+
+TEST(WorldFog, AShotFromTheFogLandsButTellsNothing) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    config.abilities[1].range = 500;  // the Shot outranges sight
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "victim"));
+    incoming.push(hello_event(2, "shooter"));
+    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));  // (450,50)
+    incoming.push(spawn_event(2, /*cell=*/0, /*faction=*/2));  // (50,50): 400 away
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    run_ticks(world, 21, 0.05);  // lands on tick 13; the next shot is due on tick 31
+
+    auto self = player_state_in(gw, 1, 1);
+    ASSERT_TRUE(self.has_value());
+    EXPECT_EQ(self->hp(), 75u);  // the damage is dealt
+    auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_FALSE(lists_player(*snap, 2));
+    EXPECT_EQ(count_hits(gw, 1), 0);  // nothing names the hidden shooter
+    EXPECT_EQ(count_hits(gw, 2), 0);  // nor tells the shooter whom it hit
+}
+
+TEST(WorldFog, ShotsAndAbilityUsesInTheFogAreNotSent) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/99, /*faction=*/2));
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/-1000, /*aim_y=*/0));
+    run_ticks(world, 3, 0.05);
+
+    auto seen_by_a = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(seen_by_a.has_value());
+    EXPECT_EQ(seen_by_a->projectiles_size(), 0);
+    EXPECT_TRUE(ability_events(gw, 1).empty());
+    auto seen_by_b = last_snapshot_to(gw, 2);
+    ASSERT_TRUE(seen_by_b.has_value());
+    EXPECT_EQ(seen_by_b->projectiles_size(), 1);  // its own shot, in its sight
+    EXPECT_EQ(ability_events(gw, 2).size(), 1u);
+}
+
+TEST(WorldFog, AJoinerSeesNothing) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 6, 0.016);  // cell 0 is faction 1's
+    incoming.push(hello_event(2, "newcomer"));
+    run_ticks(world, 3, 0.016);
+
+    std::optional<::game::v1::MapState> map;
+    for (const auto& m : messages_to(gw, 2))
+        if (m.has_map_state()) map = m.map_state();
+    ASSERT_TRUE(map.has_value());
+    for (char owner : map->owners()) EXPECT_EQ(owner, 0);  // the owned cell stays unknown
+    auto snap = last_snapshot_to(gw, 2);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->players_size(), 0);
+    EXPECT_EQ(snap->cells_size(), 0);
+    EXPECT_EQ(snap->revealed_size(), 0);
 }

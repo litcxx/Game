@@ -19,8 +19,8 @@ struct WorldState {
     std::unordered_map<std::uint64_t, Player> players;  // key: session_id
     Territory territory;
     std::vector<Projectile> projectiles;  // in flight, in launch order
-    // Combat events (hits/deaths) since the last snapshot; flushed to every
-    // recipient's Snapshot.events, then cleared.
+    // Combat events (hits/deaths/ability uses) since the last snapshot; flushed to
+    // each recipient's Snapshot.events as far as it sees them, then cleared.
     std::vector<::game::v1::GameEvent> events;
 };
 }  // namespace lit::game
