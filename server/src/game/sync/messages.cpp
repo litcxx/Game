@@ -109,6 +109,21 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
     return msg;
 }
 
+bool is_fatal(::game::v1::ErrorCode code) {
+    return code > ::game::v1::ERROR_CODE_UNSPECIFIED && code < 20;
+}
+
+::game::v1::ServerMessage make_error(::game::v1::ErrorCode code, std::uint32_t request_id,
+                                     std::string_view detail) {
+    ::game::v1::ServerMessage msg;
+    auto* error = msg.mutable_error();
+    error->set_code(code);
+    error->set_fatal(is_fatal(code));
+    error->set_request_id(request_id);
+    error->set_detail(std::string{detail});
+    return msg;
+}
+
 void fill_cell_update(::game::v1::CellUpdate* out, const Territory& territory,
                       std::uint32_t index) {
     out->set_index(index);

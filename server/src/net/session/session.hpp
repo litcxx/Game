@@ -1,10 +1,12 @@
 #pragma once
 
+#include <atomic>
 #include <boost/asio.hpp>
 #include <boost/asio/experimental/basic_concurrent_channel.hpp>
 #include <boost/asio/experimental/channel_traits.hpp>
 #include <boost/beast.hpp>
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -33,6 +35,11 @@ class Session {
     // is full or closed (the frame is then dropped). Safe to call from any thread.
     bool try_send(std::vector<std::byte> msg);
 
+    // Close the WebSocket with `code` once the frames already queued are sent;
+    // returns false (nothing queued) if the send queue is full or closed. Safe
+    // to call from any thread.
+    bool close_after_send(std::uint16_t code);
+
     // Best-effort socket close, used by the supervisor during teardown.
     void close() noexcept;
 
@@ -48,5 +55,6 @@ class Session {
     Socket socket_;
     std::size_t id_;
     Channel send_queue_;
+    std::atomic<std::uint16_t> close_code_{0};  // set by close_after_send before its marker
 };
 }  // namespace lit::net

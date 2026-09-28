@@ -2,15 +2,18 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
   ClientMessageSchema,
+  ProtocolVersion,
   ServerMessageSchema,
   type ClientMessage,
   type ServerMessage,
 } from "../gen/game/v1/protocol_pb.js";
 
-export const PROTOCOL_VERSION = 1;
+// From the protocol itself, so a stale build is told PROTOCOL_VERSION by the server.
+export const PROTOCOL_VERSION: number = ProtocolVersion.CURRENT;
 
 // Thin transport: one WebSocket binary frame == one protobuf message.
-// Decodes incoming ServerMessages and hands them to `onMessage`.
+// Decodes incoming ServerMessages and hands them to `onMessage`; `onClose` gets
+// the socket's close code (4000 + ErrorCode when the server closed it for one).
 export class GameClient {
   private ws?: WebSocket;
   private inputSeq = 0;
@@ -18,6 +21,7 @@ export class GameClient {
   constructor(
     private readonly url: string,
     private readonly onMessage: (msg: ServerMessage) => void,
+    private readonly onClose: (code: number) => void = () => {},
   ) {}
 
   connect(name: string): void {
@@ -30,7 +34,10 @@ export class GameClient {
       const bytes = new Uint8Array(ev.data as ArrayBuffer);
       this.onMessage(fromBinary(ServerMessageSchema, bytes));
     };
-    ws.onclose = () => console.log("[net] connection closed");
+    ws.onclose = (ev: CloseEvent) => {
+      console.log(`[net] connection closed (${ev.code})`);
+      this.onClose(ev.code);
+    };
     ws.onerror = () => console.error("[net] connection error");
   }
 

@@ -2,6 +2,7 @@ import { Application } from "pixi.js";
 
 import { abilitiesFromWelcome, aimVector, selectSlot, type AbilityInfo } from "./abilities.js";
 import { effectsFromEvents } from "./effects.js";
+import { closeError, errorText, Notices } from "./errors.js";
 import { LifeState } from "./gen/game/v1/protocol_pb.js";
 import { installInput } from "./input/keyboard.js";
 import { installMouse } from "./input/mouse.js";
@@ -61,6 +62,8 @@ async function main(): Promise<void> {
   let acc = 0;
   let fpsAccum = 0;
   const outbox: PendingInput[] = [];
+  // Server errors on the hint line: a fatal one for good, a refused request a while.
+  const notices = new Notices();
 
   const updateHud = (life: LifeState, hp: number): void => {
     // In play: the faction of this life; otherwise the one picked for the next spawn.
@@ -86,19 +89,28 @@ async function main(): Promise<void> {
       hud.hideCell();
     }
 
+    hud.setHint(notices.hint(usualHint(life), performance.now()));
+  };
+
+  const usualHint = (life: LifeState): string => {
     const mapHint = `M — ${scene.mapMode ? "к игроку" : "вся карта"}`;
-    if (alive) {
-      hud.setHint("");
-    } else if (life === LifeState.DEAD) {
+    if (alive) return "";
+    if (life === LifeState.DEAD) {
       const left = Math.max(0, Math.ceil((respawnTick - serverTick) / tickRate));
-      hud.setHint(
-        left > 0
-          ? `Убит · возрождение через ${left}с · ${mapHint}`
-          : `Убит · выберите фракцию и кликните по клетке — возрождение · ${mapHint}`,
-      );
-    } else {
-      hud.setHint(`Выберите фракцию и кликните по клетке — старт · ${mapHint}`);
+      return left > 0
+        ? `Убит · возрождение через ${left}с · ${mapHint}`
+        : `Убит · выберите фракцию и кликните по клетке — возрождение · ${mapHint}`;
     }
+    return `Выберите фракцию и кликните по клетке — старт · ${mapHint}`;
+  };
+
+  // A fatal error ends the game here (the server closes the socket): clear the
+  // controls and show why.
+  const failWith = (text: string): void => {
+    notices.fail(text);
+    bar.setVisible(false);
+    picker.setVisible(false);
+    hud.setHint(notices.hint("", performance.now()));
   };
 
   const client = new GameClient("ws://localhost:27998/", (msg) => {
@@ -187,9 +199,19 @@ async function main(): Promise<void> {
         updateHud(life, self?.hp ?? 0);
         break;
       }
+      case "error": {
+        const e = msg.payload.value;
+        if (e.fatal) failWith(errorText(e.code));
+        else notices.refuse(errorText(e.code), performance.now()); // shown by the next updateHud
+        break;
+      }
       default:
         break;
     }
+  }, (code) => {
+    // The error frame usually came first; the close code covers a lost one.
+    const reason = closeError(code);
+    if (reason !== undefined) failWith(errorText(reason));
   });
 
   client.connect("player");

@@ -28,7 +28,8 @@ lives on the server; the browser client predicts, interpolates, and renders.
                 io threads (asio)                         game thread
   client ──ws──▶ Session.do_read ─┐                    ┌─▶ World.tick
                                   │  push_packet        │     dispatch on payload type
-                                  ▼                     │     (on_hello/spawn/input/ping)
+                                  ▼                     │     (on_hello/spawn/input/ping,
+                                                        │      send_error)
                    TSQueue<ClientEvent> ──swap─────────▶┘            │
                      {session_id, kind, ClientMessage}              │ send()
                                                                     ▼
@@ -98,10 +99,21 @@ lives on the server; the browser client predicts, interpolates, and renders.
   before attacks in the tick, so one pressed together with a swing already
   stops it. Every ability use is announced (`AbilityEvent`) so clients can show
   what others pressed.
+- **Joining and errors.** A connection's first message is `Hello`:
+  `check_hello()` accepts `PROTOCOL_VERSION_CURRENT` (defined once, in the proto)
+  and a name trimmed of spaces, 1–16 characters (not bytes) with no control or
+  invisible ones. Anything before `Hello`, or a second `Hello`, is
+  `UNEXPECTED_MESSAGE`. `send_error()` sends a `ServerError` echoing the
+  request's `request_id`; codes 1–19 are fatal — the session is released: it
+  leaves the world, its send queue writes the error and then closes the
+  WebSocket with 4000 + code, and whatever it still sends is ignored until its
+  `Disconnected`. Codes 20+ refuse one request (a spawn: `SPAWN_INVALID_CELL`,
+  `SPAWN_TOO_EARLY`, `ALREADY_SPAWNED`, `INVALID_FACTION`; an empty payload:
+  `UNSUPPORTED_MESSAGE`) and the connection lives on.
 - **Seam.** `World` depends only on the abstract `IClientGateway`
-  (`src/shared/net`: `send_to`, `broadcast`, `disconnect`), not on the network
-  layer — so the game code stays testable (a mock gateway can refuse frames)
-  and free of transport details.
+  (`src/shared/net`: `send_to`, `broadcast`, `disconnect` with a reason), not on
+  the network layer — so the game code stays testable (a mock gateway can refuse
+  frames and records closes) and free of transport details.
 
 ## Layout
 
@@ -112,8 +124,9 @@ src/game/      the simulation:
   world/         World — tick orchestration, event dispatch, delivery; fixed step
   state/         WorldState, Player, Territory, Vision, ClientSync — plain data
   systems/       input, movement, combat (abilities: blocks, melee, projectile
-                 launch), projectiles (flight, swept hits), damage, capture, spawn,
-                 vision (fog of war: what a faction sees)
+                 launch), projectiles (flight, swept hits), damage, capture, spawn
+                 (refusal reasons), join (Hello rules: version, name), vision (fog
+                 of war: what a faction sees)
   spatial/       SpatialIndex — uniform-grid broad phase over player positions;
                  geometry — swept segment-vs-circle hit test
   sync/          ServerMessage builders + per-recipient snapshot (fog-filtered,
@@ -161,9 +174,10 @@ ctest --preset debug-asan      # or run the binary directly:
 ```
 
 The `World` suites (presence, spawn, movement, combat, abilities, ranged, block,
-capture, input, fog, resync) test the game end to end through a mock gateway;
-`Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`, `Delivery`
-and `GameConfigParse` test those units directly. They all run by default.
+capture, input, fog, resync, errors) test the game end to end through a mock
+gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
+`Delivery`, `HelloRules`, `PlayerName` and `GameConfigParse` test those units
+directly. They all run by default.
 Some legacy suites (the old binary protocol and the parked auth/DB integration
 tests) remain disabled in the CMake test lists.
 

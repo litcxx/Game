@@ -98,6 +98,35 @@ sequenceDiagram
     sess->>Client: async_write (WS-кадр = ServerMessage)
 ```
 
+**Вход и ошибки.** Первое сообщение соединения — `Hello`. `check_hello()` проверяет
+версию (`PROTOCOL_VERSION_CURRENT` из proto) и имя (обрезка пробелов, 1–16
+символов, без управляющих и невидимых). Любое другое сообщение до `Hello` и
+повторный `Hello` — `UNEXPECTED_MESSAGE`. `send_error()` шлёт `ServerError` с
+`request_id` запроса; коды 1–19 fatal: сессия отпускается — уходит из мира, её
+`send_queue` дописывает ошибку и закрывает WebSocket с кодом 4000 + code, а всё,
+что она ещё пришлёт, игнорируется до её `Disconnected`. Коды 20+ — отказ
+(например, спавна), соединение живёт.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client
+    participant world as World
+    participant srv as Server
+    participant sess as Session (send_queue → do_send)
+
+    Client->>world: Hello{protocol_version = 999}
+    world->>world: check_hello → PROTOCOL_VERSION
+    world->>srv: send_to(ServerError{PROTOCOL_VERSION, fatal})
+    Note over world: конец тика: close_released_sessions
+    world->>srv: disconnect(id, PROTOCOL_VERSION)
+    srv->>sess: close_after_send(4001) — маркер в ту же очередь
+    sess->>Client: ServerError
+    sess->>Client: WebSocket close 4001
+    Client-->>world: (что успело прийти — игнорируется)
+    sess-->>world: Disconnected → released_.erase
+```
+
 > Вход буферизуется очередью (много io-потоков → один игровой поток). Выход
 > адресный: per-session канал `send_queue` **уже является** выходной очередью,
 > поэтому общей очереди на выход нет.

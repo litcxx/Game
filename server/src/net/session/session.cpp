@@ -80,6 +80,13 @@ asio::awaitable<void> Session::do_send() {
         if (rec) {
             break;  // channel closed or cancelled -> stop.
         }
+        if (buff.empty()) {
+            // The close marker (close_after_send): everything queued before it is
+            // out; close with its code. No ServerMessage serializes to 0 bytes.
+            const websocket::close_reason reason(close_code_.load());
+            co_await socket_.async_close(reason, asio::as_tuple(asio::use_awaitable));
+            break;
+        }
 
         auto [wec, n] =
             co_await socket_.async_write(asio::buffer(buff), asio::as_tuple(asio::use_awaitable));
@@ -91,6 +98,11 @@ asio::awaitable<void> Session::do_send() {
 
 bool Session::try_send(std::vector<std::byte> msg) {
     return send_queue_.try_send(boost::system::error_code{}, std::move(msg));
+}
+
+bool Session::close_after_send(std::uint16_t code) {
+    close_code_.store(code);
+    return send_queue_.try_send(boost::system::error_code{}, std::vector<std::byte>{});
 }
 
 void Session::close() noexcept {
