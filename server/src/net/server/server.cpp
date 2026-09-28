@@ -143,12 +143,10 @@ void Server::push_packet(std::uint64_t session_id, ::game::v1::ClientMessage pac
     incoming_events_.push(ClientEvent{session_id, ClientEvent::Kind::Message, std::move(packet)});
 }
 
-void Server::send_to(std::uint64_t session_id, std::vector<std::byte> bytes) {
+bool Server::send_to(std::uint64_t session_id, std::vector<std::byte> bytes) {
     std::lock_guard lock(sessions_mutex_);
     auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-        it->second.try_send(std::move(bytes));
-    }
+    return it != sessions_.end() && it->second.try_send(std::move(bytes));
 }
 
 void Server::broadcast(std::vector<std::byte> bytes) {
@@ -157,6 +155,8 @@ void Server::broadcast(std::vector<std::byte> bytes) {
         session.try_send(bytes);  // one copy per session
     }
 }
+
+void Server::disconnect(std::uint64_t session_id) { close_session(session_id); }
 
 void Server::close_session(std::size_t id) {
     // Grab the session's executor under the lock, then ask it to close on its own

@@ -3,8 +3,12 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <map>
 #include <optional>
+#include <set>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -28,8 +32,9 @@ lit::GameConfig test_config() {
     c.reconnect_grace_ms = 30000;
     c.capture_ticks = 5;  // small so capture tests flip quickly
     c.player_radius = 16;
-    c.vision_radius = 1000;  // sees the whole 4x4 map: fog of war hides nothing here
-                             //   (the WorldFog suite uses fog_config())
+    c.resync_window_ms = 5000;  // as in config.json: a second dropped frame within 5 s closes
+    c.vision_radius = 1000;     // sees the whole 4x4 map: fog of war hides nothing here
+                                //   (the WorldFog suite uses fog_config())
     c.factions = {{1, "Red", 0xFF0000}, {2, "Blue", 0x0000FF}};
     // Bar order: abilities[0] is the default (ability 0 in input) — melee.
     // Melee: cooldown 10 -> one swing in a short test window; 40 dmg -> 3 hits kill.
@@ -1467,4 +1472,217 @@ TEST(WorldFog, AJoinerSeesNothing) {
     EXPECT_EQ(snap->players_size(), 0);
     EXPECT_EQ(snap->cells_size(), 0);
     EXPECT_EQ(snap->revealed_size(), 0);
+}
+
+// --- Delivery: resync after a dropped frame ----------------------------------
+// The mock gateway's `accept` drops frames the way a full send queue does. The
+// World must then resync the client (Snapshot.resync + Roster.full) so its view
+// matches the server again — or close it when it keeps falling behind.
+
+namespace {
+
+::game::v1::ServerMessage parse(const std::vector<std::byte>& bytes) {
+    ::game::v1::ServerMessage m;
+    m.ParseFromArray(bytes.data(), static_cast<int>(bytes.size()));
+    return m;
+}
+
+// Drops the snapshots to `session_id` whose tick is in [first, last].
+std::function<bool(std::uint64_t, const std::vector<std::byte>&)> drop_snapshots(
+    std::uint64_t session_id, std::uint32_t first, std::uint32_t last) {
+    return [=](std::uint64_t sid, const std::vector<std::byte>& bytes) {
+        if (sid != session_id) return true;
+        const auto m = parse(bytes);
+        return !(m.has_snapshot() && m.snapshot().tick() >= first && m.snapshot().tick() <= last);
+    };
+}
+
+// A client's view as a real client builds it from the frames that reach it: the
+// sight of each cell (fog of war), the last known state of each cell, and who is
+// online.
+struct ClientModel {
+    enum class Sight : std::uint8_t { Explored, Visible };  // absent = unexplored
+    std::map<std::uint32_t, Sight> sight;
+    std::map<std::uint32_t, std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> cells;
+    std::set<std::uint32_t> roster;
+
+    void apply(const ::game::v1::ServerMessage& m) {
+        if (m.has_roster()) {
+            if (m.roster().full()) roster.clear();
+            for (const auto& p : m.roster().upsert()) roster.insert(p.id());
+            for (std::uint32_t id : m.roster().removed()) roster.erase(id);
+        }
+        if (!m.has_snapshot()) return;
+        const auto& s = m.snapshot();
+        if (s.resync()) {
+            for (auto& [index, seen] : sight)
+                if (seen == Sight::Visible) seen = Sight::Explored;
+        }
+        for (std::uint32_t index : s.revealed()) sight[index] = Sight::Visible;
+        for (std::uint32_t index : s.hidden()) sight[index] = Sight::Explored;
+        for (const auto& c : s.cells())
+            cells[c.index()] = {c.owner(), c.capture_faction(), c.capture_progress()};
+    }
+
+    std::set<std::uint32_t> visible() const {
+        std::set<std::uint32_t> out;
+        for (const auto& [index, seen] : sight)
+            if (seen == Sight::Visible) out.insert(index);
+        return out;
+    }
+};
+
+ClientModel model_of(const lit::test::MockClientGateway& gw, std::uint64_t session_id) {
+    ClientModel model;
+    for (const auto& m : messages_to(gw, session_id)) model.apply(m);
+    return model;
+}
+
+int resyncs_to(const lit::test::MockClientGateway& gw, std::uint64_t session_id) {
+    int n = 0;
+    for (const auto& s : snapshots_to(gw, session_id)) n += s.resync() ? 1 : 0;
+    return n;
+}
+
+}  // namespace
+
+TEST(WorldResync, TheJoinersRosterIsFull) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    world.tick(0.05);
+
+    std::optional<::game::v1::Roster> roster;
+    for (const auto& m : messages_to(gw, 1))
+        if (m.has_roster()) roster = m.roster();
+    ASSERT_TRUE(roster.has_value());
+    EXPECT_TRUE(roster->full());
+}
+
+TEST(WorldResync, ADroppedSnapshotIsFollowedByAResync) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+    gw.accept = drop_snapshots(1, 3, 3);  // the first snapshot, which reveals the spawn
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/55, /*faction=*/1));
+    run_ticks(world, 9, 0.05);
+
+    const auto snaps = snapshots_to(gw, 1);
+    ASSERT_EQ(snaps.size(), 2u);  // ticks 6 and 9; tick 3 was dropped
+    EXPECT_TRUE(snaps[0].resync());
+    EXPECT_EQ(snaps[0].revealed_size(), 13);  // the whole sight again, with its state
+    EXPECT_EQ(snaps[0].cells_size(), 13);
+    EXPECT_FALSE(snaps[1].resync());  // recovered
+    EXPECT_EQ(snaps[1].revealed_size(), 0);
+    EXPECT_TRUE(gw.disconnected.empty());
+}
+
+TEST(WorldResync, TheClientCatchesUpAfterDroppedSnapshots) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();    // capture_ticks = 5
+    config.resync_window_ms = 50;  // one snapshot period: back-to-back drops only resync
+    lit::game::World world(incoming, gw, config);
+    gw.accept = drop_snapshots(1, 6, 30);  // 9 snapshots in a row
+
+    // A watcher and its twin share one spot and faction, so they see the same;
+    // only the watcher loses frames. A scout of theirs walks left across the map
+    // (cells come into sight and leave it), an enemy takes a cell it passes by.
+    incoming.push(hello_event(1, "watcher"));
+    incoming.push(hello_event(2, "twin"));
+    incoming.push(hello_event(3, "scout"));
+    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(3, /*cell=*/59, /*faction=*/1));  // (950,550)
+    incoming.push(input_event(3, /*move_x=*/-1, /*move_y=*/0, /*seq=*/1));
+    run_ticks(world, 7, 0.05);
+    incoming.push(hello_event(4, "enemy"));
+    incoming.push(spawn_event(4, /*cell=*/57, /*faction=*/2));  // in the scout's sight
+    incoming.push(input_event(4, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 38, 0.05);  // through tick 45: the drops end on tick 30
+
+    const auto watcher = model_of(gw, 1);
+    const auto twin = model_of(gw, 2);
+    EXPECT_GE(resyncs_to(gw, 1), 1);
+    EXPECT_EQ(resyncs_to(gw, 2), 0);
+    EXPECT_EQ(watcher.visible(), twin.visible());  // the same sight as the server sends
+    for (std::uint32_t index : twin.visible()) {
+        const auto it = watcher.cells.find(index);
+        ASSERT_NE(it, watcher.cells.end()) << "cell " << index << " never reached the watcher";
+        EXPECT_EQ(it->second, twin.cells.at(index)) << "cell " << index;
+    }
+    EXPECT_EQ(watcher.roster, twin.roster);
+    EXPECT_TRUE(gw.disconnected.empty());
+}
+
+TEST(WorldResync, ALostRosterChangeIsRepaired) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "watcher"));
+    incoming.push(hello_event(2, "b"));
+    run_ticks(world, 3, 0.05);
+    // Drop the watcher's roster news on tick 4: that b left.
+    gw.accept = [](std::uint64_t sid, const std::vector<std::byte>& bytes) {
+        return !(sid == 1 && parse(bytes).has_roster());
+    };
+    incoming.push(disconnect_event(2));
+    run_ticks(world, 1, 0.05);  // tick 4: "b removed" is dropped
+    gw.accept = nullptr;
+    run_ticks(world, 5, 0.05);  // tick 6: the resync
+
+    EXPECT_EQ(model_of(gw, 1).roster, (std::set<std::uint32_t>{1}));  // no ghost of b
+    EXPECT_TRUE(gw.disconnected.empty());
+}
+
+TEST(WorldResync, DropsFartherApartThanTheWindowOnlyResync) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    config.resync_window_ms = 100;  // 6 ticks
+    lit::game::World world(incoming, gw, config);
+    gw.accept = [](std::uint64_t sid, const std::vector<std::byte>& bytes) {
+        const auto m = parse(bytes);
+        return !(sid == 1 && m.has_snapshot() &&
+                 (m.snapshot().tick() == 3 || m.snapshot().tick() == 12));
+    };
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/55, /*faction=*/1));
+    run_ticks(world, 18, 0.05);
+
+    EXPECT_TRUE(gw.disconnected.empty());
+    EXPECT_EQ(resyncs_to(gw, 1), 2);  // ticks 6 and 15
+}
+
+TEST(WorldResync, FallingBehindAgainWithinTheWindowCloses) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();  // resync_window_ms = 5000
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "slow"));
+    incoming.push(hello_event(2, "other"));
+    run_ticks(world, 3, 0.05);
+    gw.accept = [](std::uint64_t sid, const std::vector<std::byte>&) { return sid != 1; };
+    run_ticks(world, 6, 0.05);  // tick 6 drops, the resync on tick 9 drops too
+
+    EXPECT_EQ(gw.disconnected, (std::vector<std::uint64_t>{1}));
+    bool told = false;
+    for (const auto& m : messages_to(gw, 2))
+        if (m.has_roster())
+            for (std::uint32_t id : m.roster().removed()) told = told || id == 1;
+    EXPECT_TRUE(told);  // the others see it leave
+
+    const auto attempts = gw.rejected.size();
+    run_ticks(world, 6, 0.05);
+    EXPECT_EQ(gw.rejected.size(), attempts);  // nothing more is sent to it
 }

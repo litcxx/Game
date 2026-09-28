@@ -82,6 +82,7 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
 ::game::v1::ServerMessage make_full_roster(const WorldState& state) {
     ::game::v1::ServerMessage msg;
     auto* roster = msg.mutable_roster();
+    roster->set_full(true);
     for (const auto& [session_id, player] : state.players) {
         fill_player_info(roster->add_upsert(), player);
     }

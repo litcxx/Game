@@ -9,7 +9,9 @@
 #include "server/server.hpp"
 
 namespace {
-constexpr int kChannelMax = 10;
+// Frames queued for the socket: ~3 s of snapshots. When full, a frame is refused
+// and the game loop resyncs the client (or closes it if it keeps falling behind).
+constexpr int kChannelMax = 64;
 // Per protocol.proto a client frame larger than ~1 KiB is a protocol error;
 // cap reads so an oversized frame can't allocate unbounded memory.
 constexpr std::size_t kMaxIncomingMessage = 1024;

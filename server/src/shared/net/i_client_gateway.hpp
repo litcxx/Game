@@ -13,11 +13,16 @@ class IClientGateway {
   public:
     virtual ~IClientGateway() = default;
 
-    // Deliver a frame to one session. Non-blocking; dropped if the session is
-    // unknown or its send queue is full. Safe to call from the game thread.
-    virtual void send_to(std::uint64_t session_id, std::vector<std::byte> bytes) = 0;
+    // Deliver a frame to one session. Non-blocking: returns false — the frame is
+    // dropped — if the session is unknown or its send queue is full. Safe to call
+    // from the game thread.
+    virtual bool send_to(std::uint64_t session_id, std::vector<std::byte> bytes) = 0;
 
     // Deliver a frame to every connected session.
     virtual void broadcast(std::vector<std::byte> bytes) = 0;
+
+    // Close a session the game loop gives up on (e.g. it keeps falling behind).
+    // Asynchronous: its Disconnected event follows as for any other close.
+    virtual void disconnect(std::uint64_t session_id) = 0;
 };
 }  // namespace lit

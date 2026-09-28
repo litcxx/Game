@@ -9,8 +9,10 @@ namespace lit::game {
 // now (`vision`): `you` (its own life, input ack and timers); the recipient
 // itself (alive or a body) plus every spawned player and projectile on a visible
 // cell; the visible cells changed since the last snapshot plus every cell newly
-// revealed since `recipient.vision` (what it was last told), with the revealed /
-// hidden deltas; and this period's events whose named players are all listed.
+// revealed since `recipient.sync.vision` (what it was last told), with the
+// revealed / hidden deltas; and this period's events whose named players are all
+// listed. `resync` (a frame to it was lost): the deltas start from nothing —
+// every visible cell is revealed with its state — and Snapshot.resync is set.
 ::game::v1::ServerMessage build_snapshot(const WorldState& state, const Player& recipient,
-                                         const Vision& vision);
+                                         const Vision& vision, bool resync);
 }  // namespace lit::game

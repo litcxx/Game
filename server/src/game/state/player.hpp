@@ -5,7 +5,7 @@
 #include <string>
 
 #include "game/v1/protocol.pb.h"
-#include "state/vision.hpp"
+#include "state/client_sync.hpp"
 
 namespace lit::game {
 // One tick's worth of player intent, consumed one-per-tick for deterministic replay.
@@ -49,8 +49,9 @@ struct Player {
     std::deque<InputCommand> inputs;     // pending per-tick commands (FIFO by seq)
     std::uint32_t last_enqueued_seq{0};  // highest seq accepted into the queue
 
-    // Fog of war: the cells this client was last told it sees — the base for the
-    // next snapshot's revealed / hidden deltas. Kept across death and respawn.
-    Vision vision;
+    // What this client was last told (fog of war: the base for the next
+    // snapshot's revealed / hidden deltas) and how delivery to it goes. Kept
+    // across death and respawn.
+    ClientSync sync;
 };
 }  // namespace lit::game
