@@ -16,7 +16,14 @@
     "capture_ticks": 60,
     "player_radius": 16,
     "vision_radius": 300,
-    "resync_window_ms": 5000,
+    "limits": {
+      "max_input_frames": 8,
+      "input_queue": 32,
+      "messages_per_second": 120,
+      "handshake_timeout_ms": 5000,
+      "idle_timeout_ms": 20000,
+      "resync_window_ms": 5000
+    },
     "abilities": [
       { "id": 1, "kind": "melee", "name": "Удар",
         "cooldown_ticks": 45, "damage": 20, "range": 120 },

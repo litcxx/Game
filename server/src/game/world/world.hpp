@@ -66,7 +66,7 @@ class World {
     const GameConfig config_;
 
     std::uint32_t snapshot_interval_{1};    // ticks between snapshots (tick_rate / snapshot_rate)
-    std::uint32_t resync_window_ticks_{1};  // config.resync_window_ms in ticks
+    std::uint32_t resync_window_ticks_{1};  // config.limits.resync_window_ms in ticks
     // Sessions to close at the end of the tick, with the reason (UNSPECIFIED = a
     // plain close); once closed they are released: whatever they still send is
     // ignored until their Disconnected event.

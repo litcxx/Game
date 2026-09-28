@@ -7,9 +7,15 @@
 
 namespace {
 
-// A complete config document with `abilities` and the vision radius spliced into
-// the game section.
-std::string config_json(const std::string& abilities, const std::string& vision_radius = "400") {
+// The connection limits as config.json has them.
+const std::string kLimits = R"({ "max_input_frames": 8, "input_queue": 32,
+    "messages_per_second": 120, "handshake_timeout_ms": 5000, "idle_timeout_ms": 20000,
+    "resync_window_ms": 5000 })";
+
+// A complete config document with `abilities`, the vision radius and the limits
+// spliced into the game section.
+std::string config_json(const std::string& abilities, const std::string& vision_radius = "400",
+                        const std::string& limits = kLimits) {
     return R"({
       "server": { "ip": "0.0.0.0", "port": 27998, "io_threads": 1 },
       "game": {
@@ -17,7 +23,7 @@ std::string config_json(const std::string& abilities, const std::string& vision_
         "move_speed": 300, "max_hp": 100, "respawn_delay_ticks": 300,
         "reconnect_grace_ms": 30000, "capture_ticks": 60, "player_radius": 16,
         "vision_radius": )" +
-           vision_radius + R"(, "resync_window_ms": 5000,
+           vision_radius + R"(, "limits": )" + limits + R"(,
         "factions": [ { "id": 1, "name": "Red", "color": 16711680 } ],
         "abilities": )" +
            abilities + R"(
@@ -113,18 +119,35 @@ TEST(GameConfigParse, RejectsZeroVisionRadius) {
     EXPECT_THROW(lit::parse_game_config(config_json("[" + kMelee + "]", "0")), std::exception);
 }
 
-TEST(GameConfigParse, ReadsResyncWindow) {
+TEST(GameConfigParse, ReadsTheLimits) {
     const auto c = lit::parse_game_config(config_json("[" + kMelee + "]"));
 
-    EXPECT_EQ(c.resync_window_ms, 5000u);
+    EXPECT_EQ(c.limits.max_input_frames, 8u);
+    EXPECT_EQ(c.limits.input_queue, 32u);
+    EXPECT_EQ(c.limits.messages_per_second, 120u);
+    EXPECT_EQ(c.limits.handshake_timeout_ms, 5000u);
+    EXPECT_EQ(c.limits.idle_timeout_ms, 20000u);
+    EXPECT_EQ(c.limits.resync_window_ms, 5000u);
 }
 
-TEST(GameConfigParse, RejectsZeroResyncWindow) {
-    // No repeated drop would ever close the session: a client that stopped
-    // reading would be resynced forever.
-    std::string doc = config_json("[" + kMelee + "]");
-    doc.replace(doc.find("5000"), 4, "0");
-    EXPECT_THROW(lit::parse_game_config(doc), std::exception);
+TEST(GameConfigParse, RejectsAZeroOrMissingLimit) {
+    // A zero limit would refuse every frame or message, or never time anything
+    // out — a broken config, not a choice.
+    for (const std::string key : {"max_input_frames", "input_queue", "messages_per_second",
+                                  "handshake_timeout_ms", "idle_timeout_ms", "resync_window_ms"}) {
+        std::string zero = kLimits;
+        const auto at = zero.find(':', zero.find(key));
+        zero.replace(at + 1, zero.find_first_of(",}", at) - at - 1, " 0");
+        EXPECT_THROW(lit::parse_game_config(config_json("[" + kMelee + "]", "400", zero)),
+                     std::exception)
+            << key << " = 0";
+
+        std::string missing = kLimits;
+        missing.replace(missing.find(key) - 1, key.size() + 2, "\"unused\"");
+        EXPECT_THROW(lit::parse_game_config(config_json("[" + kMelee + "]", "400", missing)),
+                     std::exception)
+            << key << " missing";
+    }
 }
 
 TEST(GameConfigParse, RejectsBlockWithoutDuration) {

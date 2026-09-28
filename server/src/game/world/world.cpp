@@ -41,7 +41,7 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
 
     // Rounded up: a window shorter than a tick still spans one.
     const std::uint64_t window =
-        (std::uint64_t{config_.resync_window_ms} * config_.tick_rate + 999) / 1000;
+        (std::uint64_t{config_.limits.resync_window_ms} * config_.tick_rate + 999) / 1000;
     resync_window_ticks_ = static_cast<std::uint32_t>(std::max<std::uint64_t>(window, 1));
 }
 

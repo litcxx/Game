@@ -32,9 +32,9 @@ lit::GameConfig test_config() {
     c.reconnect_grace_ms = 30000;
     c.capture_ticks = 5;  // small so capture tests flip quickly
     c.player_radius = 16;
-    c.resync_window_ms = 5000;  // as in config.json: a second dropped frame within 5 s closes
-    c.vision_radius = 1000;     // sees the whole 4x4 map: fog of war hides nothing here
-                                //   (the WorldFog suite uses fog_config())
+    c.vision_radius = 1000;  // sees the whole 4x4 map: fog of war hides nothing here
+                             //   (the WorldFog suite uses fog_config())
+    // c.limits: the defaults — config.json's values.
     c.factions = {{1, "Red", 0xFF0000}, {2, "Blue", 0x0000FF}};
     // Bar order: abilities[0] is the default (ability 0 in input) — melee.
     // Melee: cooldown 10 -> one swing in a short test window; 40 dmg -> 3 hits kill.
@@ -1586,8 +1586,8 @@ TEST(WorldResync, ADroppedSnapshotIsFollowedByAResync) {
 TEST(WorldResync, TheClientCatchesUpAfterDroppedSnapshots) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    auto config = fog_config();    // capture_ticks = 5
-    config.resync_window_ms = 50;  // one snapshot period: back-to-back drops only resync
+    auto config = fog_config();           // capture_ticks = 5
+    config.limits.resync_window_ms = 50;  // one snapshot period: back-to-back drops only resync
     lit::game::World world(incoming, gw, config);
     gw.accept = drop_snapshots(1, 6, 30);  // 9 snapshots in a row
 
@@ -1647,7 +1647,7 @@ TEST(WorldResync, DropsFartherApartThanTheWindowOnlyResync) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    config.resync_window_ms = 100;  // 6 ticks
+    config.limits.resync_window_ms = 100;  // 6 ticks
     lit::game::World world(incoming, gw, config);
     gw.accept = [](std::uint64_t sid, const std::vector<std::byte>& bytes) {
         const auto m = parse(bytes);
@@ -1666,7 +1666,7 @@ TEST(WorldResync, DropsFartherApartThanTheWindowOnlyResync) {
 TEST(WorldResync, FallingBehindAgainWithinTheWindowCloses) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    auto config = fog_config();  // resync_window_ms = 5000
+    auto config = fog_config();  // limits.resync_window_ms = 5000
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(1, "slow"));

@@ -39,6 +39,19 @@ struct AbilityConfig {
     std::uint32_t duration_ticks;     // block: how long it lasts (0 for attacks)
 };
 
+// How much the server takes from one connection and how long it waits for it
+// (server-only). Defaults are the Alpha values (GDD 17.2, GAME-002/004); the
+// config file must still state each one.
+struct LimitsConfig {
+    std::uint32_t max_input_frames{8};         // frames taken from one Input; the rest dropped
+    std::uint32_t input_queue{32};             // pending input frames kept; newer ones dropped
+    std::uint32_t messages_per_second{120};    // more is RATE_LIMITED (a burst of as many is ok)
+    std::uint32_t handshake_timeout_ms{5000};  // no Hello by then: HANDSHAKE_TIMEOUT
+    std::uint32_t idle_timeout_ms{20000};      // nothing received for this long: IDLE_TIMEOUT
+    std::uint32_t resync_window_ms{5000};      // a frame to a client was dropped: it is
+                                               //   resynced; another drop within this closes it
+};
+
 // Mirrors game.v1.GameConfig from protocol.proto — the authoritative game rules
 // the server sends to clients in Welcome. Scalar fields are uint32 to match the
 // protobuf message; factions and abilities are sent as Welcome.factions /
@@ -56,15 +69,14 @@ struct GameConfig {
     std::uint32_t player_radius;           // body hit radius for projectiles, units (16)
     std::uint32_t vision_radius;           // fog of war: sight range of players and owned cells,
                                            //   units (300 = 3 cells); server-only, like capture
-    std::uint32_t resync_window_ms;        // a frame to a client was dropped: it is resynced, but
-                                           //   another drop within this window closes it (5000)
+    LimitsConfig limits;                   // per-connection limits (server-only)
     std::vector<FactionConfig> factions;   // selectable factions (colours)
     std::vector<AbilityConfig> abilities;  // bar order: abilities[0] is key 1 and the default
 };
 
 // Parses the "game" section of a config document. Throws on a missing or invalid
 // value (unknown ability kind, no abilities, bad ids, a projectile that can't fly,
-// a block without a duration, a zero vision radius or resync window).
+// a block without a duration, a zero vision radius or limit).
 GameConfig parse_game_config(const std::string& config_json);
 
 class Config {
