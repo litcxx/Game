@@ -163,9 +163,11 @@ export class Scene {
     this.worldDirty = true;
   }
 
-  // Fog of war deltas from Snapshot.revealed / hidden.
-  applyVisibility(revealed: readonly number[], hidden: readonly number[]): void {
-    if (this.fog.apply(revealed, hidden)) this.worldDirty = true;
+  // Fog of war deltas from Snapshot.revealed / hidden; a resync first forgets
+  // what was held as visible (see FogOfWar.forgetSight).
+  applyVisibility(revealed: readonly number[], hidden: readonly number[], resync: boolean): void {
+    const forgot = resync && this.fog.forgetSight();
+    if (this.fog.apply(revealed, hidden) || forgot) this.worldDirty = true;
   }
 
   // Incremental territory changes from Snapshot.cells.
@@ -214,7 +216,12 @@ export class Scene {
     };
   }
 
-  upsertRoster(players: readonly PlayerInfo[]): void {
+  // Roster.upsert; a full roster replaces the whole list (on join and on resync).
+  upsertRoster(players: readonly PlayerInfo[], full: boolean): void {
+    if (full) {
+      this.playerFaction.clear();
+      this.playerNames.clear();
+    }
     for (const p of players) {
       this.playerFaction.set(p.id, p.factionId);
       this.playerNames.set(p.id, p.name);

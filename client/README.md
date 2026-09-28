@@ -59,7 +59,10 @@ positions.
 - **`src/fog.ts`** — `FogOfWar`: each cell's sight — unexplored / explored /
   visible — from `Snapshot.revealed` / `hidden` (the server decides what is
   visible; the client only remembers what it has ever seen, through deaths and
-  respawns), and per-row runs of equal sight for drawing.
+  respawns), and per-row runs of equal sight for drawing. On `Snapshot.resync`
+  (the server lost a frame to us) `forgetSight()` first turns every visible cell
+  to explored; the snapshot then re-reveals the whole sight. A `Roster{full}`
+  replaces the roster.
   **`src/render/fog.ts`** (`FogView`) covers the on-screen cells: unexplored
   under dense fog (only the grid shows through), explored dimmed over the last
   known state, visible untouched; one rect per run, the map border on top.

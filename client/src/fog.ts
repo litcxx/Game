@@ -41,6 +41,20 @@ export class FogOfWar {
     return changed;
   }
 
+  // Snapshot.resync: a frame was lost, so the cells held as visible may be stale —
+  // they become explored until the resync reveals them again. Returns whether any
+  // cell changed.
+  forgetSight(): boolean {
+    let changed = false;
+    for (let i = 0; i < this.sight.length; i++) {
+      if (this.sight[i] === VISIBLE) {
+        this.sight[i] = EXPLORED;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   // Sight of a cell; off the map reads as unexplored.
   sightAt(index: number): CellSight {
     return SIGHTS[this.sight[index] ?? 0]!;

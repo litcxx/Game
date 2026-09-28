@@ -135,7 +135,7 @@ async function main(): Promise<void> {
         scene.setMapState(msg.payload.value.owners, msg.payload.value.captures);
         break;
       case "roster":
-        scene.upsertRoster(msg.payload.value.upsert);
+        scene.upsertRoster(msg.payload.value.upsert, msg.payload.value.full);
         scene.removeFromRoster(msg.payload.value.removed);
         break;
       case "snapshot": {
@@ -167,8 +167,9 @@ async function main(): Promise<void> {
         );
         // What others (and you) pressed: swings, blocks, blocked hits.
         scene.addEffects(effectsFromEvents(s.events, abilities, myId, performance.now(), INTERP_DELAY, 1000 / tickRate));
-        // Fog of war: cells entering / leaving sight; revealed ones come with their state.
-        scene.applyVisibility(s.revealed, s.hidden);
+        // Fog of war: cells entering / leaving sight; revealed ones come with their
+        // state. A resync (a frame to us was lost) re-reveals the whole sight.
+        scene.applyVisibility(s.revealed, s.hidden, s.resync);
         scene.applyCellUpdates(s.cells);
         const remoteStates = new Map<number, RemoteState>();
         for (const p of s.players) if (p.id !== myId) remoteStates.set(p.id, { x: p.x, y: p.y });

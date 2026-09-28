@@ -16,7 +16,8 @@ namespace lit::game {
 // The whole territory for a joiner as far as `vision` shows it: the owners and
 // in-progress captures of visible cells; every other cell reads as 0 (unknown).
 ::game::v1::ServerMessage make_map_state(const WorldState& state, const Vision& vision);
-// Every connected player (id, name, faction).
+// Every connected player (id, name, faction), marked full: it replaces the
+// client's roster (on join and on resync).
 ::game::v1::ServerMessage make_full_roster(const WorldState& state);
 // One player joined or changed (e.g. picked a faction).
 ::game::v1::ServerMessage make_roster_upsert(const Player& player);

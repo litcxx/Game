@@ -2,12 +2,14 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
 #include "state/vision.hpp"
+#include "sync/delivery.hpp"
 #include "sync/messages.hpp"
 #include "sync/snapshot_builder.hpp"
 #include "systems/capture_system.hpp"
@@ -35,6 +37,11 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
     snapshot_interval_ = config_.tick_rate / rate;
     if (snapshot_interval_ == 0) snapshot_interval_ = 1;
+
+    // Rounded up: a window shorter than a tick still spans one.
+    const std::uint64_t window =
+        (std::uint64_t{config_.resync_window_ms} * config_.tick_rate + 999) / 1000;
+    resync_window_ticks_ = static_cast<std::uint32_t>(std::max<std::uint64_t>(window, 1));
 }
 
 void World::run(std::stop_token stop) {
@@ -79,6 +86,7 @@ void World::tick(double dt) {
     update_projectiles(state_, config_, alive_index_, dt);
     update_captures(state_, config_);
     send_snapshots();
+    close_lagging_sessions();
 }
 
 void World::index_alive_players() {
@@ -123,7 +131,7 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
     // Greet the joiner: Welcome, then the map (as far as it sees: nothing yet —
     // snapshots reveal the rest), then the full roster.
     send(session_id, make_welcome(state_, config_, player));
-    send(session_id, make_map_state(state_, player.vision));
+    send(session_id, make_map_state(state_, player.sync.vision));
     send(session_id, make_full_roster(state_));
 
     // Tell everyone else that a new player joined.
@@ -184,26 +192,56 @@ void World::send_snapshots() {
     // fog of war: what its faction sees, computed once per faction.
     std::unordered_map<std::uint32_t, Vision> sight;  // faction id -> its vision
     for (auto& [session_id, recipient] : state_.players) {
+        if (closing_.contains(session_id)) continue;
         const std::uint32_t faction = recipient.faction_id;
         if (!sight.contains(faction)) {
             sight.emplace(faction, compute_vision(state_, config_, faction));
         }
         const Vision& vision = sight.at(faction);
-        send(session_id, build_snapshot(state_, recipient, vision));
-        recipient.vision = vision;  // what this client now knows it sees
+        // A frame to it was lost: resend what it may have missed — the roster in
+        // full, then a snapshot revealing its whole sight anew. A drop now marks
+        // it again (or closes it).
+        const bool resync = recipient.sync.resync;
+        recipient.sync.resync = false;
+        if (resync) send(session_id, make_full_roster(state_));
+        send(session_id, build_snapshot(state_, recipient, vision, resync));
+        recipient.sync.vision = vision;  // what this client now knows it sees
     }
     // This period's cell changes and events are delivered; start the next one.
     state_.territory.dirty.clear();
     state_.events.clear();
 }
 
-void World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {
+bool World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {
+    if (closing_.contains(session_id)) return false;  // given up on: nothing more goes out
     std::vector<std::byte> bytes(msg.ByteSizeLong());
     if (!msg.SerializeToArray(bytes.data(), static_cast<int>(bytes.size()))) {
         spdlog::error("World::send failed to serialize for session={}", session_id);
-        return;
+        return false;
     }
-    gateway_.send_to(session_id, std::move(bytes));
+    if (gateway_.send_to(session_id, std::move(bytes))) return true;
+    on_dropped(session_id);
+    return false;
+}
+
+void World::on_dropped(std::uint64_t session_id) {
+    auto it = state_.players.find(session_id);
+    if (it == state_.players.end()) return;  // not in the world (yet or anymore)
+    if (note_drop(it->second.sync, state_.tick, resync_window_ticks_) == DropVerdict::Close) {
+        spdlog::warn("World: session={} player_id={} keeps falling behind, closing", session_id,
+                     it->second.id);
+        closing_.insert(session_id);
+    }
+}
+
+void World::close_lagging_sessions() {
+    // Leaving the world is broadcast, which may make others fall behind too.
+    while (!closing_.empty()) {
+        const std::uint64_t session_id = *closing_.begin();
+        gateway_.disconnect(session_id);
+        on_disconnect(session_id);  // its Disconnected event later finds it gone
+        closing_.erase(session_id);
+    }
 }
 
 void World::broadcast(const ::game::v1::ServerMessage& msg) {

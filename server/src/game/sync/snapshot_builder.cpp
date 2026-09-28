@@ -33,11 +33,14 @@ bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::u
 }  // namespace
 
 ::game::v1::ServerMessage build_snapshot(const WorldState& state, const Player& recipient,
-                                         const Vision& vision) {
+                                         const Vision& vision, bool resync) {
     const Territory& territory = state.territory;
+    const Vision nothing;
+    const Vision& told = resync ? nothing : recipient.sync.vision;  // what the client knows
     ::game::v1::ServerMessage msg;
     auto* snap = msg.mutable_snapshot();
     snap->set_tick(state.tick);
+    snap->set_resync(resync);
 
     auto* you = snap->mutable_you();
     you->set_life(recipient.life);
@@ -69,7 +72,7 @@ bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::u
     const auto cell_count = static_cast<std::uint32_t>(territory.owners.size());
     for (std::uint32_t index = 0; index < cell_count; ++index) {
         const bool now = vision.sees(index);
-        const bool before = recipient.vision.sees(index);
+        const bool before = told.sees(index);
         if (now && !before) {
             snap->add_revealed(index);
             fill_cell_update(snap->add_cells(), territory, index);
@@ -78,7 +81,7 @@ bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::u
         }
     }
     for (std::uint32_t index : territory.dirty) {
-        if (vision.sees(index) && recipient.vision.sees(index)) {  // revealed ones are sent
+        if (vision.sees(index) && told.sees(index)) {  // revealed ones are sent
             fill_cell_update(snap->add_cells(), territory, index);
         }
     }
