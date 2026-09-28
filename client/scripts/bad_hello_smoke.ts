@@ -51,9 +51,10 @@ function run(messages: ClientMessage[], watchMs = 1500): Promise<Outcome> {
       out.closeCode = ev.code;
       resolve(out);
     };
+    // A snapshot: our own close completing later must not read as the server's.
     setTimeout(() => {
+      resolve({ ...out });
       ws.close();
-      resolve(out);
     }, watchMs);
   });
 }
