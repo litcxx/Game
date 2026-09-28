@@ -54,13 +54,15 @@ struct GameConfig {
     std::uint32_t reconnect_grace_ms;      // how long a dropped session is kept (30000)
     std::uint32_t capture_ticks;           // ticks for one player to capture a cell (60 = 1 s)
     std::uint32_t player_radius;           // body hit radius for projectiles, units (16)
+    std::uint32_t vision_radius;           // fog of war: sight range of players and owned cells,
+                                           //   units (400 = 4 cells); server-only, like capture
     std::vector<FactionConfig> factions;   // selectable factions (colours)
     std::vector<AbilityConfig> abilities;  // bar order: abilities[0] is key 1 and the default
 };
 
 // Parses the "game" section of a config document. Throws on a missing or invalid
 // value (unknown ability kind, no abilities, bad ids, a projectile that can't fly,
-// a block without a duration).
+// a block without a duration, a zero vision radius).
 GameConfig parse_game_config(const std::string& config_json);
 
 class Config {

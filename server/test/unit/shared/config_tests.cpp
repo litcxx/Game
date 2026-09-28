@@ -7,14 +7,17 @@
 
 namespace {
 
-// A complete config document with `abilities` spliced into the game section.
-std::string config_json(const std::string& abilities) {
+// A complete config document with `abilities` and the vision radius spliced into
+// the game section.
+std::string config_json(const std::string& abilities, const std::string& vision_radius = "400") {
     return R"({
       "server": { "ip": "0.0.0.0", "port": 27998, "io_threads": 1 },
       "game": {
         "tick_rate": 60, "snapshot_rate": 20, "map_width": 100, "map_height": 100,
         "move_speed": 300, "max_hp": 100, "respawn_delay_ticks": 300,
         "reconnect_grace_ms": 30000, "capture_ticks": 60, "player_radius": 16,
+        "vision_radius": )" +
+           vision_radius + R"(,
         "factions": [ { "id": 1, "name": "Red", "color": 16711680 } ],
         "abilities": )" +
            abilities + R"(
@@ -97,6 +100,17 @@ TEST(GameConfigParse, ReadsBlockAbility) {
     EXPECT_EQ(block.damage, 0u);  // a block needs no damage or range
     EXPECT_EQ(block.range, 0u);
     EXPECT_EQ(c.abilities[0].duration_ticks, 0u);  // melee has no duration
+}
+
+TEST(GameConfigParse, ReadsVisionRadius) {
+    const auto c = lit::parse_game_config(config_json("[" + kMelee + "]", "400"));
+
+    EXPECT_EQ(c.vision_radius, 400u);
+}
+
+TEST(GameConfigParse, RejectsZeroVisionRadius) {
+    // Nobody would see anything, not even their own cell: a broken config.
+    EXPECT_THROW(lit::parse_game_config(config_json("[" + kMelee + "]", "0")), std::exception);
 }
 
 TEST(GameConfigParse, RejectsBlockWithoutDuration) {

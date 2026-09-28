@@ -82,6 +82,10 @@ GameConfig parse_game_config(const std::string& config_json) {
     config.reconnect_grace_ms = game.at("reconnect_grace_ms");
     config.capture_ticks = game.at("capture_ticks");
     config.player_radius = game.at("player_radius");
+    config.vision_radius = game.at("vision_radius");
+    if (config.vision_radius == 0) {
+        throw std::runtime_error("config: vision_radius must be > 0");
+    }
 
     for (const auto& f : game.at("factions")) {
         config.factions.push_back(FactionConfig{f.at("id"), f.at("name"), f.at("color")});
@@ -109,9 +113,9 @@ void Config::init_game_config(const std::string& filename) {
 
     spdlog::info("Game tick_rate={} snapshot_rate={} map={}x{}", game_config_.tick_rate,
                  game_config_.snapshot_rate, game_config_.map_width, game_config_.map_height);
-    spdlog::info("Game move_speed={} max_hp={} player_radius={} abilities={}",
+    spdlog::info("Game move_speed={} max_hp={} player_radius={} vision_radius={} abilities={}",
                  game_config_.move_speed, game_config_.max_hp, game_config_.player_radius,
-                 game_config_.abilities.size());
+                 game_config_.vision_radius, game_config_.abilities.size());
     spdlog::info("Game respawn_delay_ticks={} reconnect_grace_ms={} factions={}",
                  game_config_.respawn_delay_ticks, game_config_.reconnect_grace_ms,
                  game_config_.factions.size());
