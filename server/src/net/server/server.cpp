@@ -156,7 +156,9 @@ void Server::broadcast(std::vector<std::byte> bytes) {
     }
 }
 
-void Server::disconnect(std::uint64_t session_id) { close_session(session_id); }
+void Server::disconnect(std::uint64_t session_id, ::game::v1::ErrorCode /*reason*/) {
+    close_session(session_id);
+}
 
 void Server::close_session(std::size_t id) {
     // Grab the session's executor under the lock, then ask it to close on its own

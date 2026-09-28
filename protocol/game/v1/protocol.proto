@@ -317,7 +317,7 @@ message ServerError {
 enum ErrorCode {
   ERROR_CODE_UNSPECIFIED = 0;
 
-  // 1–19: соединение и протокол, обычно fatal.
+  // 1–19: соединение и протокол — всегда fatal.
   ERROR_CODE_PROTOCOL_VERSION = 1;    // версия клиента не поддерживается
   ERROR_CODE_BAD_MESSAGE = 2;         // не декодируется, текстовый кадр, больше 1 КиБ
   ERROR_CODE_UNEXPECTED_MESSAGE = 3;  // не в том состоянии: Input до Hello, второй Hello
@@ -331,7 +331,7 @@ enum ErrorCode {
   ERROR_CODE_KICKED = 11;
   ERROR_CODE_INTERNAL = 12;
 
-  // 20+: отказ в конкретном запросе, не fatal.
+  // 20+: отказ в конкретном запросе — никогда не fatal.
   ERROR_CODE_UNSUPPORTED_MESSAGE = 20;  // пустой или неизвестный серверу payload
   ERROR_CODE_SPAWN_INVALID_CELL = 21;   // клетка вне карты
   ERROR_CODE_SPAWN_FORBIDDEN = 22;      // клетка запрещена правилами появления

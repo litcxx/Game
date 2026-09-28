@@ -47,7 +47,7 @@ class Server : public IClientGateway {
     // IClientGateway: the game loop hands us serialized frames to deliver.
     bool send_to(std::uint64_t session_id, std::vector<std::byte> bytes) override;
     void broadcast(std::vector<std::byte> bytes) override;
-    void disconnect(std::uint64_t session_id) override;
+    void disconnect(std::uint64_t session_id, ::game::v1::ErrorCode reason) override;
 
   private:
     asio::awaitable<void> do_listen();

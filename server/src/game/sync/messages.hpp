@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string_view>
 
 #include "config/config.hpp"
 #include "game/v1/protocol.pb.h"
@@ -25,6 +26,14 @@ namespace lit::game {
 ::game::v1::ServerMessage make_roster_removed(std::uint32_t player_id);
 // Echo of a Ping (RTT on the client) with the current server tick.
 ::game::v1::ServerMessage make_pong(const WorldState& state, std::uint32_t client_time_ms);
+
+// Whether an error closes the connection: codes 1–19 (connection and protocol)
+// always do, 20+ (a refused request) never do — see ErrorCode in protocol.proto.
+bool is_fatal(::game::v1::ErrorCode code);
+// A ServerError answering ClientMessage.request_id (0 = none); `detail` is for
+// logs, not for the player.
+::game::v1::ServerMessage make_error(::game::v1::ErrorCode code, std::uint32_t request_id,
+                                     std::string_view detail);
 
 // One cell's owner and capture state (shared by MapState and Snapshot).
 void fill_cell_update(::game::v1::CellUpdate* out, const Territory& territory, std::uint32_t index);

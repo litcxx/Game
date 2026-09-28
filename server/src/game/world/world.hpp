@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <stop_token>
+#include <string_view>
+#include <unordered_map>
 #include <unordered_set>
 
 #include "config/config.hpp"
@@ -32,9 +34,11 @@ class World {
     void process_event(const ClientEvent& ev);
     void send_snapshots();
 
-    // Per-message handlers.
-    void on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello);
-    void on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn);
+    // Per-message handlers. `request_id` is echoed in any error they send.
+    void on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello,
+                  std::uint32_t request_id);
+    void on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn,
+                  std::uint32_t request_id);
     void on_input(std::uint64_t session_id, const ::game::v1::Input& input);
     void on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping);
     void on_disconnect(std::uint64_t session_id);
@@ -48,8 +52,13 @@ class World {
     void broadcast(const ::game::v1::ServerMessage& msg);
     void broadcast_except(std::uint64_t session_id, const ::game::v1::ServerMessage& msg);
     void on_dropped(std::uint64_t session_id);
-    // End of tick: close the sessions that fell behind again (they leave the world).
-    void close_lagging_sessions();
+    // Tell a session why its request failed (ServerError). A fatal error also
+    // releases it: closed with 4000 + code at the end of the tick.
+    void send_error(std::uint64_t session_id, ::game::v1::ErrorCode code, std::uint32_t request_id,
+                    std::string_view detail);
+    // End of tick: close the sessions being released (a fatal error, or falling
+    // behind again); they leave the world.
+    void close_released_sessions();
 
     TSQueue<ClientEvent>& incoming_;
     TSQueue<ClientEvent> local_;  // tick-local double buffer
@@ -58,8 +67,12 @@ class World {
 
     std::uint32_t snapshot_interval_{1};    // ticks between snapshots (tick_rate / snapshot_rate)
     std::uint32_t resync_window_ticks_{1};  // config.resync_window_ms in ticks
-    std::unordered_set<std::uint64_t> closing_;  // sessions to close at the end of the tick
-    WorldState state_;                           // all simulation state (plain data)
-    SpatialIndex alive_index_;                   // alive players by position, rebuilt each tick
+    // Sessions to close at the end of the tick, with the reason (UNSPECIFIED = a
+    // plain close); once closed they are released: whatever they still send is
+    // ignored until their Disconnected event.
+    std::unordered_map<std::uint64_t, ::game::v1::ErrorCode> closing_;
+    std::unordered_set<std::uint64_t> released_;
+    WorldState state_;          // all simulation state (plain data)
+    SpatialIndex alive_index_;  // alive players by position, rebuilt each tick
 };
 }  // namespace lit::game

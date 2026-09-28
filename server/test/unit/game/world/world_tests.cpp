@@ -1675,7 +1675,9 @@ TEST(WorldResync, FallingBehindAgainWithinTheWindowCloses) {
     gw.accept = [](std::uint64_t sid, const std::vector<std::byte>&) { return sid != 1; };
     run_ticks(world, 6, 0.05);  // tick 6 drops, the resync on tick 9 drops too
 
-    EXPECT_EQ(gw.disconnected, (std::vector<std::uint64_t>{1}));
+    ASSERT_EQ(gw.disconnected.size(), 1u);
+    EXPECT_EQ(gw.disconnected[0].first, 1u);
+    EXPECT_EQ(gw.disconnected[0].second, ::game::v1::ERROR_CODE_UNSPECIFIED);  // no error to tell
     bool told = false;
     for (const auto& m : messages_to(gw, 2))
         if (m.has_roster())
@@ -1685,4 +1687,273 @@ TEST(WorldResync, FallingBehindAgainWithinTheWindowCloses) {
     const auto attempts = gw.rejected.size();
     run_ticks(world, 6, 0.05);
     EXPECT_EQ(gw.rejected.size(), attempts);  // nothing more is sent to it
+}
+
+// --- Errors: Hello validation and refusals (ServerError) ---------------------
+// A fatal error (codes 1-19) is sent, then the session is closed with 4000 +
+// code at the end of the tick and leaves the world; a refusal (20+) is sent and
+// the connection lives on. Every error echoes ClientMessage.request_id.
+
+namespace {
+
+lit::ClientEvent with_request(lit::ClientEvent ev, std::uint32_t request_id) {
+    ev.msg.set_request_id(request_id);
+    return ev;
+}
+
+lit::ClientEvent hello_v(std::uint64_t session_id, std::uint32_t version, std::string name) {
+    auto ev = hello_event(session_id, std::move(name));
+    ev.msg.mutable_hello()->set_protocol_version(version);
+    return ev;
+}
+
+lit::ClientEvent ping_event(std::uint64_t session_id) {
+    lit::ClientEvent ev;
+    ev.session_id = session_id;
+    ev.kind = lit::ClientEvent::Kind::Message;
+    ev.msg.mutable_ping()->set_client_time_ms(1);
+    return ev;
+}
+
+lit::ClientEvent empty_event(std::uint64_t session_id) {
+    lit::ClientEvent ev;
+    ev.session_id = session_id;
+    ev.kind = lit::ClientEvent::Kind::Message;  // no payload
+    return ev;
+}
+
+std::vector<::game::v1::ServerError> errors_to(const lit::test::MockClientGateway& gw,
+                                               std::uint64_t session_id) {
+    std::vector<::game::v1::ServerError> out;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_error()) out.push_back(m.error());
+    return out;
+}
+
+bool got_welcome(const lit::test::MockClientGateway& gw, std::uint64_t session_id) {
+    return std::ranges::any_of(messages_to(gw, session_id),
+                               [](const auto& m) { return m.has_welcome(); });
+}
+
+// Roster changes about `id` seen by `session_id`: {upserts, removals}.
+std::pair<int, int> roster_news_about(const lit::test::MockClientGateway& gw,
+                                      std::uint64_t session_id, std::uint32_t id) {
+    int upserts = 0;
+    int removals = 0;
+    for (const auto& m : messages_to(gw, session_id)) {
+        if (!m.has_roster()) continue;
+        for (const auto& p : m.roster().upsert()) upserts += p.id() == id ? 1 : 0;
+        for (std::uint32_t r : m.roster().removed()) removals += r == id ? 1 : 0;
+    }
+    return {upserts, removals};
+}
+
+// The one error sent to `session_id` and the session was closed for it.
+void expect_fatal(const lit::test::MockClientGateway& gw, std::uint64_t session_id,
+                  ::game::v1::ErrorCode code, std::uint32_t request_id) {
+    const auto errors = errors_to(gw, session_id);
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_EQ(errors[0].code(), code);
+    EXPECT_TRUE(errors[0].fatal());
+    EXPECT_EQ(errors[0].request_id(), request_id);
+    EXPECT_FALSE(errors[0].detail().empty());  // for the logs
+    ASSERT_EQ(gw.disconnected.size(), 1u);
+    EXPECT_EQ(gw.disconnected[0], std::make_pair(session_id, code));
+}
+
+// The one error sent to `session_id` is a refusal, and the session lives on.
+void expect_refusal(const lit::test::MockClientGateway& gw, std::uint64_t session_id,
+                    ::game::v1::ErrorCode code, std::uint32_t request_id) {
+    const auto errors = errors_to(gw, session_id);
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_EQ(errors[0].code(), code);
+    EXPECT_FALSE(errors[0].fatal());
+    EXPECT_EQ(errors[0].request_id(), request_id);
+    EXPECT_TRUE(gw.disconnected.empty());
+}
+
+}  // namespace
+
+TEST(WorldErrors, AnotherProtocolVersionIsFatal) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "other"));
+    incoming.push(with_request(hello_v(2, /*version=*/2, "future"), 7));
+    world.tick(0.016);
+
+    expect_fatal(gw, 2, ::game::v1::ERROR_CODE_PROTOCOL_VERSION, 7);
+    EXPECT_FALSE(got_welcome(gw, 2));
+    EXPECT_EQ(roster_news_about(gw, 1, 2), std::make_pair(0, 0));  // never joined
+}
+
+TEST(WorldErrors, ABadNameIsFatal) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(with_request(hello_event(1, "   "), 3));
+    world.tick(0.016);
+
+    expect_fatal(gw, 1, ::game::v1::ERROR_CODE_INVALID_NAME, 3);
+    EXPECT_FALSE(got_welcome(gw, 1));
+}
+
+TEST(WorldErrors, TheNameIsTrimmed) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "  tag  "));
+    world.tick(0.016);
+
+    std::optional<std::string> name;
+    for (const auto& m : messages_to(gw, 1))
+        if (m.has_roster())
+            for (const auto& p : m.roster().upsert()) name = p.name();
+    EXPECT_EQ(name, "tag");
+}
+
+TEST(WorldErrors, ASecondHelloIsFatalAndLeavesNoGhost) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    world.tick(0.016);
+    incoming.push(with_request(hello_event(1, "a-again"), 9));
+    world.tick(0.016);
+
+    expect_fatal(gw, 1, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, 9);
+    // b saw a join once (the full roster) and leave once — no second a, no ghost.
+    EXPECT_EQ(roster_news_about(gw, 2, 1), std::make_pair(1, 1));
+    for (std::uint32_t id = 3; id < 10; ++id) EXPECT_EQ(roster_news_about(gw, 2, id).first, 0);
+
+    incoming.push(disconnect_event(1));  // the socket's own close arrives later
+    world.tick(0.016);
+    EXPECT_EQ(roster_news_about(gw, 2, 1), std::make_pair(1, 1));  // not told twice
+}
+
+TEST(WorldErrors, AnythingBeforeHelloIsFatal) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(with_request(input_event(1, 1, 0, /*seq=*/1), 4));
+    world.tick(0.016);
+    expect_fatal(gw, 1, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, 4);
+
+    for (auto ev : {spawn_event(2, 5, 1), ping_event(3), empty_event(4)}) {
+        lit::test::MockClientGateway other;
+        lit::TSQueue<lit::ClientEvent> queue;
+        lit::game::World fresh(queue, other, config);
+        const auto sid = ev.session_id;
+        queue.push(std::move(ev));
+        fresh.tick(0.016);
+        expect_fatal(other, sid, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, 0);
+    }
+}
+
+TEST(WorldErrors, AReleasedSessionIsIgnoredUntilItCloses) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_v(1, /*version=*/9, "old"));
+    world.tick(0.016);
+    // Frames it sent before the close reached it are still on their way.
+    incoming.push(hello_event(1, "retry"));
+    incoming.push(input_event(1, 1, 0, /*seq=*/1));
+    incoming.push(ping_event(1));
+    run_ticks(world, 3, 0.016);
+
+    EXPECT_EQ(errors_to(gw, 1).size(), 1u);  // just the first one
+    EXPECT_EQ(gw.disconnected.size(), 1u);
+    EXPECT_FALSE(got_welcome(gw, 1));
+
+    incoming.push(disconnect_event(1));
+    incoming.push(hello_event(1, "new"));  // (session ids are never reused; just in case)
+    world.tick(0.016);
+    EXPECT_TRUE(got_welcome(gw, 1));
+}
+
+TEST(WorldErrors, AnInvalidSpawnCellIsRefused) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(with_request(spawn_event(1, /*cell=*/9999, /*faction=*/1), 11));
+    world.tick(0.016);
+
+    expect_refusal(gw, 1, ::game::v1::ERROR_CODE_SPAWN_INVALID_CELL, 11);
+}
+
+TEST(WorldErrors, AnUnknownFactionIsRefused) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(with_request(spawn_event(1, /*cell=*/5, /*faction=*/99), 12));
+    world.tick(0.016);
+
+    expect_refusal(gw, 1, ::game::v1::ERROR_CODE_INVALID_FACTION, 12);
+}
+
+TEST(WorldErrors, SpawningWhileAliveIsRefused) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(with_request(spawn_event(1, /*cell=*/6, /*faction=*/1), 13));
+    world.tick(0.016);
+
+    expect_refusal(gw, 1, ::game::v1::ERROR_CODE_ALREADY_SPAWNED, 13);
+}
+
+TEST(WorldErrors, RespawningTooEarlyIsRefused) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    melee(config).cooldown_ticks = 1;  // three swings on ticks 1..3 kill
+    config.respawn_delay_ticks = 60;
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "victim"));
+    incoming.push(hello_event(2, "killer"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    run_ticks(world, 4, 0.016);
+    incoming.push(with_request(spawn_event(1, /*cell=*/15, /*faction=*/1), 14));
+    world.tick(0.016);
+
+    expect_refusal(gw, 1, ::game::v1::ERROR_CODE_SPAWN_TOO_EARLY, 14);
+}
+
+TEST(WorldErrors, AnEmptyMessageIsUnsupported) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(with_request(empty_event(1), 15));
+    world.tick(0.016);
+
+    expect_refusal(gw, 1, ::game::v1::ERROR_CODE_UNSUPPORTED_MESSAGE, 15);
 }

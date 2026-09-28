@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "game/v1/protocol.pb.h"
+
 namespace lit {
 // The seam between the game loop and the network layer. The game loop hands
 // already-serialized frames to an IClientGateway; net::Server implements it on
@@ -21,8 +23,11 @@ class IClientGateway {
     // Deliver a frame to every connected session.
     virtual void broadcast(std::vector<std::byte> bytes) = 0;
 
-    // Close a session the game loop gives up on (e.g. it keeps falling behind).
-    // Asynchronous: its Disconnected event follows as for any other close.
-    virtual void disconnect(std::uint64_t session_id) = 0;
+    // Close a session the game loop gives up on. The frames already queued to it
+    // (e.g. the ServerError saying why) go out first, then the WebSocket closes
+    // with code 4000 + `reason` (a plain close for ERROR_CODE_UNSPECIFIED); a
+    // session whose queue is full is closed at once. Asynchronous: its
+    // Disconnected event follows as for any other close.
+    virtual void disconnect(std::uint64_t session_id, ::game::v1::ErrorCode reason) = 0;
 };
 }  // namespace lit

@@ -1,32 +1,26 @@
 #include "systems/spawn_system.hpp"
 
-#include <spdlog/spdlog.h>
-
 #include <algorithm>
 
 #include "state/units.hpp"
 
 namespace lit::game {
-bool try_spawn(const WorldState& state, const GameConfig& config, Player& player,
-               std::uint32_t cell, std::uint32_t faction_id) {
+std::expected<void, ::game::v1::ErrorCode> try_spawn(const WorldState& state,
+                                                     const GameConfig& config, Player& player,
+                                                     std::uint32_t cell, std::uint32_t faction_id) {
     if (player.life == ::game::v1::LIFE_STATE_ALIVE) {
-        spdlog::warn("spawn ignored (already alive) player_id={}", player.id);
-        return false;
+        return std::unexpected(::game::v1::ERROR_CODE_ALREADY_SPAWNED);
     }
     if (player.life == ::game::v1::LIFE_STATE_DEAD && state.tick < player.respawn_tick) {
-        spdlog::warn("spawn ignored (respawning) player_id={} respawn_tick={}", player.id,
-                     player.respawn_tick);
-        return false;  // still waiting out the respawn delay
+        return std::unexpected(::game::v1::ERROR_CODE_SPAWN_TOO_EARLY);  // still waiting it out
     }
     if (cell >= config.map_width * config.map_height) {
-        spdlog::warn("spawn ignored (invalid cell={}) player_id={}", cell, player.id);
-        return false;
+        return std::unexpected(::game::v1::ERROR_CODE_SPAWN_INVALID_CELL);
     }
     const bool valid_faction = std::ranges::any_of(
         config.factions, [faction_id](const auto& f) { return f.id == faction_id; });
     if (!valid_faction) {
-        spdlog::warn("spawn ignored (invalid faction={}) player_id={}", faction_id, player.id);
-        return false;
+        return std::unexpected(::game::v1::ERROR_CODE_INVALID_FACTION);
     }
 
     const std::uint32_t col = cell % config.map_width;
@@ -47,6 +41,6 @@ bool try_spawn(const WorldState& state, const GameConfig& config, Player& player
     player.block_cooldown_ticks = 0;
     player.respawn_tick = 0;
     player.inputs.clear();  // drop stale pre-spawn commands (last_enqueued_seq stays monotonic)
-    return true;
+    return {};
 }
 }  // namespace lit::game

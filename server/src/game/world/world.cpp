@@ -15,6 +15,7 @@
 #include "systems/capture_system.hpp"
 #include "systems/combat_system.hpp"
 #include "systems/input_system.hpp"
+#include "systems/join_system.hpp"
 #include "systems/movement_system.hpp"
 #include "systems/projectile_system.hpp"
 #include "systems/spawn_system.hpp"
@@ -86,7 +87,7 @@ void World::tick(double dt) {
     update_projectiles(state_, config_, alive_index_, dt);
     update_captures(state_, config_);
     send_snapshots();
-    close_lagging_sessions();
+    close_released_sessions();
 }
 
 void World::index_alive_players() {
@@ -97,35 +98,65 @@ void World::index_alive_players() {
 }
 
 void World::process_event(const ClientEvent& ev) {
+    const std::uint64_t sid = ev.session_id;
     if (ev.kind == ClientEvent::Kind::Disconnected) {
-        on_disconnect(ev.session_id);
+        released_.erase(sid);
+        on_disconnect(sid);
+        return;
+    }
+    if (released_.contains(sid) || closing_.contains(sid)) {
+        return;  // let go of: frames it sent before the close are still arriving
+    }
+
+    const auto& msg = ev.msg;
+    const bool joined = state_.players.contains(sid);
+    if (msg.payload_case() == ::game::v1::ClientMessage::kHello) {
+        if (joined) {
+            send_error(sid, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, msg.request_id(),
+                       "a second Hello on one connection");
+        } else {
+            on_hello(sid, msg.hello(), msg.request_id());
+        }
+        return;
+    }
+    if (!joined) {
+        send_error(sid, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, msg.request_id(),
+                   "a message before Hello");
         return;
     }
 
-    switch (ev.msg.payload_case()) {
-        case ::game::v1::ClientMessage::kHello:
-            on_hello(ev.session_id, ev.msg.hello());
-            break;
+    switch (msg.payload_case()) {
         case ::game::v1::ClientMessage::kSpawn:
-            on_spawn(ev.session_id, ev.msg.spawn());
+            on_spawn(sid, msg.spawn(), msg.request_id());
             break;
         case ::game::v1::ClientMessage::kInput:
-            on_input(ev.session_id, ev.msg.input());
+            on_input(sid, msg.input());
             break;
         case ::game::v1::ClientMessage::kPing:
-            on_ping(ev.session_id, ev.msg.ping());
+            on_ping(sid, msg.ping());
             break;
+        case ::game::v1::ClientMessage::kHello:  // handled above
         case ::game::v1::ClientMessage::PAYLOAD_NOT_SET:
         default:
-            spdlog::warn("World: empty/unknown payload from session={}", ev.session_id);
+            send_error(sid, ::game::v1::ERROR_CODE_UNSUPPORTED_MESSAGE, msg.request_id(),
+                       "an empty or unknown payload");
             break;
     }
 }
 
-void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
+void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello,
+                     std::uint32_t request_id) {
+    auto name = check_hello(hello);
+    if (!name) {
+        send_error(session_id, name.error(), request_id,
+                   name.error() == ::game::v1::ERROR_CODE_PROTOCOL_VERSION
+                       ? "unsupported protocol_version"
+                       : "the name must be 1-16 printable characters");
+        return;
+    }
     Player player;
     player.id = state_.next_player_id++;
-    player.name = hello.name();
+    player.name = *std::move(name);
     state_.players[session_id] = player;
 
     // Greet the joiner: Welcome, then the map (as far as it sees: nothing yet —
@@ -137,17 +168,20 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello) {
     // Tell everyone else that a new player joined.
     broadcast_except(session_id, make_roster_upsert(player));
 
-    spdlog::info("World::on_hello session={} name='{}' -> player_id={}", session_id, hello.name(),
+    spdlog::info("World::on_hello session={} name='{}' -> player_id={}", session_id, player.name,
                  player.id);
 }
 
-void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn) {
+void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn,
+                     std::uint32_t request_id) {
     auto it = state_.players.find(session_id);
     if (it == state_.players.end()) {
         return;  // never sent Hello
     }
     Player& player = it->second;
-    if (!try_spawn(state_, config_, player, spawn.cell(), spawn.faction_id())) {
+    if (auto spawned = try_spawn(state_, config_, player, spawn.cell(), spawn.faction_id());
+        !spawned) {
+        send_error(session_id, spawned.error(), request_id, "spawn refused");
         return;
     }
 
@@ -213,7 +247,9 @@ void World::send_snapshots() {
 }
 
 bool World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {
-    if (closing_.contains(session_id)) return false;  // given up on: nothing more goes out
+    if (closing_.contains(session_id) || released_.contains(session_id)) {
+        return false;  // given up on: nothing more goes out
+    }
     std::vector<std::byte> bytes(msg.ByteSizeLong());
     if (!msg.SerializeToArray(bytes.data(), static_cast<int>(bytes.size()))) {
         spdlog::error("World::send failed to serialize for session={}", session_id);
@@ -230,16 +266,27 @@ void World::on_dropped(std::uint64_t session_id) {
     if (note_drop(it->second.sync, state_.tick, resync_window_ticks_) == DropVerdict::Close) {
         spdlog::warn("World: session={} player_id={} keeps falling behind, closing", session_id,
                      it->second.id);
-        closing_.insert(session_id);
+        closing_.try_emplace(session_id, ::game::v1::ERROR_CODE_UNSPECIFIED);  // nothing to tell
     }
 }
 
-void World::close_lagging_sessions() {
+void World::send_error(std::uint64_t session_id, ::game::v1::ErrorCode code,
+                       std::uint32_t request_id, std::string_view detail) {
+    send(session_id, make_error(code, request_id, detail));
+    const bool fatal = is_fatal(code);
+    spdlog::warn("World: session={} {} {} ({}), request_id={}", session_id,
+                 fatal ? "closing with" : "refused:", ::game::v1::ErrorCode_Name(code), detail,
+                 request_id);
+    if (fatal) closing_.try_emplace(session_id, code);
+}
+
+void World::close_released_sessions() {
     // Leaving the world is broadcast, which may make others fall behind too.
     while (!closing_.empty()) {
-        const std::uint64_t session_id = *closing_.begin();
-        gateway_.disconnect(session_id);
-        on_disconnect(session_id);  // its Disconnected event later finds it gone
+        const auto [session_id, reason] = *closing_.begin();
+        gateway_.disconnect(session_id, reason);  // after the frames already queued
+        released_.insert(session_id);
+        on_disconnect(session_id);  // leaves the world now; its Disconnected comes later
         closing_.erase(session_id);
     }
 }
