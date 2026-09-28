@@ -23,8 +23,8 @@ jobs:
       run:
         working-directory: client
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -44,7 +44,7 @@ jobs:
       run:
         working-directory: server
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install dependencies
         run: |
           sudo apt-get update
@@ -68,7 +68,7 @@ jobs:
           nohup bash -c './build/bin/server config/config.json & echo $! > server.pid
                          wait $!; echo $? > server.exit' > server.log 2>&1 &
           timeout 30 bash -c 'until (: > /dev/tcp/127.0.0.1/27998) 2>/dev/null; do sleep 0.5; done'
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
