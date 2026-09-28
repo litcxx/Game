@@ -2,12 +2,14 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
   ClientMessageSchema,
+  ProtocolVersion,
   ServerMessageSchema,
   type ClientMessage,
   type ServerMessage,
 } from "../gen/game/v1/protocol_pb.js";
 
-export const PROTOCOL_VERSION = 1;
+// From the protocol itself, so a stale build is told PROTOCOL_VERSION by the server.
+export const PROTOCOL_VERSION: number = ProtocolVersion.CURRENT;
 
 // Thin transport: one WebSocket binary frame == one protobuf message.
 // Decodes incoming ServerMessages and hands them to `onMessage`.
