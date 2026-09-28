@@ -156,8 +156,18 @@ void Server::broadcast(std::vector<std::byte> bytes) {
     }
 }
 
-void Server::disconnect(std::uint64_t session_id, ::game::v1::ErrorCode /*reason*/) {
-    close_session(session_id);
+void Server::disconnect(std::uint64_t session_id, ::game::v1::ErrorCode reason) {
+    // WebSocket close code: 4000 + ErrorCode (protocol.proto), or a normal close.
+    const auto code = reason == ::game::v1::ERROR_CODE_UNSPECIFIED
+                          ? static_cast<std::uint16_t>(websocket::close_code::normal)
+                          : static_cast<std::uint16_t>(4000 + reason);
+    {
+        std::lock_guard lock(sessions_mutex_);
+        auto it = sessions_.find(session_id);
+        if (it == sessions_.end()) return;
+        if (it->second.close_after_send(code)) return;  // after what is already queued
+    }
+    close_session(session_id);  // its queue is full: close at once
 }
 
 void Server::close_session(std::size_t id) {
