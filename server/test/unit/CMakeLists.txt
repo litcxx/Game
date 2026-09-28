@@ -17,10 +17,12 @@ set(SOURCES
   game/spatial/geometry_tests.cpp
   game/spatial/spatial_index_tests.cpp
   game/systems/damage_tests.cpp
+  game/systems/input_system_tests.cpp
   game/systems/join_system_tests.cpp
   game/systems/projectile_system_tests.cpp
   game/systems/vision_system_tests.cpp
   game/sync/delivery_tests.cpp
+  game/world/connection_tests.cpp
   game/world/world_tests.cpp
   # Disabled until their subjects are ready:
   #   player_tests — Player will be reworked for the top-down MVP

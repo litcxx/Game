@@ -1,8 +1,13 @@
 #include "systems/input_system.hpp"
 
+#include <cstdint>
+
 namespace lit::game {
-void enqueue_frames(Player& player, const ::game::v1::Input& input) {
+void enqueue_frames(Player& player, const ::game::v1::Input& input, const LimitsConfig& limits) {
+    std::uint32_t taken = 0;
     for (const auto& frame : input.frames()) {
+        if (taken++ == limits.max_input_frames) break;          // more than an Input may carry
+        if (player.inputs.size() >= limits.input_queue) break;  // too far ahead: drop the rest
         if (frame.seq() <= player.last_enqueued_seq) continue;  // out-of-order / duplicate
         player.last_enqueued_seq = frame.seq();
         player.inputs.push_back(InputCommand{frame.seq(), frame.move_x(), frame.move_y(),

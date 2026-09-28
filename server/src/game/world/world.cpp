@@ -196,7 +196,7 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
     if (it == state_.players.end()) {
         return;
     }
-    enqueue_frames(it->second, input);  // applied one per tick by consume_inputs
+    enqueue_frames(it->second, input, config_.limits);  // applied one per tick by consume_inputs
 }
 
 void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
