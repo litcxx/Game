@@ -167,6 +167,8 @@ async function main(): Promise<void> {
         );
         // What others (and you) pressed: swings, blocks, blocked hits.
         scene.addEffects(effectsFromEvents(s.events, abilities, myId, performance.now(), INTERP_DELAY, 1000 / tickRate));
+        // Fog of war: cells entering / leaving sight; revealed ones come with their state.
+        scene.applyVisibility(s.revealed, s.hidden);
         scene.applyCellUpdates(s.cells);
         const remoteStates = new Map<number, RemoteState>();
         for (const p of s.players) if (p.id !== myId) remoteStates.set(p.id, { x: p.x, y: p.y });

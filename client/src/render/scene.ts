@@ -4,7 +4,9 @@ import { cooldownProgress, type AbilityInfo } from "../abilities.js";
 import type { CellUpdate, PlayerInfo, PlayerState } from "../gen/game/v1/protocol_pb.js";
 import { Camera, UNITS_PER_CELL } from "./camera.js";
 import type { Effect } from "../effects.js";
+import { FogOfWar, type CellSight } from "../fog.js";
 import { EffectsView } from "./effects.js";
+import { FogView } from "./fog.js";
 import { ProjectileView, type ProjectileSprite } from "./projectiles.js";
 
 interface PlayerSprite {
@@ -14,15 +16,26 @@ interface PlayerSprite {
   name: string; // last name set on the label (avoid re-rasterizing text each frame)
 }
 
+// Minimap cell fill by sight: owned cells take their faction colour at `owned`
+// alpha; the rest (neutral, or unexplored whatever it is) the flat `color`.
+const MINIMAP_CELL: Record<CellSight, { owned: number; color: number; alpha: number }> = {
+  visible: { owned: 0.75, color: 0x1c1c24, alpha: 0.85 },
+  explored: { owned: 0.3, color: 0x131318, alpha: 0.85 },
+  unexplored: { owned: 0, color: 0x060608, alpha: 0.95 },
+};
+
 // Renders the territory grid and a coloured dot per player through a Camera
-// (follow / full-map). Driven per frame by main's ticker: the local player uses
-// its predicted position, remote players their interpolated position. Markers
-// stay a fixed pixel size; the attack-range ring scales with the world. The world
-// (grid) is only redrawn when the camera moved or territory changed.
+// (follow / full-map), under fog of war (see ../fog.ts). Driven per frame by
+// main's ticker: the local player uses its predicted position, remote players
+// their interpolated position. Markers stay a fixed pixel size; the attack-range
+// ring scales with the world. The world (grid + fog) is only redrawn when the
+// camera moved, territory changed or sight changed.
 export class Scene {
   private readonly field = new Graphics();
   private readonly grid = new Graphics();
   private readonly coordsLayer = new Container();
+  private readonly fog = new FogOfWar();
+  private readonly fogView = new FogView();
   private readonly playersLayer = new Container();
   private readonly projectileView = new ProjectileView();
   private readonly effectsView = new EffectsView();
@@ -76,6 +89,7 @@ export class Scene {
     app.stage.addChild(this.field);
     app.stage.addChild(this.grid);
     app.stage.addChild(this.coordsLayer);
+    app.stage.addChild(this.fogView.gfx); // over the territory, under the players
     app.stage.addChild(this.playersLayer);
     app.stage.addChild(this.projectileView.gfx); // shots fly over the tokens
     app.stage.addChild(this.effectsView.root); // swings, shields, blocked hits
@@ -111,6 +125,7 @@ export class Scene {
     this.tickRate = Math.max(1, tickRate);
     this.camera.setWorld(this.mapCols, this.mapRows);
     this.camera.setScreen(this.app.screen.width, this.app.screen.height);
+    this.fog.reset(this.mapCols, this.mapRows); // a new map: nothing explored yet
     this.worldDirty = true;
   }
 
@@ -146,6 +161,11 @@ export class Scene {
     }
     for (const c of captures) this.setCapture(c);
     this.worldDirty = true;
+  }
+
+  // Fog of war deltas from Snapshot.revealed / hidden.
+  applyVisibility(revealed: readonly number[], hidden: readonly number[]): void {
+    if (this.fog.apply(revealed, hidden)) this.worldDirty = true;
   }
 
   // Incremental territory changes from Snapshot.cells.
@@ -364,6 +384,10 @@ export class Scene {
     this.grid.stroke({ width: 1, color: 0x2a2a33, alpha: 0.35 });
 
     this.layoutCoords(c0, c1, r0, r1, cellPx);
+    this.fogView.draw(this.fog, [c0, c1], [r0, r1], (x, y) => cam.worldToScreen(x, y), cellPx, {
+      cols: this.mapCols,
+      rows: this.mapRows,
+    });
   }
 
   // Deterministic per-cell brightness in [0,1) for tonal variation (no flicker).
@@ -561,8 +585,9 @@ export class Scene {
   }
 
   // Local minimap: ~1.5x the player's view around the camera, drawn as cells
-  // (neutral cells are dark-but-visible, not a black void) with a viewport rect
-  // and player dots. Redrawn each frame — small (~a few hundred cells).
+  // under fog of war (visible cells bright — neutral ones dark-but-visible, not
+  // a black void —, explored ones dimmed, unexplored ones covered) with a
+  // viewport rect and player dots. Redrawn each frame — small (~a few hundred cells).
   private drawMinimap(): void {
     const cam = this.camera;
     const viewW = this.app.screen.width / cam.scale; // visible world size
@@ -585,14 +610,16 @@ export class Scene {
     t.clear();
     for (let row = r0; row <= r1; row++) {
       for (let col = c0; col <= c1; col++) {
-        const o = this.owners[row * this.mapCols + col] ?? 0;
+        const i = row * this.mapCols + col;
+        const look = MINIMAP_CELL[this.fog.sightAt(i)];
+        const o = look.owned > 0 ? (this.owners[i] ?? 0) : 0; // unexplored: nothing known
         const x = toX(col * UNITS_PER_CELL);
         const y = toY(row * UNITS_PER_CELL);
         if (o !== 0) {
           const color = this.factionColors.get(o);
-          if (color !== undefined) t.rect(x, y, cellPx + 0.6, cellPx + 0.6).fill({ color, alpha: 0.75 });
+          if (color !== undefined) t.rect(x, y, cellPx + 0.6, cellPx + 0.6).fill({ color, alpha: look.owned });
         } else {
-          t.rect(x, y, cellPx + 0.6, cellPx + 0.6).fill({ color: 0x1c1c24, alpha: 0.85 });
+          t.rect(x, y, cellPx + 0.6, cellPx + 0.6).fill({ color: look.color, alpha: look.alpha });
         }
       }
     }
