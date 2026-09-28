@@ -55,10 +55,11 @@ function watch(name: string | undefined, pingMs?: number): Promise<Outcome> {
       out.closedAfterMs = Math.round(performance.now() - started);
       resolve(out);
     };
+    // A snapshot: our own close completing later must not read as the server's.
     setTimeout(() => {
       clearInterval(timer);
+      resolve({ ...out });
       ws.close();
-      resolve(out);
     }, WATCH_MS);
   });
 }
@@ -81,7 +82,7 @@ function watchGameClient(): Promise<Outcome & { pongs: number }> {
       },
     );
     game.connect("hidden-tab");
-    setTimeout(() => resolve(out), WATCH_MS);
+    setTimeout(() => resolve({ ...out }), WATCH_MS);
   });
 }
 

@@ -1,6 +1,7 @@
-// Diagnostic: mimic a browser attack CLICK (attack=true, then attack=false after
-// CLICK_MS) against an ENEMY in range. If a short click lands no damage but a
-// held one does, the level-triggered attack loses fast clicks in one server tick.
+// Mimic a browser attack CLICK (attack=true, then attack=false after CLICK_MS)
+// against an ENEMY in range: even a short click must land a hit — the
+// level-triggered attack must not lose fast clicks within one server tick.
+// Fails (exit 1) on NO DAMAGE.
 //   CLICK_MS=0 npx tsx scripts/attack_click_smoke.ts   # instant (same tick)
 //   CLICK_MS=150 npx tsx scripts/attack_click_smoke.ts # normal click
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
@@ -89,5 +90,5 @@ setTimeout(() => {
   console.log("VERDICT:", hitSeen && damaged ? "DAMAGED" : "NO DAMAGE");
   attacker.close();
   victim.close();
-  process.exit(0);
+  process.exit(hitSeen && damaged ? 0 : 1);
 }, 2000);

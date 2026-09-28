@@ -1,0 +1,93 @@
+# CI (GAME-005): every PR and every push to main builds and tests both halves.
+#   client — protobuf codegen, typecheck, pure checks (npm run check)
+#   server — Debug + ASan/UBSan build, unit tests, then the e2e smoke suite
+#            (npm run smoke) against that server, which must also shut down clean
+# A red run blocks the merge once "client" and "server" are required checks
+# (Settings → Branches → main).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run generate
+      - run: npm run typecheck
+      - run: npm run check
+
+  server:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # UBSan only prints by default; make any report fail the run.
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ cmake ninja-build pkg-config \
+            protobuf-compiler libprotobuf-dev libboost-dev libssl-dev libmariadb-dev
+      # The runner kernel's 32 bits of mmap ASLR can collide with ASan's shadow
+      # memory and crash sanitized binaries at start; 28 is the usual default.
+      - name: ASan-friendly ASLR
+        run: sudo sysctl -w vm.mmap_rnd_bits=28
+      - name: Configure
+        run: cmake --preset debug-asan -G Ninja -DUSE_CLANG_FORMAT=OFF -DUSE_CLANG_TIDY=OFF
+      - name: Build
+        run: cmake --build --preset debug-asan
+      - name: Unit tests
+        run: ctest --preset debug-asan
+
+      - name: Start server
+        run: |
+          # The wrapper keeps the server's pid and, once it exits, its exit code.
+          nohup bash -c './build/bin/server config/config.json & echo $! > server.pid
+                         wait $!; echo $? > server.exit' > server.log 2>&1 &
+          timeout 30 bash -c 'until (: > /dev/tcp/127.0.0.1/27998) 2>/dev/null; do sleep 0.5; done'
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Smoke tests (e2e)
+        working-directory: client
+        run: |
+          npm ci
+          npm run generate
+          npm run smoke
+      # Graceful shutdown must exit 0: a sanitizer report or a leak (LeakSanitizer
+      # runs at exit) makes it non-zero.
+      - name: Stop server
+        if: ${{ !cancelled() && hashFiles('server/server.pid') != '' }}
+        run: |
+          kill -TERM "$(cat server.pid)" || true
+          timeout 15 bash -c 'until [ -s server.exit ]; do sleep 0.2; done'
+          echo "server exit code: $(cat server.exit)"
+          [ "$(cat server.exit)" = 0 ]
+      - name: Server log
+        if: ${{ !cancelled() && hashFiles('server/server.log') != '' }}
+        run: cat server.log
