@@ -9,13 +9,15 @@ interpolates the others, and renders.
 > **Status: MVP, work in progress.** Working today: connection/presence,
 > faction choice, spawn, movement, combat (a melee area attack and a dodgeable
 > ranged projectile on a shared cooldown, and a block on its own, on a 1–5
-> ability bar), death/respawn, and territory capture — end to end from the C++
-> server to the browser client.
+> ability bar), death/respawn, territory capture, and fog of war (you see only
+> what your faction's players and cells see, 4 cells around; explored ground
+> stays dimmed, unexplored is covered) — end to end from the C++ server to the
+> browser client.
 > The server runs a fixed-timestep authoritative simulation; the client adds
 > client-side prediction and interpolation for smooth play, plus a follow
 > camera, HUD, and minimap.
-> Authentication is intentionally parked; fog of war and the fuller
-> faction/economy systems come later.
+> Authentication is intentionally parked; the fuller faction/economy systems
+> come later.
 
 ## Repository layout
 
@@ -38,6 +40,10 @@ and the game config. Both sides generate their bindings from it — the server v
 CMake/`protoc`, the client via `buf` (`npm run generate`). On the wire, **one
 WebSocket binary frame = one Protobuf message** (no custom framing). Change the
 protocol in one place and regenerate on both sides.
+
+Fog of war is enforced by the server: each snapshot carries only what the
+recipient's faction sees, so hidden players and territory changes never reach
+the client at all.
 
 ## Quick start
 

@@ -11,7 +11,9 @@ PixiJS + protobuf-es** over a WebSocket.
 > a block on its own cooldown, on a 1–5 ability bar — and death/respawn.
 > Everyone sees what others press: swings, blocks and blocked hits are drawn. Play is smooth via client-side
 > prediction + reconciliation (local player) and interpolation (remotes and
-> projectiles). Rendering follows the design concept: a tinted,
+> projectiles). Fog of war: the server sends only what your faction sees; cells
+> seen before stay dimmed with their last known state, unexplored ones are
+> covered — on the map and the minimap. Rendering follows the design concept: a tinted,
 > coordinate-labelled territory grid; glowing player tokens with grounding
 > shadow, name pill and hp bar; the active ability's range ring with a cooldown
 > arc (plus an aim line for the ranged attack); a follow camera (with a full-map
@@ -54,13 +56,21 @@ positions.
   players' effects start after the interpolation delay so they match what is
   drawn. **`src/render/effects.ts`** (`EffectsView`) draws them: a swing ring out
   to the melee reach, a pale-gold shield ring, a burst with a rising "БЛОК".
+- **`src/fog.ts`** — `FogOfWar`: each cell's sight — unexplored / explored /
+  visible — from `Snapshot.revealed` / `hidden` (the server decides what is
+  visible; the client only remembers what it has ever seen, through deaths and
+  respawns), and per-row runs of equal sight for drawing.
+  **`src/render/fog.ts`** (`FogView`) covers the on-screen cells: unexplored
+  under dense fog (only the grid shows through), explored dimmed over the last
+  known state, visible untouched; one rect per run, the map border on top.
 - **`src/render/camera.ts`** — `Camera`: world↔screen mapping in two modes —
   **follow** (exactly 15 cells wide, clamped to the map) and **map** (whole map).
 - **`src/render/scene.ts`** — `Scene`: camera-driven world (tonal territory cells,
   coordinate labels, gridlines), player tokens (shadow, glow, faction dot, name
   pill, hp bar), the self ring showing the **active ability's** range with the
-  shared-cooldown arc (and an aim line for the ranged attack), projectiles, and
-  the local **minimap** (~1.5× the view, gridded, viewport rect + player dots).
+  shared-cooldown arc (and an aim line for the ranged attack), projectiles, the
+  fog of war, and the local **minimap** (~1.5× the view, gridded and fogged,
+  viewport rect + player dots).
 - **`src/render/projectiles.ts`** — `ProjectileView`: each projectile as a glowing
   dot in the shooter's faction colour at its real radius, with a short trail.
 - **`src/render/abilityBar.ts`** — `AbilityBar`: the bottom-centre 1–5 bar (◆ melee,
@@ -130,6 +140,7 @@ npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
 npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
 npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked effects, timing
+npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs
 ```
 
 **End-to-end (start the server first):**
@@ -144,6 +155,7 @@ npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
 npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit
 npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
+npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones seen
 ```
 
 ## Layout
@@ -152,9 +164,10 @@ npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lan
 ../protocol/game/v1/protocol.proto   wire protocol (shared with the server)
 src/abilities.ts  ability model, slot keys, aim vector, cooldown progress
 src/effects.ts    snapshot events -> timed visual effects
+src/fog.ts        fog of war: cell sight (unexplored / explored / visible)
 src/net/       GameClient (transport), Predictor (prediction), InterpolationBuffer
 src/render/    Camera, Scene (world + minimap), Hud, AbilityBar, FactionPicker,
-               ProjectileView, EffectsView
+               ProjectileView, EffectsView, FogView
 src/input/     keyboard (movement + capture), mouse (attack hold + aim cursor)
 src/gen/       generated protobuf-es code (git-ignored; run `npm run generate`)
 scripts/       headless pure-logic checks + end-to-end smoke tests (tsx)

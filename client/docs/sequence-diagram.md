@@ -67,11 +67,12 @@ sequenceDiagram
     participant interp as InterpolationBuffer
     participant scene as Scene + Hud
 
-    ws-->>main: Snapshot{you, players, cells, events, projectiles}
+    ws-->>main: Snapshot{you, players, cells, events, projectiles, revealed, hidden}
     main->>pred: reconcile(you.pos, you.last_input_seq)
     Note over pred: выкинуть подтверждённые кадры, снап к авторитету, реплей остатка
     main->>interp: push(now, позиции чужих) и push(now, позиции снарядов)
-    main->>scene: updateMeta (hp, кулдауны атаки и блока) / applyCellUpdates
+    main->>scene: updateMeta (hp, кулдауны атаки и блока)
+    main->>scene: applyVisibility(revealed, hidden) — туман войны / applyCellUpdates
     main->>scene: addEffects(effectsFromEvents: удар, блок, блок сработал)
     main->>scene: HUD (фракция, клетки/%, В СЕТИ, HP, текущая клетка)
 ```
@@ -80,8 +81,9 @@ sequenceDiagram
 > клику, движение (**WASD**), захват клетки (удержание **E**), бой (удержание
 > **ЛКМ**): способность из панели **1–5** — удар по площади или выстрел снарядом
 > в сторону курсора (общий кулдаун), блок (свой кулдаун) — удары и блоки других
-> видны всем — и смерть/респавн, с клиентским
-> предсказанием/интерполяцией. Рендер по концепту: сетка территорий с
+> видны всем, кто их видит — и смерть/респавн, с клиентским
+> предсказанием/интерполяцией, под туманом войны (видимое — как есть,
+> исследованное — затемнено, неизведанное — закрыто; на карте и миникарте). Рендер по концепту: сетка территорий с
 > координатами, токены со свечением/тенью/именем/hp, кольцо дальности активной
 > способности с дугой кулдауна (и линией прицела для выстрела), снаряды со следом,
 > панель способностей, follow-камера (обзор всей карты — **M**), угловой HUD и

@@ -127,7 +127,7 @@ flowchart LR
     combat["resolve_attacks(state, index)<br/>способность: удар по площади / запуск снаряда"]
     proj["update_projectiles(state, index, dt)<br/>полёт + свип-попадания → apply_damage"]
     cap["update_captures(state)<br/>захват клетки под центром"]
-    snap["send_snapshots()<br/>build_snapshot(state, получатель)"]
+    snap["send_snapshots()<br/>compute_vision(фракция) → build_snapshot(state, получатель, vision)"]
     drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> snap
 ```
 
@@ -158,8 +158,8 @@ flowchart LR
 того же тика (нажатый одновременно с ударом уже защищает) и длится
 `duration_ticks`: всё это время `apply_damage` не снимает hp, а пишет `HitEvent`
 с `blocked = true` и `damage = 0`; снаряд, попавший в блок, гаснет. Каждое
-применение способности — удар (даже мимо), блок, выстрел — уходит всем как
-`AbilityEvent`: по нему клиенты рисуют удар и блок других игроков.
+применение способности — удар (даже мимо), блок, выстрел — уходит всем, кто
+видит игрока, как `AbilityEvent`: по нему клиенты рисуют удар и блок других.
 
 ```mermaid
 sequenceDiagram
@@ -205,6 +205,34 @@ sequenceDiagram
     Note over V: клик по клетке после respawn_tick → SpawnRequest → снова ALIVE
 ```
 
+**Туман войны.** Симуляция видимость не учитывает: удар и снаряд из тумана
+наносят урон как обычно. Туман — это фильтр доставки в `send_snapshots`:
+`compute_vision` раз на фракцию отмечает клетки, чей центр в радиусе
+`vision_radius` (4 клетки) от источника зрения — живого игрока фракции или её
+клетки (тело даёт зрение ещё в снапшоте, сообщающем о смерти, дальше — нет).
+`build_snapshot` отдаёт получателю только видимое: игроков и снаряды на видимых
+клетках (себя — всегда), события, все названные в которых игроки видны (попадание
+из тумана жертве ничего не сообщает), и клетки — изменившиеся видимые плюс все,
+вошедшие в зону видимости, с актуальным состоянием. Разность с тем, что клиенту
+сообщили в прошлый раз (`Player::vision`), уходит в `Snapshot.revealed` /
+`Snapshot.hidden`; «исследованные» клетки помнит клиент. `MapState` новичку
+ничего не раскрывает.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant world as World.send_snapshots
+    participant vis as compute_vision
+    participant snap as build_snapshot
+    participant C as Клиент
+
+    world->>vis: фракция получателя (раз на фракцию)
+    vis-->>world: Vision — видимые клетки
+    world->>snap: state, получатель (его прошлая Vision), новая Vision
+    snap-->>C: Snapshot: видимые игроки/снаряды/события, cells, revealed, hidden
+    world->>world: получатель.vision = новая Vision
+```
+
 ---
 
 ## Ключевые компоненты
@@ -218,7 +246,8 @@ sequenceDiagram
 | `WorldState` | `src/game/state/*` | Всё состояние симуляции как данные: игроки, сетка территорий, события |
 | системы | `src/game/systems/*` | Правила тика: ввод, движение, блоки, атаки (способности: удар, запуск снаряда), полёт снарядов, урон (`apply_damage`, в т.ч. блок), захват, спавн |
 | `SpatialIndex`, geometry | `src/game/spatial/*` | Равномерная сетка корзин: запросы «кто в радиусе r»; свип-тест «отрезок против окружности» |
-| sync | `src/game/sync/*` | Сборка `ServerMessage`; снапшот — на каждого получателя (шов для тумана войны) |
+| туман войны | `src/game/systems/vision_system.*`, `src/game/state/vision.hpp` | `compute_vision`: какие клетки видит фракция (живые игроки и её клетки, радиус `vision_radius`) |
+| sync | `src/game/sync/*` | Сборка `ServerMessage`; снапшот — на каждого получателя, отфильтрован туманом войны |
 | `IClientGateway` / `ClientEvent` | `src/shared/net/*` | Шов game↔net: отправка байт и событие `{session_id, kind, msg}` |
 | `TSQueue` | `src/shared/utils/ts_queue.hpp` | Потокобезопасная очередь входящих |
 | протокол | `../protocol/game/v1/protocol.proto` | `ClientMessage` / `ServerMessage` |

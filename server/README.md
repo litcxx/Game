@@ -8,7 +8,8 @@ lives on the server; the browser client predicts, interpolates, and renders.
 > coroutines) and the authoritative game loop are in place: a **fixed-timestep**
 > simulation with movement, combat — data-driven abilities: a melee area attack
 > and a dodgeable projectile on one shared cooldown, and a short block on its
-> own cooldown — death/respawn, and territory capture, all covered by unit tests. Input is consumed **one command per tick**
+> own cooldown — death/respawn, territory capture, and fog of war, all covered
+> by unit tests. Input is consumed **one command per tick**
 > (deterministic replay), which the client uses for prediction. A TypeScript +
 > PixiJS client renders the map with client-side prediction/interpolation, a
 > follow camera, HUD, and minimap. Authentication is intentionally parked.
@@ -52,7 +53,7 @@ lives on the server; the browser client predicts, interpolates, and renders.
   systems in order — consume one input command per player, integrate movement,
   rebuild the spatial index, start blocks, resolve attacks (melee hits,
   projectile launches), fly projectiles (swept hits), advance territory
-  capture — and sends a per-recipient snapshot.
+  capture — and sends a per-recipient snapshot, filtered by fog of war.
   `SelfState.last_input_seq` acks the consumed command so the client can
   reconcile its prediction.
 - **Systems over plain data.** All simulation state is one plain struct,
@@ -62,8 +63,18 @@ lives on the server; the browser client predicts, interpolates, and renders.
   choke point, `apply_damage()` (hit/death events, respawn timer). A uniform-grid
   `SpatialIndex` (`src/game/spatial`) answers "who is within r of here" without
   scanning every pair. Outbound messages are pure builders in `src/game/sync`;
-  the snapshot is built per recipient — the seam for interest management / fog
-  of war.
+  the snapshot is built per recipient.
+- **Fog of war is a delivery filter.** The simulation ignores sight — attacks
+  from the fog land as usual. On each snapshot `compute_vision()` marks, once
+  per faction, the cells whose centre is within `vision_radius` (400 = 4 cells)
+  of a source: an alive player of the faction or a cell it owns (a body still
+  sees in the snapshot reporting its death, not after). `build_snapshot()` then
+  sends a recipient only players and projectiles on visible cells (itself
+  always), events whose named players are all visible (a hit from the fog tells
+  the victim nothing), and the visible cells that changed plus every newly
+  revealed cell with its current state. The difference from what the client was
+  told last time (`Player::vision`) goes out as `revealed` / `hidden`; the
+  client remembers explored cells. A joiner's `MapState` reveals nothing.
 - **Abilities are data.** The config lists them (`melee` / `projectile` with
   cooldown, damage, range, projectile speed and radius); Welcome sends them to
   clients, and each input frame picks one by id plus an aim vector. Using any
@@ -88,12 +99,13 @@ lives on the server; the browser client predicts, interpolates, and renders.
 src/net/       server, session — WebSocket transport + coroutines
 src/game/      the simulation:
   world/         World — tick orchestration, event dispatch, delivery; fixed step
-  state/         WorldState, Player, Territory — plain data
+  state/         WorldState, Player, Territory, Vision — plain data
   systems/       input, movement, combat (abilities: blocks, melee, projectile
-                 launch), projectiles (flight, swept hits), damage, capture, spawn
+                 launch), projectiles (flight, swept hits), damage, capture, spawn,
+                 vision (fog of war: what a faction sees)
   spatial/       SpatialIndex — uniform-grid broad phase over player positions;
                  geometry — swept segment-vs-circle hit test
-  sync/          ServerMessage builders + per-recipient snapshot
+  sync/          ServerMessage builders + per-recipient snapshot (fog-filtered)
 src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue)
 config/        config.json (runtime settings + game rules)
 test/          unit + integration (GoogleTest)
@@ -124,8 +136,9 @@ cmake --build build -j
 
 Presets differ only in build type / sanitizer (`debug-asan` enables
 Address+UB sanitizers). The server reads its address, port, thread count, and the
-game rules (matching `game.v1.GameConfig`, plus the factions and the abilities)
-from the config file; invalid abilities stop the server at startup.
+game rules (matching `game.v1.GameConfig`, plus the factions and the abilities,
+and the server-only `capture_ticks` and `vision_radius`) from the config file;
+invalid abilities or a zero vision radius stop the server at startup.
 
 ## Tests
 
@@ -135,9 +148,9 @@ ctest --preset debug-asan      # or run the binary directly:
 ```
 
 The `World` suites (presence, spawn, movement, combat, abilities, ranged, block,
-capture, input) test the game end to end through a mock gateway; `Damage`,
-`SpatialIndex`, `SegmentCircle`, `Projectiles` and `GameConfigParse` test those
-units directly. They all run by default.
+capture, input, fog) test the game end to end through a mock gateway; `Damage`,
+`SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision` and `GameConfigParse`
+test those units directly. They all run by default.
 Some legacy suites (the old binary protocol and the parked auth/DB integration
 tests) remain disabled in the CMake test lists.
 
