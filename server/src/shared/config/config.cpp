@@ -86,6 +86,10 @@ GameConfig parse_game_config(const std::string& config_json) {
     if (config.vision_radius == 0) {
         throw std::runtime_error("config: vision_radius must be > 0");
     }
+    config.resync_window_ms = game.at("resync_window_ms");
+    if (config.resync_window_ms == 0) {
+        throw std::runtime_error("config: resync_window_ms must be > 0");
+    }
 
     for (const auto& f : game.at("factions")) {
         config.factions.push_back(FactionConfig{f.at("id"), f.at("name"), f.at("color")});
@@ -116,8 +120,9 @@ void Config::init_game_config(const std::string& filename) {
     spdlog::info("Game move_speed={} max_hp={} player_radius={} vision_radius={} abilities={}",
                  game_config_.move_speed, game_config_.max_hp, game_config_.player_radius,
                  game_config_.vision_radius, game_config_.abilities.size());
-    spdlog::info("Game respawn_delay_ticks={} reconnect_grace_ms={} factions={}",
-                 game_config_.respawn_delay_ticks, game_config_.reconnect_grace_ms,
-                 game_config_.factions.size());
+    spdlog::info(
+        "Game respawn_delay_ticks={} reconnect_grace_ms={} resync_window_ms={} factions={}",
+        game_config_.respawn_delay_ticks, game_config_.reconnect_grace_ms,
+        game_config_.resync_window_ms, game_config_.factions.size());
 }
 }  // namespace lit

@@ -17,7 +17,7 @@ std::string config_json(const std::string& abilities, const std::string& vision_
         "move_speed": 300, "max_hp": 100, "respawn_delay_ticks": 300,
         "reconnect_grace_ms": 30000, "capture_ticks": 60, "player_radius": 16,
         "vision_radius": )" +
-           vision_radius + R"(,
+           vision_radius + R"(, "resync_window_ms": 5000,
         "factions": [ { "id": 1, "name": "Red", "color": 16711680 } ],
         "abilities": )" +
            abilities + R"(
@@ -111,6 +111,20 @@ TEST(GameConfigParse, ReadsVisionRadius) {
 TEST(GameConfigParse, RejectsZeroVisionRadius) {
     // Nobody would see anything, not even their own cell: a broken config.
     EXPECT_THROW(lit::parse_game_config(config_json("[" + kMelee + "]", "0")), std::exception);
+}
+
+TEST(GameConfigParse, ReadsResyncWindow) {
+    const auto c = lit::parse_game_config(config_json("[" + kMelee + "]"));
+
+    EXPECT_EQ(c.resync_window_ms, 5000u);
+}
+
+TEST(GameConfigParse, RejectsZeroResyncWindow) {
+    // No repeated drop would ever close the session: a client that stopped
+    // reading would be resynced forever.
+    std::string doc = config_json("[" + kMelee + "]");
+    doc.replace(doc.find("5000"), 4, "0");
+    EXPECT_THROW(lit::parse_game_config(doc), std::exception);
 }
 
 TEST(GameConfigParse, RejectsBlockWithoutDuration) {
