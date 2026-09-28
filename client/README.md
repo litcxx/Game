@@ -156,6 +156,7 @@ npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit
 npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
 npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones seen
+                                   #   (VISION_CELLS = server vision_radius in cells, default 3)
 ```
 
 ## Layout

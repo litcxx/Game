@@ -10,9 +10,9 @@ interpolates the others, and renders.
 > faction choice, spawn, movement, combat (a melee area attack and a dodgeable
 > ranged projectile on a shared cooldown, and a block on its own, on a 1–5
 > ability bar), death/respawn, territory capture, and fog of war (you see only
-> what your faction's players and cells see, 4 cells around; explored ground
-> stays dimmed, unexplored is covered) — end to end from the C++ server to the
-> browser client.
+> what your faction's players and cells see, 3 cells around — `vision_radius`
+> in the server config; explored ground stays dimmed, unexplored is covered) —
+> end to end from the C++ server to the browser client.
 > The server runs a fixed-timestep authoritative simulation; the client adds
 > client-side prediction and interpolation for smooth play, plus a follow
 > camera, HUD, and minimap.
