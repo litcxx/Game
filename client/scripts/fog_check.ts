@@ -70,6 +70,18 @@ const fresh = () => {
   ]));
 }
 {
+  // Snapshot.resync: a frame was lost, so what we hold as visible may be stale.
+  const fog = fresh();
+  fog.apply([1, 2], []);
+  fog.apply([], [2]);
+  check("a resync turns every visible cell to explored", fog.forgetSight() && fog.sightAt(1) === "explored");
+  check("a resync keeps explored cells explored", fog.sightAt(2) === "explored");
+  check("a resync leaves unexplored cells unexplored", fog.sightAt(0) === "unexplored");
+  check("nothing visible: a resync changes nothing", !fog.forgetSight());
+  fog.apply([1], []);
+  check("the resync's revealed cells are visible again", fog.sightAt(1) === "visible");
+}
+{
   const fog = fresh();
   fog.apply([0], []);
   fog.reset(2, 2);
