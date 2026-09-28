@@ -19,7 +19,7 @@ TEST(Delivery, AFirstDropAsksForAResync) {
 
     EXPECT_EQ(note_drop(sync, /*tick=*/10, kWindow), DropVerdict::Resync);
     EXPECT_TRUE(sync.resync);
-    EXPECT_EQ(sync.drop_tick, 11u);  // TEMP (LTC-22 DoD): a failing test must turn CI red
+    EXPECT_EQ(sync.drop_tick, 10u);
 }
 
 TEST(Delivery, DropsOnOneTickAreOneDrop) {
