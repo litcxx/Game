@@ -58,6 +58,7 @@ sequenceDiagram
     lis->>add: co_spawn(add_session) на strand сессии
     Client-->>add: WebSocket handshake (async_accept)
     add->>sess: try_emplace(id) в sessions_
+    add->>add: push Connected (раньше любых сообщений сессии)
     add->>sup: co_spawn(run_session id)
     sup->>sess: co_await (do_read() || do_send())
     Note over sup,sess: обе корутины на одном strand сессии
@@ -97,6 +98,15 @@ sequenceDiagram
     ch->>sess: do_send: async_receive
     sess->>Client: async_write (WS-кадр = ServerMessage)
 ```
+
+**Лимиты соединения** (`game.limits`). По `Connected` мир заводит `Connection`:
+каждое сообщение тратит бюджет «ведра токенов» (`messages_per_second`, всплеск
+до стольких же — можно), сверх него — `RATE_LIMITED`; каждый тик
+`time_out_connections()` шлёт `HANDSHAKE_TIMEOUT` (нет `Hello` за
+`handshake_timeout_ms`) или `IDLE_TIMEOUT` (тишина `idle_timeout_ms`; клиент пингует
+раз в 2 с). Все три — fatal, через `send_error()`. Ввод ограничивается без ошибки:
+не больше `max_input_frames` кадров из одного `Input`, не больше `input_queue` в
+очереди.
 
 **Вход и ошибки.** Первое сообщение соединения — `Hello`. `check_hello()` проверяет
 версию (`PROTOCOL_VERSION_CURRENT` из proto) и имя (обрезка пробелов, 1–16

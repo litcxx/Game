@@ -198,7 +198,9 @@ message InputFrame {
 }
 
 // Кадры ввода по возрастанию seq: обычно один, после долгого кадра
-// отрисовки — несколько накопившихся, не больше 8.
+// отрисовки — несколько накопившихся, не больше 8. Лишние кадры сервер
+// отбрасывает (не ошибка); он же держит в очереди игрока не больше 32 кадров
+// (game.limits в конфиге сервера).
 message Input {
   repeated InputFrame frames = 1;
 }
@@ -322,8 +324,10 @@ enum ErrorCode {
   ERROR_CODE_BAD_MESSAGE = 2;         // не декодируется, текстовый кадр, больше 1 КиБ
   ERROR_CODE_UNEXPECTED_MESSAGE = 3;  // не в том состоянии: Input до Hello, второй Hello
   ERROR_CODE_HANDSHAKE_TIMEOUT = 4;   // нет Hello за 5 с после открытия сокета
-  ERROR_CODE_IDLE_TIMEOUT = 5;        // от клиента ничего не приходило 20 с
-  ERROR_CODE_RATE_LIMITED = 6;        // превышен лимит сообщений
+  ERROR_CODE_IDLE_TIMEOUT = 5;        // от клиента ничего не приходило 20 с (любое
+                                      //   сообщение продлевает: клиент шлёт Ping раз в 2 с)
+  ERROR_CODE_RATE_LIMITED = 6;        // больше 120 сообщений в секунду (всплеск до 120 —
+                                      //   можно); числа — game.limits в конфиге сервера
   ERROR_CODE_INVALID_NAME = 7;
   ERROR_CODE_SERVER_FULL = 8;
   ERROR_CODE_SESSION_REPLACED = 9;    // эта сессия подключилась из другой вкладки

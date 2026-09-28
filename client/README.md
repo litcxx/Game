@@ -38,7 +38,9 @@ positions.
 
 - **`src/net/client.ts`** — `GameClient`: opens the WebSocket, sends `Hello`, and
   encodes/decodes messages. `sendInputFrames` ships a batch of per-tick input
-  frames (each with its `seq`); `sendSpawn` requests spawn/respawn.
+  frames (each with its `seq`); `sendSpawn` requests spawn/respawn. A keepalive
+  `Ping` goes out every 2 s while the socket is open — a hidden tab sends no
+  input, and the server closes a connection silent for 20 s (`IDLE_TIMEOUT`).
 - **`src/net/prediction.ts`** — `integrate()` (the server's movement maths,
   mirrored exactly) + `Predictor`: applies each fixed-step input locally, and on
   each snapshot **reconciles** — drop acked inputs (`SelfState.last_input_seq`),
@@ -166,6 +168,7 @@ npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit
 npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
 npx tsx scripts/bad_hello_smoke.ts # bad Hello -> fatal ServerError + close 4000+code; refused spawn
+npx tsx scripts/idle_smoke.ts      # timeouts (23 s): no Hello -> 4004, silence -> 4005, keepalive ok
 npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones seen
                                    #   (VISION_CELLS = server vision_radius in cells, default 3)
 ```
