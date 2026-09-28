@@ -97,6 +97,9 @@ asio::awaitable<void> Server::add_session(Socket socket) {
             auto [it, success] = sessions_.try_emplace(id, *this, std::move(socket), id);
             assert(success);
         }
+        // Tell the game loop first: ahead of every message the session will send,
+        // so a connection that never says Hello still times out.
+        incoming_events_.push(ClientEvent{id, ClientEvent::Kind::Connected, {}});
 
         // One supervisor per session runs both I/O coroutines and removes the
         // session only after BOTH have finished (see run_session).

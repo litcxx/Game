@@ -83,9 +83,10 @@ lives on the server; the browser client predicts, interpolates, and renders.
   after a `Roster{full}` and starts its deltas from nothing (every visible cell
   revealed with its state, `Snapshot.resync` set — the client first turns what
   it held as visible to explored). Another refusal on a later tick within
-  `resync_window_ms` (5 s) means it can't keep up: `World` closes the session
-  at the end of the tick and it leaves the world. What was told to a client and
-  how delivery goes is kept per connection in `Player::sync` (`ClientSync`).
+  `limits.resync_window_ms` (5 s) means it can't keep up: `World` closes the
+  session at the end of the tick and it leaves the world. What was told to a
+  client and how delivery goes is kept per connection in `Player::sync`
+  (`ClientSync`).
 - **Abilities are data.** The config lists them (`melee` / `projectile` with
   cooldown, damage, range, projectile speed and radius); Welcome sends them to
   clients, and each input frame picks one by id plus an aim vector. Using any
@@ -99,6 +100,17 @@ lives on the server; the browser client predicts, interpolates, and renders.
   before attacks in the tick, so one pressed together with a swing already
   stops it. Every ability use is announced (`AbilityEvent`) so clients can show
   what others pressed.
+- **Connection limits.** `Server` announces each session with a `Connected`
+  event, ahead of its messages; `World` keeps a `Connection` for it (until
+  `Disconnected`). Every message spends a token-bucket budget
+  (`messages_per_second`, a burst of as many is fine) — over it is
+  `RATE_LIMITED`; each tick `time_out_connections()` sends `HANDSHAKE_TIMEOUT`
+  (no `Hello` within `handshake_timeout_ms`) or `IDLE_TIMEOUT` (nothing heard for
+  `idle_timeout_ms`; the client pings every 2 s). All three are fatal, through
+  `send_error()` below. Input is capped without an error: at most
+  `max_input_frames` taken from one `Input`, at most `input_queue` kept — a burst
+  after a stall only costs a prediction correction. The numbers are
+  `game.limits` in the config.
 - **Joining and errors.** A connection's first message is `Hello`:
   `check_hello()` accepts `PROTOCOL_VERSION_CURRENT` (defined once, in the proto)
   and a name trimmed of spaces, 1–16 characters (not bytes) with no control or
@@ -162,9 +174,9 @@ cmake --build build -j
 Presets differ only in build type / sanitizer (`debug-asan` enables
 Address+UB sanitizers). The server reads its address, port, thread count, and the
 game rules (matching `game.v1.GameConfig`, plus the factions and the abilities,
-and the server-only `capture_ticks`, `vision_radius` and `resync_window_ms`)
-from the config file; invalid abilities or a zero vision radius or resync window
-stop the server at startup.
+and the server-only `capture_ticks`, `vision_radius` and the connection
+`limits`) from the config file; invalid abilities, a zero vision radius or a
+zero or missing limit stop the server at startup.
 
 ## Tests
 
@@ -174,10 +186,10 @@ ctest --preset debug-asan      # or run the binary directly:
 ```
 
 The `World` suites (presence, spawn, movement, combat, abilities, ranged, block,
-capture, input, fog, resync, errors) test the game end to end through a mock
-gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
-`Delivery`, `HelloRules`, `PlayerName` and `GameConfigParse` test those units
-directly. They all run by default.
+capture, input, fog, resync, errors, limits) test the game end to end through a
+mock gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
+`Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits` and
+`GameConfigParse` test those units directly. They all run by default.
 Some legacy suites (the old binary protocol and the parked auth/DB integration
 tests) remain disabled in the CMake test lists.
 

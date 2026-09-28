@@ -63,6 +63,23 @@ AbilityConfig parse_ability(const nlohmann::json& a) {
     }
     return ability;
 }
+// Every limit is required and must be > 0.
+LimitsConfig parse_limits(const nlohmann::json& l) {
+    const auto positive = [&l](const char* key) {
+        const std::uint32_t value = l.at(key);
+        if (value == 0)
+            throw std::runtime_error(std::string{"config: limits."} + key + " must be > 0");
+        return value;
+    };
+    LimitsConfig limits;
+    limits.max_input_frames = positive("max_input_frames");
+    limits.input_queue = positive("input_queue");
+    limits.messages_per_second = positive("messages_per_second");
+    limits.handshake_timeout_ms = positive("handshake_timeout_ms");
+    limits.idle_timeout_ms = positive("idle_timeout_ms");
+    limits.resync_window_ms = positive("resync_window_ms");
+    return limits;
+}
 }  // namespace
 
 GameConfig parse_game_config(const std::string& config_json) {
@@ -86,10 +103,7 @@ GameConfig parse_game_config(const std::string& config_json) {
     if (config.vision_radius == 0) {
         throw std::runtime_error("config: vision_radius must be > 0");
     }
-    config.resync_window_ms = game.at("resync_window_ms");
-    if (config.resync_window_ms == 0) {
-        throw std::runtime_error("config: resync_window_ms must be > 0");
-    }
+    config.limits = parse_limits(game.at("limits"));
 
     for (const auto& f : game.at("factions")) {
         config.factions.push_back(FactionConfig{f.at("id"), f.at("name"), f.at("color")});
@@ -120,9 +134,14 @@ void Config::init_game_config(const std::string& filename) {
     spdlog::info("Game move_speed={} max_hp={} player_radius={} vision_radius={} abilities={}",
                  game_config_.move_speed, game_config_.max_hp, game_config_.player_radius,
                  game_config_.vision_radius, game_config_.abilities.size());
+    spdlog::info("Game respawn_delay_ticks={} reconnect_grace_ms={} factions={}",
+                 game_config_.respawn_delay_ticks, game_config_.reconnect_grace_ms,
+                 game_config_.factions.size());
+    const LimitsConfig& l = game_config_.limits;
     spdlog::info(
-        "Game respawn_delay_ticks={} reconnect_grace_ms={} resync_window_ms={} factions={}",
-        game_config_.respawn_delay_ticks, game_config_.reconnect_grace_ms,
-        game_config_.resync_window_ms, game_config_.factions.size());
+        "Limits max_input_frames={} input_queue={} messages_per_second={} handshake_timeout_ms={} "
+        "idle_timeout_ms={} resync_window_ms={}",
+        l.max_input_frames, l.input_queue, l.messages_per_second, l.handshake_timeout_ms,
+        l.idle_timeout_ms, l.resync_window_ms);
 }
 }  // namespace lit

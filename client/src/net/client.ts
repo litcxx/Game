@@ -11,12 +11,19 @@ import {
 // From the protocol itself, so a stale build is told PROTOCOL_VERSION by the server.
 export const PROTOCOL_VERSION: number = ProtocolVersion.CURRENT;
 
+// The server closes a connection it has not heard from for its idle timeout
+// (20 s). A hidden tab stops the game loop and with it the input frames, so a
+// Ping goes out this often regardless while the socket is open.
+export const KEEPALIVE_MS = 2000;
+
 // Thin transport: one WebSocket binary frame == one protobuf message.
 // Decodes incoming ServerMessages and hands them to `onMessage`; `onClose` gets
 // the socket's close code (4000 + ErrorCode when the server closed it for one).
+// Keeps the connection alive with a Ping every KEEPALIVE_MS.
 export class GameClient {
   private ws?: WebSocket;
   private inputSeq = 0;
+  private keepalive: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private readonly url: string,
@@ -29,12 +36,16 @@ export class GameClient {
     ws.binaryType = "arraybuffer";
     this.ws = ws;
 
-    ws.onopen = () => this.sendHello(name);
+    ws.onopen = () => {
+      this.sendHello(name);
+      this.keepalive = setInterval(() => this.sendPing(), KEEPALIVE_MS);
+    };
     ws.onmessage = (ev: MessageEvent) => {
       const bytes = new Uint8Array(ev.data as ArrayBuffer);
       this.onMessage(fromBinary(ServerMessageSchema, bytes));
     };
     ws.onclose = (ev: CloseEvent) => {
+      clearInterval(this.keepalive);
       console.log(`[net] connection closed (${ev.code})`);
       this.onClose(ev.code);
     };
@@ -47,6 +58,12 @@ export class GameClient {
         payload: { case: "hello", value: { protocolVersion: PROTOCOL_VERSION, name } },
       }),
     );
+  }
+
+  // client_time_ms comes back in the Pong (RTT); uint32 ms since the page loaded.
+  sendPing(): void {
+    const clientTimeMs = Math.floor(performance.now()) >>> 0;
+    this.dispatch(create(ClientMessageSchema, { payload: { case: "ping", value: { clientTimeMs } } }));
   }
 
   sendSpawn(cell: number, factionId: number): void {
