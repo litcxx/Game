@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "generate": "buf generate ../protocol",
+    "predev": "npm run generate",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "build": "npm run generate && tsc --noEmit && vite build"

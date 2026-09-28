@@ -58,8 +58,7 @@ cmake --preset debug-asan && cmake --build build -j
 # 2) client (in another terminal)
 cd client
 npm install
-npm run generate     # protobuf-es -> src/gen
-npm run dev          # open the printed URL
+npm run dev          # regenerates protobuf-es -> src/gen, then serves; open the printed URL
 ```
 
 **Controls:** WASD move · hold **E** capture the cell under you · hold **left

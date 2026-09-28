@@ -116,8 +116,8 @@ projectile, deals damage — so you can block, switch and attack at once.
 
 ```bash
 npm install
-npm run generate     # protobuf-es -> src/gen (git-ignored)
-npm run dev          # Vite dev server; open the printed URL
+npm run dev          # regenerates src/gen from the protocol (predev), then the
+                     #   Vite dev server; open the printed URL
 ```
 
 Start the server first (see [`../server`](../server)). Other scripts:
@@ -169,7 +169,7 @@ src/net/       GameClient (transport), Predictor (prediction), InterpolationBuff
 src/render/    Camera, Scene (world + minimap), Hud, AbilityBar, FactionPicker,
                ProjectileView, EffectsView, FogView
 src/input/     keyboard (movement + capture), mouse (attack hold + aim cursor)
-src/gen/       generated protobuf-es code (git-ignored; run `npm run generate`)
+src/gen/       generated protobuf-es code (git-ignored; `npm run dev` / `build` regenerate it)
 scripts/       headless pure-logic checks + end-to-end smoke tests (tsx)
 docs/          sequence diagram + the design concept
 ```
