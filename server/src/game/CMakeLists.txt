@@ -4,6 +4,7 @@ add_library(game
   systems/combat_system.cpp
   systems/damage.cpp
   systems/input_system.cpp
+  systems/join_system.cpp
   systems/movement_system.cpp
   systems/projectile_system.cpp
   systems/spawn_system.cpp
