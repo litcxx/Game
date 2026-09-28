@@ -140,7 +140,20 @@ npm run build        # generate + typecheck + vite build (-> dist/)
 
 ## Headless checks & smoke tests
 
-`scripts/` holds two kinds of tsx checks that print a `VERDICT`.
+`scripts/` holds two kinds of tsx checks that print a `VERDICT` and exit
+non-zero on failure. Each kind runs as one command — the same one CI runs
+(see [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
+
+```bash
+npm run check        # every scripts/*_check.ts (no server needed)
+npm run smoke        # scripts/smoke.ts, then every scripts/*_smoke.ts
+```
+
+Both run every script, print a pass/fail summary and exit 1 if any failed. The
+smoke suite expects a **freshly started** server: the territory persists for the
+server's lifetime, so e.g. `capture_smoke` (captures the centre cell for Red)
+fails on a server where that cell is already Red — restart the server between
+runs. A new script is picked up by its name, no list to edit.
 
 **Pure logic (no server):**
 
@@ -164,7 +177,7 @@ npx tsx scripts/capture_smoke.ts    # hold E -> capture a cell
 npx tsx scripts/takeover_smoke.ts   # capture an enemy-owned cell
 npx tsx scripts/combat_smoke.ts     # area attack -> hit -> death
 npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
-npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit
+npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit (fails on no damage)
 npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
 npx tsx scripts/bad_hello_smoke.ts # bad Hello -> fatal ServerError + close 4000+code; refused spawn

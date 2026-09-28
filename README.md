@@ -1,5 +1,7 @@
 # Game
 
+[![CI](https://github.com/litcxx/Game/actions/workflows/ci.yml/badge.svg)](https://github.com/litcxx/Game/actions/workflows/ci.yml)
+
 A minimalist top-down multiplayer browser game. Players join a shared **100×100
 grid**, pick a faction, move around, fight, and capture territory painted in
 their faction's colour. The **server is authoritative** — it owns all state and
@@ -48,6 +50,8 @@ the client at all.
 ## Quick start
 
 Build and run the server, then start the client and open it in a browser.
+Needs GCC 13+ / CMake 3.21+ with Boost, Protobuf and OpenSSL (exact versions in
+[server/README.md](server/README.md#prerequisites)) and Node 22+.
 
 ```bash
 # 1) server (default ws://localhost:27998/)
@@ -65,6 +69,19 @@ npm run dev          # regenerates protobuf-es -> src/gen, then serves; open the
 mouse** to use the active ability (**1** melee area attack, **2** ranged shot
 toward the cursor, **3** block) · keys **1–5** pick the ability · click a faction
 card, then a cell to spawn/respawn · **M** toggle the full-map view.
+
+## Checks & CI
+
+```bash
+(cd server && ctest --preset debug-asan)   # server unit tests
+(cd client && npm run check)               # client pure-logic checks
+(cd client && npm run smoke)               # end-to-end, against a freshly started server
+```
+
+[GitHub Actions](.github/workflows/ci.yml) runs all three on every pull request
+and every push to `main` — the smoke suite against the `debug-asan` server it has
+just built. A red run blocks the merge once its `client` and `server` checks are
+required for `main` (Settings → Branches → branch protection).
 
 ## Documentation
 

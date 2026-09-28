@@ -156,12 +156,27 @@ phased out.
 
 ## Prerequisites
 
-- A C++23 compiler and **CMake ≥ 3.21**
-- **Boost** (Asio + Beast), **Protobuf** (`protoc` + `libprotobuf`, CMake config
-  mode), **OpenSSL**
+The versions CI builds and tests with (Ubuntu 24.04 packages):
 
-`spdlog`, `nlohmann/json`, and `GoogleTest` are fetched automatically via
-`FetchContent`.
+| Dependency | Version | Ubuntu 24.04 package |
+|---|---|---|
+| GCC (C++23) | 13.3 | `g++` |
+| CMake | 3.28 (≥ 3.21 for the presets) | `cmake` |
+| Ninja | 1.11 | `ninja-build` (optional; any generator works) |
+| Protobuf (`protoc` + `libprotobuf`) | 3.21.12 | `protobuf-compiler`, `libprotobuf-dev` |
+| Boost (Asio + Beast, header-only) | 1.83 | `libboost-dev` |
+| OpenSSL | 3.0 | `libssl-dev` |
+| MariaDB Connector/C | 3.3 (MariaDB 10.11) | `libmariadb-dev`, `pkg-config` — only for the parked `src/db` |
+
+```bash
+sudo apt-get install g++ cmake ninja-build pkg-config \
+  protobuf-compiler libprotobuf-dev libboost-dev libssl-dev libmariadb-dev
+```
+
+Protobuf is found through its own CMake package when it ships one (protobuf ≥ 22,
+Homebrew, vcpkg) and through CMake's `FindProtobuf` otherwise (the distro's 3.21),
+so either works. `spdlog` 1.12.0, `nlohmann/json` 3.11.0 and `GoogleTest` 1.15.0
+are fetched (pinned by hash) via `FetchContent`.
 
 ## Build & run
 
@@ -184,6 +199,12 @@ zero or missing limit stop the server at startup.
 ctest --preset debug-asan      # or run the binary directly:
 ./build/bin/unit_tests
 ```
+
+CI ([`../.github/workflows/ci.yml`](../.github/workflows/ci.yml)) builds
+`debug-asan` on every PR and push to `main`, runs the unit tests, then starts the
+server and runs the client's end-to-end smoke suite against it
+(`npm run smoke`, see [`../client`](../client)); the server must then shut down
+cleanly (exit 0 — no sanitizer report, no leak).
 
 The `World` suites (presence, spawn, movement, combat, abilities, ranged, block,
 capture, input, fog, resync, errors, limits) test the game end to end through a
