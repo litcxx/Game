@@ -72,7 +72,8 @@ sequenceDiagram
     Note over pred: выкинуть подтверждённые кадры, снап к авторитету, реплей остатка
     main->>interp: push(now, позиции чужих) и push(now, позиции снарядов)
     main->>scene: updateMeta (hp, кулдауны атаки и блока)
-    main->>scene: applyVisibility(revealed, hidden) — туман войны / applyCellUpdates
+    main->>scene: applyVisibility(revealed, hidden, resync) — туман войны / applyCellUpdates
+    Note over scene: resync (сервер потерял кадр к нам): видимые → исследованные, затем revealed
     main->>scene: addEffects(effectsFromEvents: удар, блок, блок сработал)
     main->>scene: HUD (фракция, клетки/%, В СЕТИ, HP, текущая клетка)
 ```

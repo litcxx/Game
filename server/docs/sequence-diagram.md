@@ -228,9 +228,36 @@ sequenceDiagram
 
     world->>vis: фракция получателя (раз на фракцию)
     vis-->>world: Vision — видимые клетки
-    world->>snap: state, получатель (его прошлая Vision), новая Vision
+    world->>snap: state, получатель (его прошлая sync.vision), новая Vision
     snap-->>C: Snapshot: видимые игроки/снаряды/события, cells, revealed, hidden
-    world->>world: получатель.vision = новая Vision
+    world->>world: получатель.sync.vision = новая Vision
+```
+
+**Доставка и resync.** Протокол разностный (клетки, видимость, roster), поэтому
+потерянный кадр оставил бы клиента рассинхронизированным навсегда. Канал сессии —
+64 кадра; когда он полон, `IClientGateway::send_to` отказывает, и `World::send`
+отмечает отказ через `note_drop()`: первый — пересинхронизация в следующем
+снапшоте, ещё один на более позднем тике в пределах `resync_window_ms` (5 с) —
+сессия закрывается в конце тика и игрок уходит из мира.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant world as World
+    participant gw as IClientGateway (Server)
+    participant C as Клиент
+
+    world->>gw: send_to(снапшот)
+    gw-->>world: false — очередь полна, кадр выброшен
+    world->>world: note_drop → sync.resync = true
+    Note over world: следующий снапшотный тик
+    world->>gw: Roster{full} — полный список
+    world->>gw: Snapshot{resync} — дельты от пустой видимости
+    gw-->>C: клиент: видимые → исследованные, затем revealed (всё видимое с состоянием)
+    alt ещё отказ в пределах resync_window_ms
+        world->>gw: disconnect(сессия)
+        world->>world: on_disconnect → Roster.removed остальным
+    end
 ```
 
 ---

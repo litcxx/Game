@@ -40,8 +40,8 @@ lives on the server; the browser client predicts, interpolates, and renders.
   delimits messages).
 - **Session** (`src/net/session`) is pure transport: read a whole message, parse
   a `ClientMessage`, and forward it tagged with its session id (`ClientEvent`).
-  Outgoing frames go through a per-session concurrent channel drained by
-  `do_send`.
+  Outgoing frames go through a per-session concurrent channel (64 frames)
+  drained by `do_send`; when it is full, a frame is refused, not queued.
 - **Server** (`src/net/server`) owns the acceptor and the session registry, and
   implements `IClientGateway` (the game loop's way back to clients). Each session
   is supervised by one coroutine that runs `do_read` and `do_send` together
@@ -73,8 +73,18 @@ lives on the server; the browser client predicts, interpolates, and renders.
   always), events whose named players are all visible (a hit from the fog tells
   the victim nothing), and the visible cells that changed plus every newly
   revealed cell with its current state. The difference from what the client was
-  told last time (`Player::vision`) goes out as `revealed` / `hidden`; the
+  told last time (`Player::sync.vision`) goes out as `revealed` / `hidden`; the
   client remembers explored cells. A joiner's `MapState` reveals nothing.
+- **Delivery is checked.** The protocol is delta-based (cells, sight, roster),
+  so a lost frame would leave the client out of step for good.
+  `IClientGateway::send_to` reports whether the frame was queued; on a refusal
+  `note_drop()` marks the client for a **resync**: its next snapshot goes out
+  after a `Roster{full}` and starts its deltas from nothing (every visible cell
+  revealed with its state, `Snapshot.resync` set — the client first turns what
+  it held as visible to explored). Another refusal on a later tick within
+  `resync_window_ms` (5 s) means it can't keep up: `World` closes the session
+  at the end of the tick and it leaves the world. What was told to a client and
+  how delivery goes is kept per connection in `Player::sync` (`ClientSync`).
 - **Abilities are data.** The config lists them (`melee` / `projectile` with
   cooldown, damage, range, projectile speed and radius); Welcome sends them to
   clients, and each input frame picks one by id plus an aim vector. Using any
@@ -89,8 +99,9 @@ lives on the server; the browser client predicts, interpolates, and renders.
   stops it. Every ability use is announced (`AbilityEvent`) so clients can show
   what others pressed.
 - **Seam.** `World` depends only on the abstract `IClientGateway`
-  (`src/shared/net`), not on the network layer — so the game code stays testable
-  (mockable gateway) and free of transport details.
+  (`src/shared/net`: `send_to`, `broadcast`, `disconnect`), not on the network
+  layer — so the game code stays testable (a mock gateway can refuse frames)
+  and free of transport details.
 
 ## Layout
 
@@ -99,13 +110,14 @@ lives on the server; the browser client predicts, interpolates, and renders.
 src/net/       server, session — WebSocket transport + coroutines
 src/game/      the simulation:
   world/         World — tick orchestration, event dispatch, delivery; fixed step
-  state/         WorldState, Player, Territory, Vision — plain data
+  state/         WorldState, Player, Territory, Vision, ClientSync — plain data
   systems/       input, movement, combat (abilities: blocks, melee, projectile
                  launch), projectiles (flight, swept hits), damage, capture, spawn,
                  vision (fog of war: what a faction sees)
   spatial/       SpatialIndex — uniform-grid broad phase over player positions;
                  geometry — swept segment-vs-circle hit test
-  sync/          ServerMessage builders + per-recipient snapshot (fog-filtered)
+  sync/          ServerMessage builders + per-recipient snapshot (fog-filtered,
+                 resync), delivery policy for dropped frames (note_drop)
 src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue)
 config/        config.json (runtime settings + game rules)
 test/          unit + integration (GoogleTest)
@@ -137,8 +149,9 @@ cmake --build build -j
 Presets differ only in build type / sanitizer (`debug-asan` enables
 Address+UB sanitizers). The server reads its address, port, thread count, and the
 game rules (matching `game.v1.GameConfig`, plus the factions and the abilities,
-and the server-only `capture_ticks` and `vision_radius`) from the config file;
-invalid abilities or a zero vision radius stop the server at startup.
+and the server-only `capture_ticks`, `vision_radius` and `resync_window_ms`)
+from the config file; invalid abilities or a zero vision radius or resync window
+stop the server at startup.
 
 ## Tests
 
@@ -148,9 +161,9 @@ ctest --preset debug-asan      # or run the binary directly:
 ```
 
 The `World` suites (presence, spawn, movement, combat, abilities, ranged, block,
-capture, input, fog) test the game end to end through a mock gateway; `Damage`,
-`SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision` and `GameConfigParse`
-test those units directly. They all run by default.
+capture, input, fog, resync) test the game end to end through a mock gateway;
+`Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`, `Delivery`
+and `GameConfigParse` test those units directly. They all run by default.
 Some legacy suites (the old binary protocol and the parked auth/DB integration
 tests) remain disabled in the CMake test lists.
 
