@@ -66,7 +66,7 @@ lives on the server; the browser client predicts, interpolates, and renders.
   the snapshot is built per recipient.
 - **Fog of war is a delivery filter.** The simulation ignores sight — attacks
   from the fog land as usual. On each snapshot `compute_vision()` marks, once
-  per faction, the cells whose centre is within `vision_radius` (400 = 4 cells)
+  per faction, the cells whose centre is within `vision_radius` (config; 300 = 3 cells)
   of a source: an alive player of the faction or a cell it owns (a body still
   sees in the snapshot reporting its death, not after). `build_snapshot()` then
   sends a recipient only players and projectiles on visible cells (itself
