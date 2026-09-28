@@ -8,6 +8,7 @@ add_library(game
   systems/projectile_system.cpp
   systems/spawn_system.cpp
   systems/vision_system.cpp
+  sync/delivery.cpp
   sync/messages.cpp
   sync/snapshot_builder.cpp
   world/world.cpp
