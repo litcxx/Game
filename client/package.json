@@ -8,6 +8,8 @@
     "predev": "npm run generate",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
+    "check": "tsx scripts/run_all.ts check",
+    "smoke": "tsx scripts/run_all.ts smoke",
     "build": "npm run generate && tsc --noEmit && vite build"
   },
   "dependencies": {
