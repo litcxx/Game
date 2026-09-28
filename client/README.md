@@ -66,6 +66,12 @@ positions.
   **`src/render/fog.ts`** (`FogView`) covers the on-screen cells: unexplored
   under dense fog (only the grid shows through), explored dimmed over the last
   known state, visible untouched; one rect per run, the map border on top.
+- **`src/errors.ts`** — server errors as the player sees them: a text per
+  `ErrorCode` (`ServerError.detail` is only for logs), the error a close code
+  4000 + code carries, and `Notices`: the hint line shows a fatal error for good
+  (the controls are hidden — the server has closed the socket), a refused
+  request (e.g. a spawn) for 3 s, else the usual hint. `GameClient` reports the
+  socket's close code, so a fatal error shows even if its frame was lost.
 - **`src/render/camera.ts`** — `Camera`: world↔screen mapping in two modes —
   **follow** (exactly 15 cells wide, clamped to the map) and **map** (whole map).
 - **`src/render/scene.ts`** — `Scene`: camera-driven world (tonal territory cells,
@@ -144,6 +150,7 @@ npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, coo
 npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
 npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked effects, timing
 npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs
+npx tsx scripts/errors_check.ts         # error texts, close codes, fatal / refusal hints
 ```
 
 **End-to-end (start the server first):**
@@ -158,6 +165,7 @@ npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
 npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit
 npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
+npx tsx scripts/bad_hello_smoke.ts # bad Hello -> fatal ServerError + close 4000+code; refused spawn
 npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones seen
                                    #   (VISION_CELLS = server vision_radius in cells, default 3)
 ```
@@ -169,6 +177,7 @@ npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones s
 src/abilities.ts  ability model, slot keys, aim vector, cooldown progress
 src/effects.ts    snapshot events -> timed visual effects
 src/fog.ts        fog of war: cell sight (unexplored / explored / visible)
+src/errors.ts     server errors: texts, close codes, what the hint line shows
 src/net/       GameClient (transport), Predictor (prediction), InterpolationBuffer
 src/render/    Camera, Scene (world + minimap), Hud, AbilityBar, FactionPicker,
                ProjectileView, EffectsView, FogView
