@@ -11,6 +11,7 @@ import {
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { uniqueName } from "../src/net/uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const attacker = new WebSocket(URL);
@@ -41,7 +42,7 @@ function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
 }
 const helloMsg = (name: string) =>
-  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name } } });
+  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName(name) } } });
 const spawnMsg = (cell: number, factionId: number) =>
   create(ClientMessageSchema, { payload: { case: "spawn", value: { cell, factionId } } });
 const framesMsg = (frames: { seq: number; attack: boolean; ability: number }[]) =>

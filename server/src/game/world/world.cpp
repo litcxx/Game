@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -22,6 +24,7 @@
 #include "systems/projectile_system.hpp"
 #include "systems/spawn_system.hpp"
 #include "systems/vision_system.hpp"
+#include "utils/session_token.hpp"
 
 namespace lit::game {
 namespace {
@@ -51,6 +54,8 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
     const std::uint64_t window =
         (std::uint64_t{config_.limits.resync_window_ms} * config_.tick_rate + 999) / 1000;
     resync_window_ticks_ = static_cast<std::uint32_t>(std::max<std::uint64_t>(window, 1));
+    grace_ticks_ = static_cast<std::uint32_t>(
+        (std::uint64_t{config_.reconnect_grace_ms} * config_.tick_rate + 999) / 1000);
 }
 
 void World::run(std::stop_token stop) {
@@ -96,6 +101,7 @@ void World::tick(double dt) {
     update_projectiles(state_, config_, alive_index_, dt);
     update_captures(state_, config_);
     time_out_connections();
+    end_reconnect_graces();
     send_snapshots();
     close_released_sessions();
     finish_tick_metrics(started);
@@ -187,15 +193,25 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello,
                        : "the name must be 1-16 printable characters");
         return;
     }
-    const std::uint32_t character_id = create_character(state_, *std::move(name)).id;
+    // A known token brings its character back, whatever name comes with it; an
+    // unknown one (e.g. from before a restart) is no different from none.
+    if (!hello.session_token().empty()) {
+        if (const Character* known = find_by_token(state_, hash_token(hello.session_token()))) {
+            resume(session_id, known->id, hello.session_token());
+            return;
+        }
+    }
+    if (is_name_taken(state_, *name)) {
+        send_error(session_id, ::game::v1::ERROR_CODE_INVALID_NAME, request_id,
+                   "the name is taken");
+        return;
+    }
+    const std::string token = new_session_token();
+    const std::uint32_t character_id =
+        create_character(state_, *std::move(name), hash_token(token)).id;
     attach_session(state_, session_id, character_id);
     const Character& character = state_.characters.at(character_id);
-
-    // Greet the joiner: Welcome, then the map (as far as it sees: nothing yet —
-    // snapshots reveal the rest), then the full roster.
-    send(session_id, make_welcome(state_, config_, character));
-    send(session_id, make_map_state(state_, state_.sessions.at(session_id).sync.vision));
-    send(session_id, make_full_roster(state_));
+    greet(session_id, character, token, /*resumed=*/false);
 
     // Tell everyone else that a new player joined.
     broadcast_except(session_id, make_roster_upsert(state_, character));
@@ -203,6 +219,41 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello,
 
     spdlog::info("World::on_hello session={} name='{}' -> player_id={}", session_id, character.name,
                  character.id);
+}
+
+void World::resume(std::uint64_t session_id, std::uint32_t character_id,
+                   std::string_view session_token) {
+    const bool was_in_world = state_.characters.at(character_id).in_world;
+    if (const auto replaced = attach_session(state_, session_id, character_id)) {
+        // Taken over from another tab: that one is told why it is closed (unless
+        // it is being closed anyway).
+        if (!closing_.contains(*replaced)) {
+            send_error(*replaced, ::game::v1::ERROR_CODE_SESSION_REPLACED, 0,
+                       "the character was taken over by another connection");
+        }
+    }
+    const Character& character = state_.characters.at(character_id);
+    // Still in the world: the same state, which no one else notices. Back after
+    // the grace: without a body, and the others see it join again.
+    greet(session_id, character, session_token, /*resumed=*/was_in_world);
+    if (was_in_world) {
+        metrics_.record_resume();
+    } else {
+        broadcast_except(session_id, make_roster_upsert(state_, character));
+        metrics_.record_join();
+    }
+
+    spdlog::info("World::on_hello session={} {} player_id={} name='{}'", session_id,
+                 was_in_world ? "resumed" : "returned as", character.id, character.name);
+}
+
+void World::greet(std::uint64_t session_id, const Character& character,
+                  std::string_view session_token, bool resumed) {
+    // Welcome, then the map (as far as it sees: nothing yet — snapshots reveal
+    // the rest), then the full roster.
+    send(session_id, make_welcome(state_, config_, character, session_token, resumed));
+    send(session_id, make_map_state(state_, state_.sessions.at(session_id).sync.vision));
+    send(session_id, make_full_roster(state_));
 }
 
 void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn,
@@ -240,18 +291,24 @@ void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
 }
 
 void World::on_disconnect(std::uint64_t session_id) {
-    const auto character_id = detach_session(state_, session_id);
+    const auto character_id = detach_session(state_, session_id, state_.tick + grace_ticks_);
     if (!character_id) {
-        return;  // connected but never sent Hello, or already gone
+        return;  // connected but never sent Hello, taken over, or already gone
     }
-    // No reconnect yet: the character leaves the world with the connection.
-    remove_character(state_, *character_id);
+    // The character stays in the world — visible and vulnerable — until its
+    // reconnect grace ends; closing the tab does not take it out of a fight.
+    spdlog::info("World::on_disconnect session={} player_id={}: away for {} ticks", session_id,
+                 *character_id, grace_ticks_);
+}
 
-    // Tell the remaining players the player left (broadcast now excludes it).
-    broadcast(make_roster_removed(*character_id));
-    metrics_.record_leave();
-
-    spdlog::info("World::on_disconnect session={} player_id={}", session_id, *character_id);
+void World::end_reconnect_graces() {
+    for (std::uint32_t character_id : leave_after_grace(state_, state_.tick)) {
+        // Tell the remaining players the player left.
+        broadcast(make_roster_removed(character_id));
+        metrics_.record_leave();
+        spdlog::info("World: player_id={} left the world: its reconnect grace is over",
+                     character_id);
+    }
 }
 
 void World::send_snapshots() {

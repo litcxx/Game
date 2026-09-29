@@ -242,10 +242,11 @@ TEST(WorldRoster, JoinNotifiesExistingPlayers) {
     EXPECT_TRUE(bob_notified);
 }
 
-TEST(WorldRoster, DisconnectRemovesPlayerAndNotifiesOthers) {
+TEST(WorldRoster, ADisconnectedPlayerLeavesAfterTheGraceAndOthersAreTold) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
+    config.reconnect_grace_ms = 100;  // 6 ticks at 60 Hz
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(1, "alice"));
@@ -261,17 +262,21 @@ TEST(WorldRoster, DisconnectRemovesPlayerAndNotifiesOthers) {
                 if (info.name() == "bob") bob_id = info.id();
     ASSERT_GT(bob_id, 0u);
 
+    const auto bob_removed = [&] {
+        for (const auto& m : messages_to(gw, 1))
+            if (m.has_roster())
+                for (auto removed_id : m.roster().removed())
+                    if (removed_id == bob_id) return true;
+        return false;
+    };
+
     incoming.push(disconnect_event(2));
-    world.tick(0.016);
+    world.tick(0.016);                              // tick 3: bob is away until tick 9
+    for (int i = 0; i < 5; ++i) world.tick(0.016);  // tick 8
+    EXPECT_FALSE(bob_removed());                    // still in the world: he may come back
 
-    // alice must be told bob was removed.
-    bool bob_removed = false;
-    for (const auto& m : messages_to(gw, 1))
-        if (m.has_roster())
-            for (auto removed_id : m.roster().removed())
-                if (removed_id == bob_id) bob_removed = true;
-
-    EXPECT_TRUE(bob_removed);
+    world.tick(0.016);           // tick 9: the grace is over
+    EXPECT_TRUE(bob_removed());  // alice must be told bob was removed
 }
 
 namespace {
@@ -1489,7 +1494,7 @@ namespace {
 
 ::game::v1::ServerMessage parse(const std::vector<std::byte>& bytes) {
     ::game::v1::ServerMessage m;
-    m.ParseFromArray(bytes.data(), static_cast<int>(bytes.size()));
+    EXPECT_TRUE(m.ParseFromArray(bytes.data(), static_cast<int>(bytes.size())));
     return m;
 }
 
@@ -1631,19 +1636,20 @@ TEST(WorldResync, ALostRosterChangeIsRepaired) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
+    config.reconnect_grace_ms = 1;  // one tick: b leaves the tick after it drops
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(1, "watcher"));
     incoming.push(hello_event(2, "b"));
     run_ticks(world, 3, 0.05);
-    // Drop the watcher's roster news on tick 4: that b left.
+    // Drop the watcher's roster news on ticks 4-5: that b left.
     gw.accept = [](std::uint64_t sid, const std::vector<std::byte>& bytes) {
         return !(sid == 1 && parse(bytes).has_roster());
     };
     incoming.push(disconnect_event(2));
-    run_ticks(world, 1, 0.05);  // tick 4: "b removed" is dropped
+    run_ticks(world, 2, 0.05);  // tick 4: b drops; tick 5: it leaves, "b removed" is dropped
     gw.accept = nullptr;
-    run_ticks(world, 5, 0.05);  // tick 6: the resync
+    run_ticks(world, 4, 0.05);  // tick 6: the resync
 
     EXPECT_EQ(model_of(gw, 1).roster, (std::set<std::uint32_t>{1}));  // no ghost of b
     EXPECT_TRUE(gw.disconnected.empty());
@@ -1672,7 +1678,8 @@ TEST(WorldResync, DropsFartherApartThanTheWindowOnlyResync) {
 TEST(WorldResync, FallingBehindAgainWithinTheWindowCloses) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    auto config = fog_config();  // limits.resync_window_ms = 5000
+    auto config = fog_config();       // limits.resync_window_ms = 5000
+    config.reconnect_grace_ms = 100;  // 6 ticks
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(1, "slow"));
@@ -1684,15 +1691,15 @@ TEST(WorldResync, FallingBehindAgainWithinTheWindowCloses) {
     ASSERT_EQ(gw.disconnected.size(), 1u);
     EXPECT_EQ(gw.disconnected[0].first, 1u);
     EXPECT_EQ(gw.disconnected[0].second, ::game::v1::ERROR_CODE_UNSPECIFIED);  // no error to tell
+
+    const auto attempts = gw.rejected.size();
+    run_ticks(world, 6, 0.05);                // through its reconnect grace
+    EXPECT_EQ(gw.rejected.size(), attempts);  // nothing more is sent to it
     bool told = false;
     for (const auto& m : messages_to(gw, 2))
         if (m.has_roster())
             for (std::uint32_t id : m.roster().removed()) told = told || id == 1;
-    EXPECT_TRUE(told);  // the others see it leave
-
-    const auto attempts = gw.rejected.size();
-    run_ticks(world, 6, 0.05);
-    EXPECT_EQ(gw.rejected.size(), attempts);  // nothing more is sent to it
+    EXPECT_TRUE(told);  // the others see it leave once the grace is over
 }
 
 // --- Errors: Hello validation and refusals (ServerError) ---------------------
@@ -1828,6 +1835,7 @@ TEST(WorldErrors, ASecondHelloIsFatalAndLeavesNoGhost) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
+    config.reconnect_grace_ms = 100;  // 6 ticks
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(1, "a"));
@@ -1837,9 +1845,12 @@ TEST(WorldErrors, ASecondHelloIsFatalAndLeavesNoGhost) {
     world.tick(0.016);
 
     expect_fatal(gw, 1, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, 9);
-    // b saw a join once (the full roster) and leave once — no second a, no ghost.
-    EXPECT_EQ(roster_news_about(gw, 2, 1), std::make_pair(1, 1));
+    // b saw a join once (the full roster) — no second a; a is away, not gone yet.
+    EXPECT_EQ(roster_news_about(gw, 2, 1), std::make_pair(1, 0));
     for (std::uint32_t id = 3; id < 10; ++id) EXPECT_EQ(roster_news_about(gw, 2, id).first, 0);
+
+    run_ticks(world, 6, 0.016);  // its reconnect grace ends
+    EXPECT_EQ(roster_news_about(gw, 2, 1), std::make_pair(1, 1));
 
     incoming.push(disconnect_event(1));  // the socket's own close arrives later
     world.tick(0.016);
@@ -2030,7 +2041,8 @@ TEST(WorldLimits, SilenceIsAnIdleTimeout) {
     }
 
     expect_fatal(gw, 1, ::game::v1::ERROR_CODE_IDLE_TIMEOUT, 0);
-    EXPECT_EQ(roster_news_about(gw, 2, 1).second, 1);  // it left the world
+    // Away, not gone: its client may reconnect within the grace.
+    EXPECT_EQ(roster_news_about(gw, 2, 1).second, 0);
     EXPECT_TRUE(errors_to(gw, 2).empty());
 }
 
@@ -2171,7 +2183,9 @@ TEST(WorldMetrics, CountsDropsResyncsAndLeaves) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     const LogCapture log;
-    lit::game::World world(incoming, gw, test_config(), std::chrono::seconds{1});
+    auto config = test_config();
+    config.reconnect_grace_ms = 100;  // bob leaves 6 ticks after he drops
+    lit::game::World world(incoming, gw, config, std::chrono::seconds{1});
     gw.accept = drop_snapshots(2, 3, 3);  // bob's first snapshot: resynced on tick 6
 
     incoming.push(hello_event(1, "ann"));
@@ -2190,4 +2204,326 @@ TEST(WorldMetrics, CountsDropsResyncsAndLeaves) {
     EXPECT_EQ(m.at("joins"), 2);
     EXPECT_EQ(m.at("leaves"), 1);
     EXPECT_TRUE(m.at("errors").empty());
+}
+
+// --- Reconnect: the session token, the grace period, resume ------------------
+// Welcome hands out a token; a Hello with it comes back as the same character.
+// A dropped player stays in the world for reconnect_grace_ms (here 100 ms = 6
+// ticks where it matters), then leaves it; its record stays for the token.
+
+namespace {
+
+lit::ClientEvent hello_with_token(std::uint64_t session_id, std::string name, std::string token) {
+    auto ev = hello_event(session_id, std::move(name));
+    ev.msg.mutable_hello()->set_session_token(std::move(token));
+    return ev;
+}
+
+std::optional<::game::v1::Welcome> welcome_to(const lit::test::MockClientGateway& gw,
+                                              std::uint64_t session_id) {
+    std::optional<::game::v1::Welcome> out;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_welcome()) out = m.welcome();
+    return out;
+}
+
+lit::GameConfig short_grace_config() {
+    auto c = test_config();
+    c.reconnect_grace_ms = 100;  // 6 ticks
+    return c;
+}
+
+}  // namespace
+
+TEST(WorldReconnect, TheWelcomeCarriesANewSessionToken) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, test_config());
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    world.tick(kTick);
+
+    const auto ann = welcome_to(gw, 1);
+    const auto bob = welcome_to(gw, 2);
+    ASSERT_TRUE(ann.has_value());
+    ASSERT_TRUE(bob.has_value());
+    EXPECT_EQ(ann->session_token().size(), 32u);  // 128 bits in hex
+    EXPECT_NE(ann->session_token(), bob->session_token());
+    EXPECT_FALSE(ann->resumed());
+}
+
+TEST(WorldReconnect, ADroppedPlayerStaysInTheWorldStandingStill) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, test_config());
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));   // x = 150
+    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // to see it: the whole map
+    incoming.push(input_event(1, /*move_x=*/1, 0, /*seq=*/1));  // walking right
+    run_ticks(world, 3, kTick);
+    const std::uint32_t ann = welcome_to(gw, 1)->player_id();
+
+    incoming.push(disconnect_event(1));
+    run_ticks(world, 3, kTick);  // a snapshot on tick 6
+    const auto before = player_state_in(gw, 2, ann);
+    run_ticks(world, 30, kTick);
+    const auto after = player_state_in(gw, 2, ann);
+
+    ASSERT_TRUE(before.has_value());
+    ASSERT_TRUE(after.has_value());                      // still in the world, still seen
+    EXPECT_GT(before->x(), 150u);                        // it had walked
+    EXPECT_EQ(after->x(), before->x());                  // its last move does not repeat
+    EXPECT_EQ(roster_news_about(gw, 2, ann).second, 0);  // no one is told it left
+}
+
+TEST(WorldReconnect, AnAwayPlayerCanBeHurt) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, test_config());
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // 100 units away
+    world.tick(kTick);
+    const std::uint32_t ann = welcome_to(gw, 1)->player_id();
+
+    incoming.push(disconnect_event(1));  // closing the tab does not save it
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    run_ticks(world, 6, kTick);
+
+    const auto seen = player_state_in(gw, 2, ann);
+    ASSERT_TRUE(seen.has_value());
+    EXPECT_LT(seen->hp(), 100u);
+}
+
+TEST(WorldReconnect, AResumeWithinTheGraceKeepsIdPositionAndHp) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, test_config());
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(input_event(1, /*move_x=*/0, /*move_y=*/1, /*seq=*/1));  // ann walks down
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));              // bob swings once
+    world.tick(kTick);
+    incoming.push(input_event(2, 0, 0, /*seq=*/2));  // and stops
+    run_ticks(world, 2, kTick);
+    const auto first = welcome_to(gw, 1);
+    ASSERT_TRUE(first.has_value());
+    const std::uint32_t ann = first->player_id();
+
+    incoming.push(disconnect_event(1));
+    run_ticks(world, 6, kTick);
+    const auto seen = player_state_in(gw, 2, ann);  // as bob sees it while it is away
+    ASSERT_TRUE(seen.has_value());
+    ASSERT_EQ(seen->hp(), 60u);  // hit once
+    const auto roster_news = roster_news_about(gw, 2, ann);
+
+    incoming.push(hello_with_token(3, "ann", first->session_token()));
+    run_ticks(world, 3, kTick);  // a snapshot on tick 12
+
+    const auto again = welcome_to(gw, 3);
+    ASSERT_TRUE(again.has_value());
+    EXPECT_TRUE(again->resumed());
+    EXPECT_EQ(again->player_id(), ann);
+    EXPECT_EQ(again->session_token(), first->session_token());
+    // Greeted like a joiner: the map (as far as it sees: nothing yet), the full roster.
+    bool map_state = false;
+    bool full_roster = false;
+    for (const auto& m : messages_to(gw, 3)) {
+        map_state = map_state || m.has_map_state();
+        full_roster = full_roster || (m.has_roster() && m.roster().full());
+    }
+    EXPECT_TRUE(map_state);
+    EXPECT_TRUE(full_roster);
+    // The same body, where and as it was; everything it sees is revealed anew.
+    const auto snaps = snapshots_to(gw, 3);
+    ASSERT_FALSE(snaps.empty());
+    EXPECT_EQ(snaps[0].you().life(), ::game::v1::LIFE_STATE_ALIVE);
+    EXPECT_EQ(snaps[0].revealed_size(), 16);  // the whole 4x4 map
+    const auto self = player_state_in(gw, 3, ann);
+    ASSERT_TRUE(self.has_value());
+    EXPECT_EQ(self->x(), seen->x());
+    EXPECT_EQ(self->y(), seen->y());
+    EXPECT_EQ(self->hp(), 60u);
+    EXPECT_EQ(roster_news_about(gw, 2, ann), roster_news);  // others see nothing happen
+}
+
+TEST(WorldReconnect, AfterTheGraceThePlayerLeavesAndReturnsNotSpawned) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, short_grace_config());
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    world.tick(kTick);
+    const auto first = welcome_to(gw, 1);
+    ASSERT_TRUE(first.has_value());
+    const std::uint32_t ann = first->player_id();
+
+    incoming.push(disconnect_event(1));
+    world.tick(kTick);           // tick 2: away until tick 8
+    run_ticks(world, 5, kTick);  // tick 7
+    EXPECT_EQ(roster_news_about(gw, 2, ann).second, 0);
+    world.tick(kTick);                                   // tick 8
+    EXPECT_EQ(roster_news_about(gw, 2, ann).second, 1);  // it left the world
+    const int upserts = roster_news_about(gw, 2, ann).first;
+
+    incoming.push(hello_with_token(3, "ann", first->session_token()));
+    run_ticks(world, 4, kTick);  // a snapshot on tick 12
+
+    const auto again = welcome_to(gw, 3);
+    ASSERT_TRUE(again.has_value());
+    EXPECT_FALSE(again->resumed());  // not the same state: back without a body
+    EXPECT_EQ(again->player_id(), ann);
+    EXPECT_EQ(again->session_token(), first->session_token());
+    const auto snap = last_snapshot_to(gw, 3);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_NOT_SPAWNED);
+    EXPECT_EQ(roster_news_about(gw, 2, ann).first, upserts + 1);  // bob sees it join again
+}
+
+TEST(WorldReconnect, ASecondConnectionWithTheTokenReplacesTheFirst) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, test_config());
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));   // x = 150
+    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // to see it: the whole map
+    world.tick(kTick);
+    const auto first = welcome_to(gw, 1);
+    ASSERT_TRUE(first.has_value());
+    const std::uint32_t ann = first->player_id();
+
+    incoming.push(hello_with_token(3, "ann", first->session_token()));  // another tab
+    world.tick(kTick);
+
+    expect_fatal(gw, 1, ::game::v1::ERROR_CODE_SESSION_REPLACED, 0);
+    const auto again = welcome_to(gw, 3);
+    ASSERT_TRUE(again.has_value());
+    EXPECT_TRUE(again->resumed());
+    EXPECT_EQ(again->player_id(), ann);
+
+    // The new tab drives the body; whatever the old one still sends is ignored.
+    incoming.push(input_event(1, /*move_x=*/-1, 0, /*seq=*/1));
+    incoming.push(input_event(3, /*move_x=*/1, 0, /*seq=*/1));
+    run_ticks(world, 4, kTick);  // a snapshot on tick 6
+    const auto seen = player_state_in(gw, 2, ann);
+    ASSERT_TRUE(seen.has_value());
+    EXPECT_GT(seen->x(), 150u);
+    EXPECT_EQ(roster_news_about(gw, 2, ann).second, 0);  // it never left
+}
+
+TEST(WorldReconnect, AnUnknownTokenJoinsAsANewCharacter) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, test_config());
+    const std::string stale(32, 'a');  // e.g. from before a server restart
+
+    incoming.push(hello_with_token(1, "ann", stale));
+    world.tick(kTick);
+
+    const auto welcome = welcome_to(gw, 1);
+    ASSERT_TRUE(welcome.has_value());
+    EXPECT_FALSE(welcome->resumed());
+    EXPECT_EQ(welcome->player_id(), 1u);
+    EXPECT_EQ(welcome->session_token().size(), 32u);
+    EXPECT_NE(welcome->session_token(), stale);  // a new one
+}
+
+TEST(WorldReconnect, ATakenNameIsRefusedIgnoringCase) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, test_config());
+
+    incoming.push(hello_event(1, "Tag"));
+    world.tick(kTick);
+    incoming.push(with_request(hello_event(2, "tAG"), 5));
+    world.tick(kTick);
+
+    expect_fatal(gw, 2, ::game::v1::ERROR_CODE_INVALID_NAME, 5);
+    EXPECT_FALSE(got_welcome(gw, 2));
+}
+
+TEST(WorldReconnect, ANameStaysTakenAfterItsPlayerLeavesButItsOwnerGetsItBack) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, short_grace_config());
+
+    incoming.push(hello_event(1, "Tag"));
+    world.tick(kTick);
+    const auto first = welcome_to(gw, 1);
+    ASSERT_TRUE(first.has_value());
+    incoming.push(disconnect_event(1));
+    run_ticks(world, 8, kTick);  // it left the world
+
+    incoming.push(hello_event(2, "tag"));
+    world.tick(kTick);
+    const auto errors = errors_to(gw, 2);
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_EQ(errors[0].code(), ::game::v1::ERROR_CODE_INVALID_NAME);
+
+    incoming.push(hello_with_token(3, "TAG", first->session_token()));
+    world.tick(kTick);
+    const auto back = welcome_to(gw, 3);
+    ASSERT_TRUE(back.has_value());
+    EXPECT_EQ(back->player_id(), first->player_id());
+}
+
+TEST(WorldReconnect, AResumedPlayerKeepsItsName) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, test_config());
+
+    incoming.push(hello_event(1, "ann"));
+    world.tick(kTick);
+    const auto first = welcome_to(gw, 1);
+    ASSERT_TRUE(first.has_value());
+    incoming.push(disconnect_event(1));
+    incoming.push(hello_with_token(2, "zed", first->session_token()));
+    world.tick(kTick);
+
+    std::optional<std::string> name;
+    for (const auto& m : messages_to(gw, 2))
+        if (m.has_roster())
+            for (const auto& p : m.roster().upsert())
+                if (p.id() == first->player_id()) name = p.name();
+    EXPECT_EQ(name, "ann");
+}
+
+TEST(WorldMetrics, CountsResumesJoinsAndLeaves) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    const LogCapture log;
+    lit::game::World world(incoming, gw, short_grace_config(), std::chrono::seconds{1});
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    world.tick(kTick);
+    const std::string ann = welcome_to(gw, 1)->session_token();
+    const std::string bob = welcome_to(gw, 2)->session_token();
+    incoming.push(disconnect_event(1));
+    incoming.push(disconnect_event(2));
+    world.tick(kTick);                               // tick 2: both away until tick 8
+    incoming.push(hello_with_token(3, "ann", ann));  // back in time: a resume
+    run_ticks(world, 8, kTick);                      // tick 10: bob has left
+    incoming.push(hello_with_token(4, "bob", bob));  // back after the grace: a join
+    run_ticks(world, 50, kTick);                     // tick 60
+
+    const auto lines = log.metrics();
+    ASSERT_EQ(lines.size(), 1u);
+    const auto& m = lines[0];
+    EXPECT_EQ(m.at("ccu"), 2);
+    EXPECT_EQ(m.at("joins"), 3);
+    EXPECT_EQ(m.at("resumes"), 1);
+    EXPECT_EQ(m.at("leaves"), 1);
 }

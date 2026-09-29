@@ -74,6 +74,21 @@ bool is_forbidden(char32_t cp) {
            (cp >= 0x2060 && cp <= 0x206F) || cp == 0xFEFF || (cp >= 0xFFF9 && cp <= 0xFFFB) ||
            (cp & 0xFFFEU) == 0xFFFE;
 }
+
+// The lowercase of a Latin or Cyrillic capital; any other code point as is.
+char32_t fold_case(char32_t cp) {
+    if (cp >= U'A' && cp <= U'Z') return cp + 0x20;
+    if (cp >= 0x0410 && cp <= 0x042F) return cp + 0x20;  // А–Я -> а–я
+    if (cp >= 0x0400 && cp <= 0x040F) return cp + 0x50;  // Ѐ–Џ (Ё among them) -> ѐ–џ
+    return cp;
+}
+
+// A name's code points with the case folded: names match when their keys do.
+std::vector<char32_t> name_key(std::string_view name) {
+    std::vector<char32_t> key = decode_utf8(name).value_or(std::vector<char32_t>{});
+    std::ranges::transform(key, key.begin(), fold_case);
+    return key;
+}
 }  // namespace
 
 std::expected<std::string, ::game::v1::ErrorCode> check_hello(const ::game::v1::Hello& hello) {
@@ -106,5 +121,11 @@ std::optional<std::string> normalize_name(std::string_view raw) {
     std::size_t length = 0;
     for (std::size_t k = first; k < last; ++k) length += utf8_length((*chars)[k]);
     return std::string{raw.substr(begin, length)};
+}
+
+bool is_name_taken(const WorldState& state, std::string_view name) {
+    const std::vector<char32_t> key = name_key(name);
+    return std::ranges::any_of(
+        state.characters, [&key](const auto& entry) { return name_key(entry.second.name) == key; });
 }
 }  // namespace lit::game

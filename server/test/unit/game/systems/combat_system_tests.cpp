@@ -51,7 +51,7 @@ struct Encounter {
 
     Encounter() {
         state.territory.reset(10, 10);
-        EXPECT_EQ(lit::game::create_character(state, "Ann").id, kPlayer);
+        EXPECT_EQ(lit::game::create_character(state, "Ann", {}).id, kPlayer);
         lit::game::attach_session(state, kSession, kPlayer);
         EXPECT_TRUE(lit::game::try_spawn(state, config, kPlayer, 44, 1));  // cell (4, 4)
         state.units[kStub] = stub_body();

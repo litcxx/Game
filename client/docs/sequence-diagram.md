@@ -22,7 +22,8 @@ sequenceDiagram
 
     main->>net: new GameClient(serverUrl(VITE_SERVER_URL, location), onMessage)
     Note over main: адрес: VITE_SERVER_URL сборки, иначе свой origin + /ws (wss для https)
-    main->>net: connect("player")
+    main->>net: connect(uniqueName("player"))
+    Note over main: player-xxxx: имя занято до рестарта сервера; экран ника — GAME-009
     net->>ws: new WebSocket, binaryType = "arraybuffer"
     ws-->>net: onopen
     net->>ws: send(ClientMessage{hello}) — 1 кадр = 1 сообщение
@@ -34,6 +35,7 @@ sequenceDiagram
     ws-->>net: onmessage
     net->>main: onMessage(Welcome / MapState / Roster)
     main->>main: routeMessage → GameState: конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта, ростер
+    Note over main: Welcome.session_token пока не хранится — его хранение и переподключение: GAME-009
     main->>main: showWelcome: карточки фракций, панель способностей
     world->>srv: send_to(id): Pong{client_time_ms}
     srv->>ws: WS binary frame

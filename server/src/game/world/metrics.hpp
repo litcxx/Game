@@ -29,8 +29,9 @@ struct MetricsReport {
     std::uint32_t drops{0};          // frames refused by a full send queue
     std::uint32_t resyncs{0};        // resync snapshots sent after a drop
     std::uint32_t closed_behind{0};  // sessions closed for falling behind again
-    std::uint32_t joins{0};
-    std::uint32_t leaves{0};
+    std::uint32_t joins{0};          // characters entering the world: new, or back after the grace
+    std::uint32_t leaves{0};         // characters leaving it: their reconnect grace is over
+    std::uint32_t resumes{0};        // sessions taking over a character still in the world
     std::map<std::string, std::uint32_t> errors;  // ServerErrors sent, by code name
 };
 
@@ -44,6 +45,7 @@ class Metrics {
     void record_closed_behind() { ++current_.closed_behind; }
     void record_join() { ++current_.joins; }
     void record_leave() { ++current_.leaves; }
+    void record_resume() { ++current_.resumes; }
     // Counted under the code's name without its prefix: "RATE_LIMITED".
     void record_error(::game::v1::ErrorCode code);
 

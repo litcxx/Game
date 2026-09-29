@@ -73,6 +73,9 @@ TEST(Metrics, CountsDeliveryPresenceAndErrorsByCode) {
     metrics.record_join();
     metrics.record_join();
     metrics.record_leave();
+    metrics.record_resume();
+    metrics.record_resume();
+    metrics.record_resume();
     metrics.record_error(::game::v1::ERROR_CODE_RATE_LIMITED);
     metrics.record_error(::game::v1::ERROR_CODE_SPAWN_TOO_EARLY);
     metrics.record_error(::game::v1::ERROR_CODE_SPAWN_TOO_EARLY);
@@ -84,6 +87,7 @@ TEST(Metrics, CountsDeliveryPresenceAndErrorsByCode) {
     EXPECT_EQ(r.closed_behind, 1u);
     EXPECT_EQ(r.joins, 2u);
     EXPECT_EQ(r.leaves, 1u);
+    EXPECT_EQ(r.resumes, 3u);
     ASSERT_EQ(r.errors.size(), 2u);
     EXPECT_EQ(r.errors.at("RATE_LIMITED"), 1u);
     EXPECT_EQ(r.errors.at("SPAWN_TOO_EARLY"), 2u);
@@ -94,6 +98,7 @@ TEST(Metrics, AReportStartsTheNextPeriod) {
     metrics.record_tick(500, true);
     metrics.record_snapshot(1000);
     metrics.record_drop();
+    metrics.record_resume();
     metrics.record_error(::game::v1::ERROR_CODE_KICKED);
     metrics.report(60, 1);
 
@@ -103,6 +108,7 @@ TEST(Metrics, AReportStartsTheNextPeriod) {
     EXPECT_EQ(r.tick.max_us, 0u);
     EXPECT_EQ(r.snapshots, 0u);
     EXPECT_EQ(r.drops, 0u);
+    EXPECT_EQ(r.resumes, 0u);
     EXPECT_TRUE(r.errors.empty());
 }
 
@@ -111,6 +117,7 @@ TEST(Metrics, TheLogLineIsOneJsonObject) {
     metrics.record_tick(1200, true);
     metrics.record_snapshot(812);
     metrics.record_join();
+    metrics.record_resume();
     metrics.record_error(::game::v1::ERROR_CODE_RATE_LIMITED);
 
     const auto j = nlohmann::json::parse(lit::game::to_json(metrics.report(60, 3)));
@@ -130,5 +137,6 @@ TEST(Metrics, TheLogLineIsOneJsonObject) {
     EXPECT_EQ(j.at("closed_behind"), 0);
     EXPECT_EQ(j.at("joins"), 1);
     EXPECT_EQ(j.at("leaves"), 0);
+    EXPECT_EQ(j.at("resumes"), 1);
     EXPECT_EQ(j.at("errors").at("RATE_LIMITED"), 1);
 }

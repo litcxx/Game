@@ -12,14 +12,16 @@ lives on the server; the browser client predicts, interpolates, and renders.
 > by unit tests. Input is consumed **one command per tick**
 > (deterministic replay), which the client uses for prediction. A TypeScript +
 > PixiJS client renders the map with client-side prediction/interpolation, a
-> follow camera, HUD, and minimap. There is no authentication yet: a player joins
-> with a name.
+> follow camera, HUD, and minimap. There are no accounts yet: a player joins
+> with a name and gets a session token that brings the same character back after
+> a disconnect.
 
 ## Tech stack
 
 - **C++23** (coroutines, concepts)
 - **Boost.Asio / Boost.Beast** — WebSocket transport, one coroutine per session
 - **Protocol Buffers** — wire protocol (`../protocol/game/v1/protocol.proto`)
+- **OpenSSL** (libcrypto) — the session token: `RAND_bytes` and SHA-256
 - **spdlog**, **nlohmann/json**, **GoogleTest**
 - **CMake** with sanitizer presets, `clang-format` / `clang-tidy` targets
 
@@ -81,9 +83,25 @@ lives on the server; the browser client predicts, interpolates, and renders.
   `SpatialIndex` work over units only, so a unit without a character — a
   monster later, its intent written by an AI — fights through the same code.
   `World` joins and leaves through `src/game/systems/presence_system`
-  (`create_character`, `attach_session`, `detach_session`, `remove_character`);
-  for now a disconnect still takes the character out of the world (reconnect
-  comes with GAME-008).
+  (`create_character`, `attach_session`, `detach_session`, `leave_world`,
+  `leave_after_grace`, `find_by_token`).
+- **Reconnect.** Welcome hands a new player a session token: 128 bits from
+  OpenSSL's `RAND_bytes` as 32 hex digits (`src/shared/utils/session_token`).
+  The server keeps only its SHA-256 on the character and never logs it. A
+  dropped session leaves its character in the world, **away** — visible and
+  vulnerable, its body standing still — for `reconnect_grace_ms` (30 s): closing
+  the tab does not take it out of a fight. Then the character leaves the world
+  with its body (`Roster.removed`); its record stays. A `Hello` with the token
+  brings it back whatever name it carries: still in the world, it is the same
+  body in the same state (`Welcome.resumed`), which no one else notices; after
+  the grace it comes back `NOT_SPAWNED`, with the same id (and joins the
+  others' rosters again). The session is new either way, so it gets the full
+  greeting — `MapState`, the full roster — and its first snapshot reveals all
+  it sees. A second connection with the token takes the character over: the
+  one driving it gets `SESSION_REPLACED` (fatal). An unknown token (e.g. from
+  before a restart) is no token: a new character. The faction still comes with
+  the body and is picked again on spawn after the grace (pinning it to the
+  character is GAME-014).
 - **Fog of war is a delivery filter.** The simulation ignores sight — attacks
   from the fog land as usual. On each snapshot `compute_vision()` marks, once
   per faction, the cells whose centre is within `vision_radius` (config; 300 = 3 cells)
@@ -103,7 +121,8 @@ lives on the server; the browser client predicts, interpolates, and renders.
   revealed with its state, `Snapshot.resync` set — the client first turns what
   it held as visible to explored). Another refusal on a later tick within
   `limits.resync_window_ms` (5 s) means it can't keep up: `World` closes the
-  session at the end of the tick and it leaves the world. What was told to a
+  session at the end of the tick, and its character is away until the client
+  reconnects or the grace ends. What was told to a
   client and how delivery goes is kept per connection in `ClientSession::sync`
   (`ClientSync`).
 - **Abilities are data.** The config lists them (`melee` / `projectile` with
@@ -133,17 +152,19 @@ lives on the server; the browser client predicts, interpolates, and renders.
 - **Joining and errors.** A connection's first message is `Hello`:
   `check_hello()` accepts `PROTOCOL_VERSION_CURRENT` (defined once, in the proto)
   and a name trimmed of spaces, 1–16 characters (not bytes) with no control or
-  invisible ones. Anything before `Hello`, or a second `Hello`, is
-  `UNEXPECTED_MESSAGE`. `send_error()` sends a `ServerError` echoing the
-  request's `request_id`; codes 1–19 are fatal — the session is released: it
-  leaves the world, its send queue writes the error and then closes the
-  WebSocket with 4000 + code, and whatever it still sends is ignored until its
-  `Disconnected`. Codes 20+ refuse one request (a spawn: `SPAWN_INVALID_CELL`,
+  invisible ones. A new player's name must not be any character's already,
+  ignoring the case of Latin and Cyrillic letters (`is_name_taken()`, a
+  stopgap until accounts) — else `INVALID_NAME`. Anything before `Hello`, or a
+  second `Hello`, is `UNEXPECTED_MESSAGE`. `send_error()` sends a `ServerError`
+  echoing the request's `request_id`; codes 1–19 are fatal — the session is
+  released: its character is away (see Reconnect), its send queue writes the
+  error and then closes the WebSocket with 4000 + code, and whatever it still
+  sends is ignored until its `Disconnected`. Codes 20+ refuse one request (a spawn: `SPAWN_INVALID_CELL`,
   `SPAWN_TOO_EARLY`, `ALREADY_SPAWNED`, `INVALID_FACTION`; an empty payload:
   `UNSUPPORTED_MESSAGE`) and the connection lives on.
 - **Metrics.** `World` times every tick and counts in `Metrics` what a playtest
-  needs to see (CCU, tick time, snapshot size, delivery trouble, joins and leaves,
-  errors); every `log.metrics_interval_s` it logs them as one `metrics {json}`
+  needs to see (CCU, tick time, snapshot size, delivery trouble, joins, leaves and
+  resumes, errors); every `log.metrics_interval_s` it logs them as one `metrics {json}`
   line and starts over — see [Logs & metrics](#logs--metrics).
 - **Seam.** `World` depends only on the abstract `IClientGateway`
   (`src/shared/net`: `send_to`, `broadcast`, `disconnect` with a reason), not on
@@ -172,7 +193,8 @@ src/game/      the simulation:
                  geometry — swept segment-vs-circle hit test
   sync/          ServerMessage builders + per-recipient snapshot (fog-filtered,
                  resync), delivery policy for dropped frames (note_drop)
-src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue)
+src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue, session
+               token: generation and hash)
 config/        config.json (runtime settings + game rules)
 test/unit/     unit tests (GoogleTest), mirroring src/
 docs/          sequence + ownership diagrams
@@ -191,9 +213,10 @@ The versions CI builds and tests with (Ubuntu 24.04 packages):
 | Ninja | 1.11 | `ninja-build` (optional; any generator works) |
 | Protobuf (`protoc` + `libprotobuf`) | 3.21.12 | `protobuf-compiler`, `libprotobuf-dev` |
 | Boost (Asio + Beast, header-only) | 1.83 | `libboost-dev` |
+| OpenSSL (libcrypto) | 3.0.13 | `libssl-dev` |
 
 ```bash
-sudo apt-get install g++ cmake ninja-build protobuf-compiler libprotobuf-dev libboost-dev
+sudo apt-get install g++ cmake ninja-build protobuf-compiler libprotobuf-dev libboost-dev libssl-dev
 ```
 
 Protobuf is found through its own CMake package when it ships one (protobuf ≥ 22,
@@ -229,7 +252,7 @@ Every `metrics_interval_s` the game thread logs one line at `info` (so none at
 `warn` and above): `metrics ` and a JSON object.
 
 ```
-[2026-09-29 15:30:14.974] [info] metrics {"period_s":60,"ccu":2,"ticks":3600,"tick_us":{"avg":113,"p99":1269,"max":2070},"snapshot_ticks":1200,"snapshot_tick_us":{"avg":183,"p99":2024,"max":2070},"snapshots":2400,"snapshot_bytes_avg":35,"drops":0,"resyncs":0,"closed_behind":0,"joins":3,"leaves":1,"errors":{"RATE_LIMITED":1}}
+[2026-09-29 15:30:14.974] [info] metrics {"period_s":60,"ccu":2,"ticks":3600,"tick_us":{"avg":113,"p99":1269,"max":2070},"snapshot_ticks":1200,"snapshot_tick_us":{"avg":183,"p99":2024,"max":2070},"snapshots":2400,"snapshot_bytes_avg":35,"drops":0,"resyncs":0,"closed_behind":0,"joins":3,"leaves":1,"resumes":2,"errors":{"RATE_LIMITED":1}}
 ```
 
 | Field | Over the period |
@@ -242,7 +265,9 @@ Every `metrics_interval_s` the game thread logs one line at `info` (so none at
 | `drops` | frames the send queue refused: a client that can't keep up, or one whose connection is already closing |
 | `resyncs` | resync snapshots sent after a drop |
 | `closed_behind` | sessions closed for another drop within `limits.resync_window_ms` |
-| `joins`, `leaves` | players who entered / left the world |
+| `joins` | characters entering the world: new ones, and those back after their reconnect grace |
+| `leaves` | characters leaving it: their reconnect grace is over |
+| `resumes` | reconnects within the grace, and takeovers from another tab (the character never left) |
 | `errors` | `ServerError`s sent, by code: `RATE_LIMITED`, `IDLE_TIMEOUT`, … |
 
 **Export.** The lines turn into JSON Lines with the log's timestamp as `time`:
@@ -255,9 +280,9 @@ sed -nE 's/^\[([^]]+)\] \[info\] metrics \{/{"time":"\1",/p' server.log > metric
 and from there, with `jq`, into a CSV for a spreadsheet, or answers directly:
 
 ```bash
-{ echo time,ccu,tick_avg_us,tick_p99_us,tick_max_us,snapshot_tick_p99_us,snapshot_bytes_avg,drops,resyncs,closed_behind,joins,leaves
+{ echo time,ccu,tick_avg_us,tick_p99_us,tick_max_us,snapshot_tick_p99_us,snapshot_bytes_avg,drops,resyncs,closed_behind,joins,leaves,resumes
   jq -r '[.time, .ccu, .tick_us.avg, .tick_us.p99, .tick_us.max, .snapshot_tick_us.p99,
-          .snapshot_bytes_avg, .drops, .resyncs, .closed_behind, .joins, .leaves] | @csv' metrics.jsonl
+          .snapshot_bytes_avg, .drops, .resyncs, .closed_behind, .joins, .leaves, .resumes] | @csv' metrics.jsonl
 } > metrics.csv
 
 jq -s 'map(.tick_us.p99) | max' metrics.jsonl    # the worst p99 of the playtest
@@ -280,11 +305,13 @@ cleanly (exit 0 — no sanitizer report, no leak).
 
 The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`,
 `Combat`, `Ability`, `Ranged`, `Block`, `Capture`, `Fog`, `Resync`, `Errors`,
-`Limits`, `Metrics`) test the game end to end through a mock gateway; `Damage`,
-`SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`, `Delivery`, `HelloRules`,
-`PlayerName`, `ConnectionLimits`, `InputLimits`, `FixedStep`, `Metrics`,
-`GameConfigParse`, `LogConfigParse` and `TSQueueTest` test those units directly; `Presence` covers characters and
-sessions (two sessions in a row driving one character) and `UnitWithoutCharacter`
+`Limits`, `Metrics`, `Reconnect`) test the game end to end through a mock
+gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
+`Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits`,
+`FixedStep`, `Metrics`, `GameConfigParse`, `LogConfigParse`, `SessionToken` and
+`TSQueueTest` test those units directly; `Presence` covers characters and
+sessions (away, the grace, takeover, two sessions in a row driving one
+character) and `UnitWithoutCharacter`
 a body no player drives fighting through the same systems. All of them run by
 default.
 

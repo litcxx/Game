@@ -11,10 +11,12 @@
 namespace lit::game {
 // ServerMessage builders: pure functions of the state. World decides who gets what.
 
-// Handshake reply: the joiner's player id (its character's), the game rules and
-// the factions.
+// Handshake reply: the joiner's player id (its character's), its session token,
+// whether it resumed a character still in the world, the game rules and the
+// factions.
 ::game::v1::ServerMessage make_welcome(const WorldState& state, const GameConfig& config,
-                                       const Character& character);
+                                       const Character& character, std::string_view session_token,
+                                       bool resumed);
 // The whole territory for a joiner as far as `vision` shows it: the owners and
 // in-progress captures of visible cells; every other cell reads as 0 (unknown).
 ::game::v1::ServerMessage make_map_state(const WorldState& state, const Vision& vision);
@@ -23,7 +25,7 @@ namespace lit::game {
 ::game::v1::ServerMessage make_full_roster(const WorldState& state);
 // One character joined or changed (e.g. picked a faction).
 ::game::v1::ServerMessage make_roster_upsert(const WorldState& state, const Character& character);
-// One player left.
+// One player left the world (its reconnect grace is over).
 ::game::v1::ServerMessage make_roster_removed(std::uint32_t player_id);
 // Echo of a Ping (RTT on the client) with the current server tick.
 ::game::v1::ServerMessage make_pong(const WorldState& state, std::uint32_t client_time_ms);

@@ -16,6 +16,7 @@ import {
   type ClientMessage,
   type ServerError,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { uniqueName } from "../src/net/uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 
@@ -75,13 +76,14 @@ check("another protocol version: PROTOCOL_VERSION, closed 4001, no Welcome",
 const blank = await run([hello("   ")]);
 check("a blank name: INVALID_NAME, closed 4007, no Welcome", fatal(blank, ErrorCode.INVALID_NAME) && !blank.welcome, blank);
 
-const twice = await run([hello("twice"), hello("twice")]);
+const twiceName = uniqueName("twice");
+const twice = await run([hello(twiceName), hello(twiceName)]);
 check("a second Hello: UNEXPECTED_MESSAGE, closed 4003", fatal(twice, ErrorCode.UNEXPECTED_MESSAGE) && twice.welcome, twice);
 
 const early = await run([input()]);
 check("Input before Hello: UNEXPECTED_MESSAGE, closed 4003", fatal(early, ErrorCode.UNEXPECTED_MESSAGE), early);
 
-const offMap = await run([hello("walker"), spawnOffMap(42)], 1000);
+const offMap = await run([hello(uniqueName("walker")), spawnOffMap(42)], 1000);
 check(
   "a spawn off the map: SPAWN_INVALID_CELL, not fatal, request_id echoed, still open",
   offMap.errors.length === 1 &&

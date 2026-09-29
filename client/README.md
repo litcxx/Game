@@ -204,7 +204,11 @@ Both run every script, print a pass/fail summary and exit 1 if any failed. The
 smoke suite expects a **freshly started** server: the territory persists for the
 server's lifetime, so e.g. `capture_smoke` (captures the centre cell for Red)
 fails on a server where that cell is already Red — restart the server between
-runs. A new script is picked up by its name, no list to edit.
+runs. A new script is picked up by its name, no list to edit. Two things the
+server keeps matter to a new script: a name stays taken until the server
+restarts, so players join as `uniqueName("base")` (`src/net/uniqueName.ts`);
+and a player stays in the world for the reconnect grace (30 s) after its socket
+closes, so a script that fights or shoots spawns on cells of its own.
 
 **Pure logic (no server):**
 
@@ -237,6 +241,7 @@ npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
 npx tsx scripts/bad_hello_smoke.ts # bad Hello -> fatal ServerError + close 4000+code; refused spawn
 npx tsx scripts/idle_smoke.ts      # timeouts (23 s): no Hello -> 4004, silence -> 4005, keepalive ok
+npx tsx scripts/reconnect_smoke.ts # the token: back as the same body; another tab -> 4009; a taken name -> 4007
 npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones seen
                                    #   (VISION_CELLS = server vision_radius in cells, default 3)
 ```

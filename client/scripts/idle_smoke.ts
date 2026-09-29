@@ -15,13 +15,14 @@ import {
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
 import { GameClient } from "../src/net/client.js";
+import { uniqueName } from "../src/net/uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const WATCH_MS = Number(process.env.WATCH_MS ?? 23000); // idle timeout + a margin
 
 const hello = (name: string): ClientMessage =>
   create(ClientMessageSchema, {
-    payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name } },
+    payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } },
   });
 const ping = (): ClientMessage =>
   create(ClientMessageSchema, { payload: { case: "ping", value: { clientTimeMs: 1 } } });
@@ -81,7 +82,7 @@ function watchGameClient(): Promise<Outcome & { pongs: number }> {
         resolve(out);
       },
     );
-    game.connect("hidden-tab");
+    game.connect(uniqueName("hidden-tab"));
     setTimeout(() => resolve({ ...out }), WATCH_MS);
   });
 }

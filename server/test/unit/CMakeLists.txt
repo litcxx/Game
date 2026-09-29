@@ -13,6 +13,7 @@ FetchContent_MakeAvailable(googletest)
 set(SOURCES
   main.cpp
   shared/config_tests.cpp
+  shared/session_token_tests.cpp
   shared/ts_queue_tests.cpp
   game/spatial/geometry_tests.cpp
   game/spatial/spatial_index_tests.cpp

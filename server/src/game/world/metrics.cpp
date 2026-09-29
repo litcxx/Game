@@ -76,6 +76,7 @@ std::string to_json(const MetricsReport& report) {
         {"closed_behind", report.closed_behind},
         {"joins", report.joins},
         {"leaves", report.leaves},
+        {"resumes", report.resumes},
         {"errors", nlohmann::ordered_json(report.errors)},
     };
     return j.dump();
