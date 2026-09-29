@@ -31,7 +31,8 @@ sequenceDiagram
     srv->>ws: WS binary frames
     ws-->>net: onmessage
     net->>main: onMessage(Welcome / MapState / Roster)
-    main->>main: setConfig(camera/HUD), new Predictor(speed, fixedDt, bounds)
+    main->>main: routeMessage → GameState: конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта, ростер
+    main->>main: showWelcome: карточки фракций, панель способностей
 ```
 
 ## Игровой цикл (тикер PixiJS, фиксированный шаг)
@@ -62,21 +63,26 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     participant ws as WebSocket
-    participant main as main.ts
+    participant router as router (net/router.ts)
+    participant state as GameState
     participant pred as Predictor
-    participant interp as InterpolationBuffer
-    participant scene as Scene + Hud
+    participant scene as Scene + Hud (render/)
 
-    ws-->>main: Snapshot{you, players, cells, events, projectiles, revealed, hidden}
-    main->>pred: reconcile(you.pos, you.last_input_seq)
+    ws-->>router: Snapshot{you, players, cells, events, projectiles, revealed, hidden}
+    router->>state: you: жизнь, hp, возрождение, кулдауны атаки и блока, тик сервера
+    router->>pred: reconcile(you.pos, you.last_input_seq)
     Note over pred: выкинуть подтверждённые кадры, снап к авторитету, реплей остатка
-    main->>interp: push(now, позиции чужих) и push(now, позиции снарядов)
-    main->>scene: updateMeta (hp, кулдауны атаки и блока)
-    main->>scene: applyVisibility(revealed, hidden, resync) — туман войны / applyCellUpdates
-    Note over scene: resync (сервер потерял кадр к нам): видимые → исследованные, затем revealed
-    main->>scene: addEffects(effectsFromEvents: удар, блок, блок сработал)
-    main->>scene: HUD (фракция, клетки/%, В СЕТИ, HP, текущая клетка)
+    router->>state: игроки снапшота; interp.push(позиции чужих), shots.push(позиции снарядов)
+    router->>state: fog.apply(revealed, hidden, resync) — туман войны; territory.applyCellUpdates
+    Note over state: resync (сервер потерял кадр к нам): видимые → исследованные, затем revealed
+    router->>state: эффекты (effectsFromEvents: удар, блок, блок сработал); ревизия мира++ при смене клеток или видимости
+    state-->>scene: showStatus: HUD (фракция, клетки/%, В СЕТИ, HP, текущая клетка), панель, выбор фракции
+    state-->>scene: каждый кадр: Scene читает GameState; мир перерисовывается, только если сменилась ревизия
 ```
+
+Роутер пишет только в `GameState` (данные, без PixiJS); виды в `src/render/`
+читают его. Текстовый UI поверх канваса — DOM-оверлей `src/ui/` (модальное окно,
+тосты); его первыми используют переподключение и экран ника (GAME-009).
 
 > Статус: реализован весь цикл MVP — выбор фракции (карточки внизу), спавн по
 > клику, движение (**WASD**), захват клетки (удержание **E**), бой (удержание

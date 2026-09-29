@@ -19,6 +19,7 @@
   "devDependencies": {
     "@bufbuild/buf": "^1.73.0",
     "@bufbuild/protoc-gen-es": "^2.15.0",
+    "happy-dom": "^20.14.5",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.1"
