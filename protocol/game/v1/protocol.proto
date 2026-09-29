@@ -68,8 +68,10 @@ message ServerMessage {
 message Hello {
   uint32 protocol_version = 1;  // PROTOCOL_VERSION_CURRENT клиента; иная — PROTOCOL_VERSION (fatal)
   string name = 2;              // ник: сервер обрезает пробелы по краям, затем 1–16 символов
-                                //   (не байт) без управляющих и невидимых — иначе INVALID_NAME (fatal)
-  string session_token = 3;     // токен из прошлого Welcome; пусто = новая сессия
+                                //   (не байт) без управляющих и невидимых — иначе INVALID_NAME (fatal);
+                                //   новому игроку — не занятый другим персонажем (без учёта регистра)
+  string session_token = 3;     // токен из прошлого Welcome: вернёт того же персонажа (name тогда
+                                //   не меняется); пусто или неизвестный токен = новый персонаж
   string client_build = 4;      // сборка клиента, только для логов
 }
 
@@ -83,8 +85,11 @@ enum ProtocolVersion {
 
 message Welcome {
   uint32 player_id = 1;           // публичный id, ≥ 1, не переиспользуется
-  string session_token = 2;       // секрет для переподключения, другим не отправляется
-  bool resumed = 3;               // true = продолжена прежняя сессия, тот же player_id
+  string session_token = 2;       // секрет для переподключения (32 hex-символа, 128 бит), другим не
+                                  //   отправляется; сервер хранит только его SHA-256
+  bool resumed = 3;               // true = персонаж ещё был в мире (грейс-период или другая вкладка):
+                                  //   то же тело в том же состоянии. false = новый персонаж или
+                                  //   возвращение после грейс-периода (тот же player_id, NOT_SPAWNED)
   uint32 server_tick = 4;         // текущий тик сервера
   GameConfig config = 5;
   repeated Faction factions = 6;
@@ -102,7 +107,7 @@ message GameConfig {
   reserved 7, 8;                     // были attack_range и attack_cooldown_ticks: теперь в Ability
   reserved "attack_range", "attack_cooldown_ticks";
   uint32 respawn_delay_ticks = 9;    // 300 = 5 с
-  uint32 reconnect_grace_ms = 10;    // сколько сервер держит сессию после разрыва: 30000
+  uint32 reconnect_grace_ms = 10;    // сколько персонаж остаётся в мире после разрыва: 30000
   uint32 player_radius = 11;         // радиус тела игрока для попаданий снарядами, единиц: 16
 }
 
@@ -166,7 +171,7 @@ message PlayerInfo {
 // включая самого получателя (full = true).
 message Roster {
   repeated PlayerInfo upsert = 1;  // новые игроки и изменившиеся (смена фракции)
-  repeated uint32 removed = 2;     // сессия закончилась, игрок покинул мир
+  repeated uint32 removed = 2;     // игрок покинул мир: грейс-период после разрыва истёк
   bool full = 3;                   // true: upsert — полный список, клиент заменяет свой
                                    //   (после входа и при пересинхронизации, см. Snapshot.resync)
 }
@@ -328,9 +333,10 @@ enum ErrorCode {
                                       //   сообщение продлевает: клиент шлёт Ping раз в 2 с)
   ERROR_CODE_RATE_LIMITED = 6;        // больше 120 сообщений в секунду (всплеск до 120 —
                                       //   можно); числа — game.limits в конфиге сервера
-  ERROR_CODE_INVALID_NAME = 7;
+  ERROR_CODE_INVALID_NAME = 7;        // имя не проходит правила или уже занято (без учёта регистра)
   ERROR_CODE_SERVER_FULL = 8;
-  ERROR_CODE_SESSION_REPLACED = 9;    // эта сессия подключилась из другой вкладки
+  ERROR_CODE_SESSION_REPLACED = 9;    // персонажа с этим токеном перехватило другое соединение
+                                      //   (другая вкладка)
   ERROR_CODE_SERVER_SHUTDOWN = 10;
   ERROR_CODE_KICKED = 11;
   ERROR_CODE_INTERNAL = 12;

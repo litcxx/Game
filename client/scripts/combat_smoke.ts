@@ -8,6 +8,7 @@ import {
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { uniqueName } from "../src/net/uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const attacker = new WebSocket(URL);
@@ -25,14 +26,16 @@ let hitSeen = false;
 let deathSeen = false;
 let victimHp = -1;
 
-const atkCell = 50 * 100 + 50; // (col 50, row 50) -> center (5050, 5050)
-const vicCell = 50 * 100 + 51; // (col 51, row 50) -> center (5150, 5050), 100 units away
+// Its own cells: a player stays in the world for the reconnect grace (30 s)
+// after its socket closes, so other smokes' bodies may still stand elsewhere.
+const atkCell = 60 * 100 + 60; // (col 60, row 60) -> center (6050, 6050)
+const vicCell = 60 * 100 + 61; // (col 61, row 60) -> center (6150, 6050), 100 units away
 
 function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
 }
 const helloMsg = (name: string) =>
-  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name } } });
+  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName(name) } } });
 const spawnMsg = (cell: number, factionId: number) =>
   create(ClientMessageSchema, { payload: { case: "spawn", value: { cell, factionId } } });
 const attackMsg = () =>

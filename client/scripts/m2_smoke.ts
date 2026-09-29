@@ -3,6 +3,7 @@
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import { ClientMessageSchema, ServerMessageSchema } from "../src/gen/game/v1/protocol_pb.js";
+import { uniqueName } from "../src/net/uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const ws = new WebSocket(URL);
@@ -16,7 +17,7 @@ function send(payload: Parameters<typeof create<typeof ClientMessageSchema>>[1][
   ws.send(toBinary(ClientMessageSchema, create(ClientMessageSchema, { payload })));
 }
 
-ws.onopen = () => send({ case: "hello", value: { protocolVersion: 1, name: "m2" } });
+ws.onopen = () => send({ case: "hello", value: { protocolVersion: 1, name: uniqueName("m2") } });
 
 ws.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));

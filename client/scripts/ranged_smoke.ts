@@ -11,6 +11,7 @@ import {
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { uniqueName } from "../src/net/uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const shooter = new WebSocket(URL);
@@ -32,14 +33,16 @@ let projectileSeen = false;
 let hitDamage = -1;
 let targetHp = -1;
 
-const shooterCell = 20 * 100 + 20; // (col 20, row 20) -> centre (2050, 2050)
-const targetCell = 20 * 100 + 23; // (col 23, row 20) -> centre (2350, 2050), 300 units right
+// Its own row: a player stays in the world for the reconnect grace (30 s) after
+// its socket closes — fog_smoke's bodies on row 20 would stop the shot.
+const shooterCell = 45 * 100 + 20; // (col 20, row 45) -> centre (2050, 4550)
+const targetCell = 45 * 100 + 23; // (col 23, row 45) -> centre (2350, 4550), 300 units right
 
 function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
 }
 const helloMsg = (name: string) =>
-  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name } } });
+  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName(name) } } });
 const spawnMsg = (cell: number, factionId: number) =>
   create(ClientMessageSchema, { payload: { case: "spawn", value: { cell, factionId } } });
 const fireMsg = (seq: number, attack: boolean) =>

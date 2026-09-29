@@ -7,6 +7,7 @@ import { GameClient } from "./net/client.js";
 import type { PendingInput } from "./net/prediction.js";
 import { routeClose, routeMessage } from "./net/router.js";
 import { serverUrl } from "./net/serverUrl.js";
+import { uniqueName } from "./net/uniqueName.js";
 import { AbilityBar } from "./render/abilityBar.js";
 import { FactionPicker } from "./render/factionPicker.js";
 import { Hud } from "./render/hud.js";
@@ -49,7 +50,7 @@ async function main(): Promise<void> {
       showFailure(state, views, performance.now());
     },
   );
-  client.connect("player");
+  client.connect(uniqueName("player")); // until the nickname screen (GAME-009)
 
   const readKeys = installInput();
   window.addEventListener("keydown", (e) => {
