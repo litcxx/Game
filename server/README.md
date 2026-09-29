@@ -247,12 +247,15 @@ cmake --build build -j
 ```
 
 Presets differ only in build type / sanitizer (`debug-asan` enables
-Address+UB sanitizers). The server reads its address, port, thread count, and the
-game rules (matching `game.v1.GameConfig`, plus the factions and the abilities,
-and the server-only `capture_ticks`, `vision_radius` and the connection
-`limits`) from the config file, and the `log` section below; invalid abilities, a
-zero vision radius, a zero or missing limit, an unknown log level or a zero
-metrics interval stop the server at startup.
+Address+UB sanitizers). `release` is what goes to the VPS (`deploy/deploy.sh`,
+see [docs/ops.md](../docs/ops.md)); CI builds and unit-tests it too.
+
+The server reads its address, port, thread count, and the game rules (matching
+`game.v1.GameConfig`, plus the factions and the abilities, and the server-only
+`capture_ticks`, `vision_radius` and the connection `limits`) from the config
+file, and the `log` section below; invalid abilities, a zero vision radius, a
+zero or missing limit, an unknown log level or a zero metrics interval stop the
+server at startup.
 
 ## Logs & metrics
 
@@ -288,7 +291,7 @@ Every `metrics_interval_s` the game thread logs one line at `info` (so none at
 
 ```bash
 sed -nE 's/^\[([^]]+)\] \[info\] metrics \{/{"time":"\1",/p' server.log > metrics.jsonl
-# under systemd: journalctl -u <unit> -o cat | sed -nE '…the same…' > metrics.jsonl
+# deployed (docs/ops.md): journalctl -u territory -o cat | sed -nE '…the same…' > metrics.jsonl
 ```
 
 and from there, with `jq`, into a CSV for a spreadsheet, or answers directly:

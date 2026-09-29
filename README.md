@@ -32,10 +32,14 @@ server/     Authoritative game server — C++23, Boost.Asio/Beast WebSocket,
             coroutines, protobuf; runs the tick loop and the simulation
 client/     Browser client — TypeScript + PixiJS + protobuf-es; renders the map
             and players, sends input
+deploy/     Running it on a VPS: setup and deploy scripts, the systemd service,
+            the Caddy site (HTTPS, the client, /ws to the server)
+docs/       The game design document (GDD.md) and operations (ops.md)
 ```
 
 Each side has its own README with details:
-[**server/README.md**](server/README.md) · [**client/README.md**](client/README.md).
+[**server/README.md**](server/README.md) · [**client/README.md**](client/README.md);
+running it on a VPS: [**docs/ops.md**](docs/ops.md).
 
 ## The shared protocol
 
@@ -68,10 +72,10 @@ npm install
 npm run dev          # regenerates protobuf-es -> src/gen, then serves; open the printed URL
 ```
 
-For a public server, `npm run build` gives a `client/dist/` that connects to its
-own origin at `/ws` (`wss` over https): serve it and the game server behind one
-reverse proxy that forwards `/ws` to `127.0.0.1:27998` — or build with
-`VITE_SERVER_URL=<address>` (see [client/README.md](client/README.md#server-address)).
+For a public server, see [docs/ops.md](docs/ops.md): on a fresh Ubuntu 24.04
+VPS, `sudo deploy/setup.sh <domain>` once, then `deploy/deploy.sh` for every
+release — the game at `https://<domain>/`, Caddy in front (HTTPS, the client,
+`/ws` to the server), the server as a systemd service that restarts by itself.
 
 **Controls:** WASD move · hold **E** capture the cell under you · hold **left
 mouse** to use the active ability (**1** melee area attack, **2** ranged shot
