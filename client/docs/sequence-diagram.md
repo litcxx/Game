@@ -20,11 +20,13 @@ sequenceDiagram
     participant srv as Server / Session
     participant world as World
 
-    main->>net: new GameClient(url, onMessage)
+    main->>net: new GameClient(serverUrl(VITE_SERVER_URL, location), onMessage)
+    Note over main: адрес: VITE_SERVER_URL сборки, иначе свой origin + /ws (wss для https)
     main->>net: connect("player")
     net->>ws: new WebSocket, binaryType = "arraybuffer"
     ws-->>net: onopen
     net->>ws: send(ClientMessage{hello}) — 1 кадр = 1 сообщение
+    net->>ws: send(Ping{client_time_ms}) — сразу и дальше раз в 2 с
     ws->>srv: WS binary frame
     srv->>world: push_packet(session_id, msg)
     world->>srv: send_to(id): Welcome, MapState, Roster
@@ -33,6 +35,10 @@ sequenceDiagram
     net->>main: onMessage(Welcome / MapState / Roster)
     main->>main: routeMessage → GameState: конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта, ростер
     main->>main: showWelcome: карточки фракций, панель способностей
+    world->>srv: send_to(id): Pong{client_time_ms}
+    srv->>ws: WS binary frame
+    ws-->>net: onmessage → router: rttMs = сейчас − client_time_ms
+    Note over main: HUD справа вверху: «В СЕТИ n · ПИНГ m»
 ```
 
 ## Игровой цикл (тикер PixiJS, фиксированный шаг)
