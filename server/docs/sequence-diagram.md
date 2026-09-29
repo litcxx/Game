@@ -33,9 +33,10 @@ sequenceDiagram
     participant io as io_context
 
     main->>cfg: get_instance(argv[1])
+    main->>main: spdlog::set_level(log.level)
     main->>q: TSQueue#lt;ClientEvent#gt;
     main->>srv: Server(io, net_config, incoming_msgs)
-    main->>world: World(incoming_msgs, srv, game_config)
+    main->>world: World(incoming_msgs, srv, game_config, log.metrics_interval_s)
     main->>world: jthread → run(stop_token)
     main->>srv: co_spawn(do_listen)
     main->>io: io.run() на io_threads
@@ -177,9 +178,20 @@ flowchart LR
     combat["resolve_attacks(state, index)<br/>способность: удар по площади / запуск снаряда"]
     proj["update_projectiles(state, index, dt)<br/>полёт + свип-попадания → apply_damage"]
     cap["update_captures(state)<br/>захват клетки под центром"]
+    timeouts["time_out_connections()<br/>HANDSHAKE_TIMEOUT / IDLE_TIMEOUT"]
     snap["send_snapshots()<br/>compute_vision(фракция) → build_snapshot(state, получатель, vision)"]
-    drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> snap
+    close["close_released_sessions()<br/>отпущенные сессии уходят из мира"]
+    metrics["finish_tick_metrics()<br/>время тика → Metrics; раз в период — строка metrics"]
+    drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> timeouts --> snap --> close --> metrics
 ```
+
+**Метрики** (GAME-012). `World` меряет каждый тик (`steady_clock`) и копит в
+`Metrics` счётчики периода: снапшоты и их байты, отказы доставки (`drops`),
+resync'и, закрытия за отставание, входы и выходы, отправленные `ServerError` по
+кодам. Раз в `log.metrics_interval_s` (60 с) — в конце тика, кратного
+`interval × tick_rate`, — пишет в лог одну строку `metrics {json}` уровня info
+(CCU, время тика и тика со снапшотом: avg / p99 / max в мкс, …) и начинает период
+заново. Формат и выгрузка — в [README](../README.md#logs--metrics).
 
 **Бой: способности.** Набор способностей задаёт конфиг сервера (`abilities`: вид
 `melee` / `projectile`, перезарядка, урон, дальность, скорость и радиус снаряда);

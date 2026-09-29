@@ -2,17 +2,21 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
+#include <array>
 #include <fstream>
 #include <iterator>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace lit {
 Config::Config(const std::string& filename) {
     init_net_config(filename);
     init_game_config(filename);
+    init_log_config(filename);
 }
 
 void Config::init_net_config(const std::string& filename) {
@@ -143,5 +147,30 @@ void Config::init_game_config(const std::string& filename) {
         "idle_timeout_ms={} resync_window_ms={}",
         l.max_input_frames, l.input_queue, l.messages_per_second, l.handshake_timeout_ms,
         l.idle_timeout_ms, l.resync_window_ms);
+}
+
+LogConfig parse_log_config(const std::string& config_json) {
+    // spdlog's own names; spdlog::level::from_str would take anything else as "off".
+    static constexpr std::array<std::string_view, 7> kLevels{"trace", "debug",    "info", "warn",
+                                                             "error", "critical", "off"};
+    const nlohmann::json doc = nlohmann::json::parse(config_json);
+    const auto& log = doc.at("log");
+    LogConfig config{log.at("level"), log.at("metrics_interval_s")};
+    if (std::ranges::find(kLevels, config.level) == kLevels.end()) {
+        throw std::runtime_error("config: unknown log level '" + config.level + "'");
+    }
+    if (config.metrics_interval_s == 0) {
+        throw std::runtime_error("config: log.metrics_interval_s must be > 0");
+    }
+    return config;
+}
+
+void Config::init_log_config(const std::string& filename) {
+    std::ifstream file(filename);
+    const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    log_config_ = parse_log_config(text);
+
+    spdlog::info("Log level={} metrics_interval_s={}", log_config_.level,
+                 log_config_.metrics_interval_s);
 }
 }  // namespace lit

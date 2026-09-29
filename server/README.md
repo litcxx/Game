@@ -141,6 +141,10 @@ lives on the server; the browser client predicts, interpolates, and renders.
   `Disconnected`. Codes 20+ refuse one request (a spawn: `SPAWN_INVALID_CELL`,
   `SPAWN_TOO_EARLY`, `ALREADY_SPAWNED`, `INVALID_FACTION`; an empty payload:
   `UNSUPPORTED_MESSAGE`) and the connection lives on.
+- **Metrics.** `World` times every tick and counts in `Metrics` what a playtest
+  needs to see (CCU, tick time, snapshot size, delivery trouble, joins and leaves,
+  errors); every `log.metrics_interval_s` it logs them as one `metrics {json}`
+  line and starts over — see [Logs & metrics](#logs--metrics).
 - **Seam.** `World` depends only on the abstract `IClientGateway`
   (`src/shared/net`: `send_to`, `broadcast`, `disconnect` with a reason), not on
   the network layer — so the game code stays testable (a mock gateway can refuse
@@ -155,7 +159,8 @@ third_party/   FetchContent: spdlog, nlohmann/json
 src/main.cpp   entry point: config, io threads, game thread, shutdown on signal
 src/net/       server, session — WebSocket transport + coroutines
 src/game/      the simulation:
-  world/         World — tick orchestration, event dispatch, delivery; fixed step
+  world/         World — tick orchestration, event dispatch, delivery; fixed step;
+                 Metrics — the periodic `metrics` log line
   state/         WorldState, Character, Unit (Intent), ClientSession (InputQueue,
                  ClientSync), Projectile, Territory, Vision — plain data
   systems/       input, movement, combat (abilities: blocks, melee, projectile
@@ -208,8 +213,57 @@ Presets differ only in build type / sanitizer (`debug-asan` enables
 Address+UB sanitizers). The server reads its address, port, thread count, and the
 game rules (matching `game.v1.GameConfig`, plus the factions and the abilities,
 and the server-only `capture_ticks`, `vision_radius` and the connection
-`limits`) from the config file; invalid abilities, a zero vision radius or a
-zero or missing limit stop the server at startup.
+`limits`) from the config file, and the `log` section below; invalid abilities, a
+zero vision radius, a zero or missing limit, an unknown log level or a zero
+metrics interval stop the server at startup.
+
+## Logs & metrics
+
+The server logs to stdout (spdlog); keep it for a playtest, e.g.
+`./build/bin/server config/config.json 2>&1 | tee server.log`. The config's `log`
+section sets the level — `trace` | `debug` | `info` | `warn` | `error` |
+`critical` | `off` (`info`; the startup lines about the config come before it
+applies) — and `metrics_interval_s` (60).
+
+Every `metrics_interval_s` the game thread logs one line at `info` (so none at
+`warn` and above): `metrics ` and a JSON object.
+
+```
+[2026-09-29 15:30:14.974] [info] metrics {"period_s":60,"ccu":2,"ticks":3600,"tick_us":{"avg":113,"p99":1269,"max":2070},"snapshot_ticks":1200,"snapshot_tick_us":{"avg":183,"p99":2024,"max":2070},"snapshots":2400,"snapshot_bytes_avg":35,"drops":0,"resyncs":0,"closed_behind":0,"joins":3,"leaves":1,"errors":{"RATE_LIMITED":1}}
+```
+
+| Field | Over the period |
+|---|---|
+| `period_s` | its length, seconds |
+| `ccu` | players in the world at its end |
+| `ticks`, `tick_us` | ticks run and how long they took, µs: `avg`, `p99` (nearest rank), `max` — the whole tick, from draining events to closing sessions; the budget at 60 Hz is 16 667 |
+| `snapshot_ticks`, `snapshot_tick_us` | the same for the ticks that send snapshots (every `tick_rate / snapshot_rate`-th) |
+| `snapshots`, `snapshot_bytes_avg` | snapshots built (one per player per snapshot tick) and their average size, bytes |
+| `drops` | frames the send queue refused: a client that can't keep up, or one whose connection is already closing |
+| `resyncs` | resync snapshots sent after a drop |
+| `closed_behind` | sessions closed for another drop within `limits.resync_window_ms` |
+| `joins`, `leaves` | players who entered / left the world |
+| `errors` | `ServerError`s sent, by code: `RATE_LIMITED`, `IDLE_TIMEOUT`, … |
+
+**Export.** The lines turn into JSON Lines with the log's timestamp as `time`:
+
+```bash
+sed -nE 's/^\[([^]]+)\] \[info\] metrics \{/{"time":"\1",/p' server.log > metrics.jsonl
+# under systemd: journalctl -u <unit> -o cat | sed -nE '…the same…' > metrics.jsonl
+```
+
+and from there, with `jq`, into a CSV for a spreadsheet, or answers directly:
+
+```bash
+{ echo time,ccu,tick_avg_us,tick_p99_us,tick_max_us,snapshot_tick_p99_us,snapshot_bytes_avg,drops,resyncs,closed_behind,joins,leaves
+  jq -r '[.time, .ccu, .tick_us.avg, .tick_us.p99, .tick_us.max, .snapshot_tick_us.p99,
+          .snapshot_bytes_avg, .drops, .resyncs, .closed_behind, .joins, .leaves] | @csv' metrics.jsonl
+} > metrics.csv
+
+jq -s 'map(.tick_us.p99) | max' metrics.jsonl    # the worst p99 of the playtest
+jq -s 'map(.errors | to_entries[]) | group_by(.key)
+       | map({(.[0].key): (map(.value) | add)}) | add' metrics.jsonl    # errors, summed
+```
 
 ## Tests
 
@@ -226,10 +280,10 @@ cleanly (exit 0 — no sanitizer report, no leak).
 
 The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`,
 `Combat`, `Ability`, `Ranged`, `Block`, `Capture`, `Fog`, `Resync`, `Errors`,
-`Limits`) test the game end to end through a mock gateway; `Damage`,
+`Limits`, `Metrics`) test the game end to end through a mock gateway; `Damage`,
 `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`, `Delivery`, `HelloRules`,
-`PlayerName`, `ConnectionLimits`, `InputLimits`, `FixedStep`, `GameConfigParse`
-and `TSQueueTest` test those units directly; `Presence` covers characters and
+`PlayerName`, `ConnectionLimits`, `InputLimits`, `FixedStep`, `Metrics`,
+`GameConfigParse`, `LogConfigParse` and `TSQueueTest` test those units directly; `Presence` covers characters and
 sessions (two sessions in a row driving one character) and `UnitWithoutCharacter`
 a body no player drives fighting through the same systems. All of them run by
 default.
