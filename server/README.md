@@ -12,7 +12,8 @@ lives on the server; the browser client predicts, interpolates, and renders.
 > by unit tests. Input is consumed **one command per tick**
 > (deterministic replay), which the client uses for prediction. A TypeScript +
 > PixiJS client renders the map with client-side prediction/interpolation, a
-> follow camera, HUD, and minimap. Authentication is intentionally parked.
+> follow camera, HUD, and minimap. There is no authentication yet: a player joins
+> with a name.
 
 ## Tech stack
 
@@ -131,6 +132,9 @@ lives on the server; the browser client predicts, interpolates, and renders.
 
 ```
 ../protocol/game/v1/protocol.proto   wire protocol (shared with the client)
+proto/         builds that schema into the `proto` library (protoc -> C++)
+third_party/   FetchContent: spdlog, nlohmann/json
+src/main.cpp   entry point: config, io threads, game thread, shutdown on signal
 src/net/       server, session — WebSocket transport + coroutines
 src/game/      the simulation:
   world/         World — tick orchestration, event dispatch, delivery; fixed step
@@ -145,14 +149,11 @@ src/game/      the simulation:
                  resync), delivery policy for dropped frames (note_drop)
 src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue)
 config/        config.json (runtime settings + game rules)
-test/          unit + integration (GoogleTest)
-docs/          sequence + ownership diagrams (being updated for the refactor)
+test/unit/     unit tests (GoogleTest), mirroring src/
+docs/          sequence + ownership diagrams
 ```
 
 Generated Protobuf headers land in the build tree (`build/proto/game/v1/`).
-Some directories still hold pre-refactor code (the old binary protocol, the
-platformer physics, the auth/DB module) that is disabled in the build and being
-phased out.
 
 ## Prerequisites
 
@@ -165,12 +166,9 @@ The versions CI builds and tests with (Ubuntu 24.04 packages):
 | Ninja | 1.11 | `ninja-build` (optional; any generator works) |
 | Protobuf (`protoc` + `libprotobuf`) | 3.21.12 | `protobuf-compiler`, `libprotobuf-dev` |
 | Boost (Asio + Beast, header-only) | 1.83 | `libboost-dev` |
-| OpenSSL | 3.0 | `libssl-dev` |
-| MariaDB Connector/C | 3.3 (MariaDB 10.11) | `libmariadb-dev`, `pkg-config` — only for the parked `src/db` |
 
 ```bash
-sudo apt-get install g++ cmake ninja-build pkg-config \
-  protobuf-compiler libprotobuf-dev libboost-dev libssl-dev libmariadb-dev
+sudo apt-get install g++ cmake ninja-build protobuf-compiler libprotobuf-dev libboost-dev
 ```
 
 Protobuf is found through its own CMake package when it ships one (protobuf ≥ 22,
@@ -206,13 +204,12 @@ server and runs the client's end-to-end smoke suite against it
 (`npm run smoke`, see [`../client`](../client)); the server must then shut down
 cleanly (exit 0 — no sanitizer report, no leak).
 
-The `World` suites (presence, spawn, movement, combat, abilities, ranged, block,
-capture, input, fog, resync, errors, limits) test the game end to end through a
-mock gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
-`Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits` and
-`GameConfigParse` test those units directly. They all run by default.
-Some legacy suites (the old binary protocol and the parked auth/DB integration
-tests) remain disabled in the CMake test lists.
+The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`,
+`Combat`, `Ability`, `Ranged`, `Block`, `Capture`, `Fog`, `Resync`, `Errors`,
+`Limits`) test the game end to end through a mock gateway; `Damage`,
+`SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`, `Delivery`, `HelloRules`,
+`PlayerName`, `ConnectionLimits`, `InputLimits`, `FixedStep`, `GameConfigParse`
+and `TSQueueTest` test those units directly. All of them run by default.
 
 ## Code style
 

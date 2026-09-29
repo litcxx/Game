@@ -17,9 +17,6 @@ if(NOT _is_multi_config AND NOT CMAKE_BUILD_TYPE)
         Debug Release RelWithDebInfo MinSizeRel)
 endif()
 
-# Shared dependency used by both net and cryptography.
-find_package(OpenSSL REQUIRED)
-
 # --- PROJECT OPTIONS (standard, sanitizers, optimization) ---
 add_library(project_options INTERFACE)
 target_compile_features(project_options INTERFACE cxx_std_23)
@@ -60,8 +57,6 @@ target_compile_options(project_warnings INTERFACE
 add_subdirectory(third_party)
 add_subdirectory(proto)
 add_subdirectory(src)
-add_subdirectory(src/cryptography)
-add_subdirectory(src/db)
 add_subdirectory(src/game)
 add_subdirectory(src/net)
 add_subdirectory(src/shared)
@@ -71,7 +66,6 @@ option(USE_TESTS "Build tests" ON)
 if (USE_TESTS)
     enable_testing()
     add_subdirectory(test/unit)
-    add_subdirectory(test/integration)
 endif()
 
 
