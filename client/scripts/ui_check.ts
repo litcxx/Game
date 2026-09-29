@@ -1,10 +1,15 @@
 // Checks for the DOM overlay components (src/ui) in happy-dom, a DOM for Node:
 // the layer over the canvas lets clicks through, a modal shows its title, text
-// and buttons and blocks the canvas while open, toasts stack and fade. Run:
+// and buttons and blocks the canvas while open, toasts stack and fade, the
+// nickname screen checks and sends a name, the connection dialogs count down to
+// a reconnect or offer a reload. Run:
 //   npx tsx scripts/ui_check.ts
 import { Window } from "happy-dom";
 
+import { isTyping } from "../src/input/keyboard.js";
+import { ConnectionDialogs, reconnectText } from "../src/ui/connectionDialogs.js";
 import { Modal } from "../src/ui/modal.js";
+import { checkName, NicknameScreen } from "../src/ui/nicknameScreen.js";
 import { Overlay } from "../src/ui/overlay.js";
 import { Toasts } from "../src/ui/toast.js";
 
@@ -62,6 +67,81 @@ check("its stylesheet is added once", document.head.querySelectorAll("style[data
   check("toasts don't catch clicks", toasts.root.style.pointerEvents === "none");
   await sleep(120);
   check("toasts fade after their time", toasts.root.children.length === 0);
+}
+
+// --- Nickname screen -----------------------------------------------------------------
+{
+  check("a name is trimmed", JSON.stringify(checkName("  Ann 　")) === JSON.stringify({ name: "Ann" }));
+  check("an empty or blank name is refused", "error" in checkName("") && "error" in checkName("   "));
+  check("16 characters (not bytes) fit", JSON.stringify(checkName("абвгдеёжзийклмно")) === JSON.stringify({ name: "абвгдеёжзийклмно" }));
+  check("17 are too many", "error" in checkName("abcdefghijklmnopq"));
+  check("an emoji is one character", "name" in checkName("\u{1F600}".repeat(16)));
+
+  const submitted: string[] = [];
+  const screen = new NicknameScreen(overlay, (name) => submitted.push(name));
+  const input = screen.root.querySelector("input") as unknown as HTMLInputElement;
+  const form = screen.root.querySelector("form") as unknown as HTMLFormElement;
+  const error = screen.root.querySelector("[role=alert]") as unknown as HTMLElement;
+  check("a new screen is hidden", !screen.isOpen && screen.root.hidden);
+
+  screen.show("Ann");
+  check("show: open, with the saved name to edit", screen.isOpen && input.value === "Ann" && error.textContent === "");
+  check("show: it takes the clicks the canvas would get", screen.root.style.pointerEvents === "auto");
+  (screen.root.querySelector("button[type=submit]") as unknown as HTMLElement).click();
+  check("Play sends the name", JSON.stringify(submitted) === JSON.stringify(["Ann"]));
+
+  input.value = "   ";
+  form.dispatchEvent(new window.Event("submit", { cancelable: true }) as unknown as Event);
+  check("a blank name is not sent, and says why", submitted.length === 1 && error.textContent === "Введите ник");
+  input.value = "  Bob ";
+  form.dispatchEvent(new window.Event("submit", { cancelable: true }) as unknown as Event);
+  check("Enter (submit) sends the trimmed name", submitted.at(-1) === "Bob");
+
+  screen.show("Ann", "Имя занято");
+  check("show with an error: says why", error.textContent === "Имя занято" && input.value === "Ann");
+  screen.hide();
+  check("hide: closed", !screen.isOpen && screen.root.hidden);
+
+  check("typing in a field is not playing", isTyping(input) && !isTyping(document.body as unknown as EventTarget) && !isTyping(null));
+}
+
+// --- Connection dialogs ------------------------------------------------------------------
+{
+  check("reconnect text: the countdown and the attempt", reconnectText(2, 3) === "Связь с сервером потеряна.\nНовая попытка через 3 с (попытка 2).");
+  check("reconnect text: the wait is over", reconnectText(2, 0) === "Связь с сервером потеряна.\nПодключаемся… (попытка 2).");
+
+  let tick: (() => void) | undefined;
+  let cleared = 0;
+  const clock = {
+    setInterval: (fn: () => void) => ((tick = fn), 1),
+    clearInterval: () => {
+      cleared++;
+      tick = undefined;
+    },
+  };
+  const modal = new Modal(overlay);
+  const dialogs = new ConnectionDialogs(modal, clock);
+  const text = () => modal.root.querySelector("p")?.textContent ?? "";
+
+  dialogs.reconnecting(2, 2000);
+  check("reconnecting: a dialog with no buttons to wait out", modal.isOpen && modal.root.querySelectorAll("button").length === 0);
+  check("reconnecting: the countdown", text() === reconnectText(2, 2));
+  tick?.();
+  check("... ticking down", text() === reconnectText(2, 1));
+  tick?.();
+  tick?.();
+  check("... to the attempt", text() === reconnectText(2, 0));
+
+  let reloads = 0;
+  dialogs.failed("Игра открыта в другой вкладке", () => reloads++);
+  const buttons = modal.root.querySelectorAll("button");
+  check("failed: why, and a reload button", text() === "Игра открыта в другой вкладке" && buttons.length === 1 && buttons[0]?.textContent === "Перезагрузить");
+  check("failed: the countdown stopped", cleared >= 1 && tick === undefined);
+  (buttons[0] as unknown as HTMLElement).click();
+  check("reload reloads", reloads === 1);
+
+  dialogs.close();
+  check("close: no dialog", !modal.isOpen);
 }
 
 await window.happyDOM.close();

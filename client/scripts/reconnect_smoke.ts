@@ -1,114 +1,27 @@
-// Reconnect e2e (GAME-008): the session token from Welcome brings the same
-// character back.
-//   join, spawn, take a step and stop; close the socket
-//   -> Hello with the token: Welcome{resumed, the same player_id and token}; the
-//      body is alive where it stood, with the same hp
-//   another tab with the token -> the first gets SESSION_REPLACED (fatal, closed
-//      4009); the new tab is resumed
-//   a new player with that name (any case) -> INVALID_NAME (4007)
-import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
-
-import {
-  ClientMessageSchema,
-  ErrorCode,
-  LifeState,
-  ProtocolVersion,
-  ServerMessageSchema,
-  type ClientMessage,
-  type PlayerState,
-  type ServerMessage,
-} from "../src/gen/game/v1/protocol_pb.js";
-import { uniqueName } from "../src/net/uniqueName.js";
+// Reconnect e2e (GAME-008, GAME-009): the page's Session over GameClient brings
+// the same character back.
+//   join by name, spawn, take a step and stop -> the name and the Welcome's
+//      session token are saved
+//   the connection drops -> the session reconnects by itself after 1 s with the
+//      token: Welcome{resumed, the same player_id}; the body is alive where it
+//      stood, with the same hp
+//   another tab of the browser (the same saved token) starts -> it gets the
+//      character; the first tab gets SESSION_REPLACED and stops for good (no
+//      reconnect: two tabs would take it back and forth)
+//   a new player with that name (any case) -> asked for another name
+//      (INVALID_NAME), no reconnect
+import { errorText } from "../src/errors.js";
+import { ErrorCode, LifeState } from "../src/gen/game/v1/protocol_pb.js";
+import { NAME_KEY, TOKEN_KEY } from "../src/net/session.js";
+import { SessionPlayer } from "./sessionPlayer.js";
+import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const CELL = 15 * 100 + 85; // its own cell (col 85, row 15) — away from other smokes' cells
 const NAME = uniqueName("back");
 
-const hello = (name: string, sessionToken = ""): ClientMessage =>
-  create(ClientMessageSchema, {
-    payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name, sessionToken } },
-  });
-const spawn = (factionId: number): ClientMessage =>
-  create(ClientMessageSchema, { payload: { case: "spawn", value: { cell: CELL, factionId } } });
-const walk = (seq: number, moveX: number): ClientMessage =>
-  create(ClientMessageSchema, { payload: { case: "input", value: { frames: [{ seq, moveX }] } } });
-
-// One connection: everything it receives, and how it closed.
-class Conn {
-  readonly ws = new WebSocket(URL);
-  readonly messages: ServerMessage[] = [];
-  closeCode: number | undefined;
-  private readonly waiters: (() => void)[] = [];
-
-  constructor(first: ClientMessage) {
-    this.ws.binaryType = "arraybuffer";
-    this.ws.onopen = () => this.send(first);
-    this.ws.onmessage = (ev: MessageEvent) => {
-      this.messages.push(fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer)));
-      this.wake();
-    };
-    this.ws.onclose = (ev: CloseEvent) => {
-      this.closeCode = ev.code;
-      this.wake();
-    };
-  }
-
-  send(m: ClientMessage): void {
-    this.ws.send(toBinary(ClientMessageSchema, m));
-  }
-
-  // The first value `pick` finds among the messages so far or to come, or
-  // undefined after `timeoutMs`.
-  until<T>(pick: (messages: ServerMessage[]) => T | undefined, timeoutMs = 3000): Promise<T | undefined> {
-    return new Promise((resolve) => {
-      const timer = setTimeout(() => resolve(undefined), timeoutMs);
-      const check = () => {
-        const found = pick(this.messages);
-        if (found === undefined && this.closeCode === undefined) {
-          this.waiters.push(check);
-          return;
-        }
-        clearTimeout(timer);
-        resolve(found);
-      };
-      check();
-    });
-  }
-
-  private wake(): void {
-    for (const waiter of this.waiters.splice(0)) waiter();
-  }
-}
-
-const welcomeOf = (ms: ServerMessage[]) => {
-  const m = ms.find((x) => x.payload.case === "welcome");
-  return m?.payload.case === "welcome" ? m.payload.value : undefined;
-};
-const errorOf = (ms: ServerMessage[]) => {
-  const m = ms.find((x) => x.payload.case === "error");
-  return m?.payload.case === "error" ? m.payload.value : undefined;
-};
-// The last snapshot's view of player `id` and of oneself.
-const lastSeen = (ms: ServerMessage[], id: number) => {
-  for (let i = ms.length - 1; i >= 0; i--) {
-    const m = ms[i]!;
-    if (m.payload.case !== "snapshot") continue;
-    const self = m.payload.value.players.find((p) => p.id === id);
-    if (self) return { self, life: m.payload.value.you?.life };
-  }
-  return undefined;
-};
-// Resolves once player `id` stands still: the same position in two snapshots in a row.
-const standing = (conn: Conn, id: number) => {
-  let previous: PlayerState | undefined;
-  return conn.until((ms) => {
-    const seen = lastSeen(ms, id);
-    if (!seen) return undefined;
-    const still = previous && previous !== seen.self && previous.x === seen.self.x && previous.y === seen.self.y;
-    previous = seen.self;
-    return still ? seen.self : undefined;
-  });
-};
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 let failures = 0;
 const check = (name: string, cond: boolean, detail = "") => {
@@ -116,31 +29,34 @@ const check = (name: string, cond: boolean, detail = "") => {
   if (!cond) failures++;
 };
 
-// 1) Join, spawn, take a step and stop — then drop.
-const first = new Conn(hello(NAME));
-const welcome = await first.until(welcomeOf);
+// 1) Join, spawn, take a step and stop.
+const tab = new SessionPlayer(URL);
+tab.session.join(NAME);
+const welcome = await tab.until(() => tab.welcomes()[0]);
 if (!welcome) throw new Error("FAIL no Welcome"); // exits non-zero
 const id = welcome.playerId;
 const token = welcome.sessionToken;
 check("Welcome carries a 32-hex-digit session token, not resumed", /^[0-9a-f]{32}$/.test(token) && !welcome.resumed);
-first.send(spawn(welcome.factions[0]?.id ?? 1));
-first.send(walk(1, 1));
-await new Promise((r) => setTimeout(r, 300));
-first.send(walk(2, 0));
-const before = await standing(first, id);
+check("the name and the token are saved", tab.store.getItem(NAME_KEY) === NAME && tab.store.getItem(TOKEN_KEY) === token);
+tab.client.sendSpawn(CELL, welcome.factions[0]?.id ?? 1);
+tab.client.sendInput(1, 0, false);
+await sleep(300);
+tab.client.sendInput(0, 0, false);
+const before = await tab.standing(id);
 check("the body walked and stands", before !== undefined && before.x > (CELL % 100) * 100 + 50, `x=${before?.x}`);
-first.ws.close();
-await first.until(() => first.closeCode);
 
-// 2) Back with the token: the same character, where and as it was.
-const second = new Conn(hello(NAME, token));
-const resumed = await second.until(welcomeOf);
+// 2) The connection drops: the session comes back by itself.
+tab.client.close();
+const waiting = await tab.until(() => tab.statuses.find((s) => s.kind === "reconnecting"));
+check("a dropped connection: reconnecting in 1 s (attempt 1)", same(waiting, { kind: "reconnecting", attempt: 1, retryInMs: 1000 }), JSON.stringify(waiting));
+const resumed = await tab.until(() => tab.welcomes()[1]);
 check(
-  "Hello with the token: Welcome{resumed}, the same player_id and token",
+  "... then Hello with the token: Welcome{resumed}, the same player_id and token",
   resumed !== undefined && resumed.resumed && resumed.playerId === id && resumed.sessionToken === token,
   `resumed=${resumed?.resumed} id=${resumed?.playerId}/${id}`,
 );
-const after = await second.until((ms) => lastSeen(ms, id));
+check("... playing again", tab.statuses.at(-1)?.kind === "playing");
+const after = await tab.until(() => tab.lastSeen(id, 1));
 check(
   "the body is alive where it stood, with the same hp",
   after !== undefined &&
@@ -152,28 +68,33 @@ check(
   `before=${before?.x},${before?.y} hp ${before?.hp}; after=${after?.self.x},${after?.self.y} hp ${after?.self.hp}`,
 );
 
-// 3) Another tab with the same token takes the character over.
-const third = new Conn(hello(NAME, token));
-const replaced = await second.until(errorOf);
-const secondClose = await second.until(() => second.closeCode);
+// 3) Another tab of the browser starts with the saved name and token.
+const other = new SessionPlayer(URL, tab.store);
+other.session.start();
+const takeover = await other.until(() => other.welcomes()[0]);
+check("another tab joins with the saved token: the same player, resumed", takeover?.resumed === true && takeover.playerId === id);
+const stopped = await tab.until(() => tab.statuses.find((s) => s.kind === "failed"));
 check(
-  "the old tab gets SESSION_REPLACED (fatal) and is closed 4009",
-  replaced?.code === ErrorCode.SESSION_REPLACED && replaced.fatal && secondClose === 4000 + ErrorCode.SESSION_REPLACED,
-  `error=${replaced ? ErrorCode[replaced.code] : "none"} close=${secondClose}`,
+  "the first tab stops: SESSION_REPLACED, with why",
+  same(stopped, { kind: "failed", text: errorText(ErrorCode.SESSION_REPLACED) }),
+  JSON.stringify(stopped),
 );
-const takeover = await third.until(welcomeOf);
-check("the new tab is resumed as the same player", takeover?.resumed === true && takeover.playerId === id);
 
 // 4) The name is taken, whatever its case.
-const impostor = new Conn(hello(NAME.toUpperCase()));
-const refused = await impostor.until(errorOf);
-const impostorClose = await impostor.until(() => impostor.closeCode);
+const impostor = new SessionPlayer(URL);
+impostor.session.join(NAME.toUpperCase());
+const renamed = await impostor.until(() => impostor.statuses.find((s) => s.kind === "needName"));
 check(
-  "a new player with that name gets INVALID_NAME, closed 4007",
-  refused?.code === ErrorCode.INVALID_NAME && impostorClose === 4000 + ErrorCode.INVALID_NAME,
-  `error=${refused ? ErrorCode[refused.code] : "none"} close=${impostorClose}`,
+  "a new player with that name is asked for another (INVALID_NAME)",
+  same(renamed, { kind: "needName", error: errorText(ErrorCode.INVALID_NAME) }),
+  JSON.stringify(renamed),
 );
 
-third.ws.close();
+// Past the first backoff: neither reconnected.
+const statusesNow = [tab.statuses.length, impostor.statuses.length];
+await sleep(1500);
+check("no reconnect after either", same([tab.statuses.length, impostor.statuses.length], statusesNow));
+check("the other tab still plays", other.statuses.at(-1)?.kind === "playing");
+
 console.log(failures === 0 ? "VERDICT: PASS" : `VERDICT: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);

@@ -17,6 +17,7 @@ check("every error code has a text", texts.every((t) => t.length > 0 && !t.inclu
 check("the texts are all different", new Set(texts).size === texts.length);
 check("an unknown code still says something, with its number", errorText(999 as ErrorCode).includes("999"));
 check("PROTOCOL_VERSION asks to reload", errorText(ErrorCode.PROTOCOL_VERSION).includes("перезагрузите"));
+check("INVALID_NAME covers a taken name", errorText(ErrorCode.INVALID_NAME).includes("занято"));
 
 check("close 4001 is PROTOCOL_VERSION", closeError(4001) === ErrorCode.PROTOCOL_VERSION);
 check("close 4007 is INVALID_NAME", closeError(4007) === ErrorCode.INVALID_NAME);
@@ -37,6 +38,8 @@ check("4000 + an unknown code is no error code", closeError(4999) === undefined)
   n.fail("closed 4001"); // the close code follows the error frame: keep the first
   n.refuse("refused", 0);
   check("a fatal error stays and wins", n.hint("usual", 1e9) === "version" && n.failed);
+  n.clear();
+  check("a new session clears it all", !n.failed && n.hint("usual", 0) === "usual");
 }
 
 console.log(failures === 0 ? "VERDICT: PASS" : `VERDICT: FAIL (${failures})`);

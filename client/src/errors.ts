@@ -13,7 +13,7 @@ const TEXTS: Partial<Record<ErrorCode, string>> = {
   [ErrorCode.HANDSHAKE_TIMEOUT]: "Сервер не дождался входа — перезагрузите страницу",
   [ErrorCode.IDLE_TIMEOUT]: "Соединение закрыто: долго не было связи",
   [ErrorCode.RATE_LIMITED]: "Слишком много сообщений серверу",
-  [ErrorCode.INVALID_NAME]: "Недопустимое имя: 1–16 видимых символов",
+  [ErrorCode.INVALID_NAME]: "Имя недопустимо или уже занято: нужно 1–16 видимых символов",
   [ErrorCode.SERVER_FULL]: "Сервер заполнен, попробуйте позже",
   [ErrorCode.SESSION_REPLACED]: "Игра открыта в другой вкладке",
   [ErrorCode.SERVER_SHUTDOWN]: "Сервер остановлен",
@@ -54,6 +54,12 @@ export class Notices {
 
   refuse(text: string, nowMs: number): void {
     this.notice = { text, untilMs: nowMs + NOTICE_MS };
+  }
+
+  // A new session (a reconnect): what ended or refused the old one is past.
+  clear(): void {
+    this.fatal = undefined;
+    this.notice = undefined;
   }
 
   hint(usual: string, nowMs: number): string {

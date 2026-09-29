@@ -6,11 +6,19 @@ export interface KeyboardState {
   capturing: boolean;
 }
 
+// Whether a key press goes into a text field (the nickname), not to the game.
+export function isTyping(target: EventTarget | null): boolean {
+  const el = target as { tagName?: string; isContentEditable?: boolean } | null;
+  return el?.isContentEditable === true || ["INPUT", "TEXTAREA", "SELECT"].includes(el?.tagName ?? "");
+}
+
 export function installInput(): () => KeyboardState {
   const pressed = new Set<string>();
   const axis = (positive: boolean, negative: boolean) => (positive ? 1 : 0) - (negative ? 1 : 0);
 
-  window.addEventListener("keydown", (e) => pressed.add(e.key.toLowerCase()));
+  window.addEventListener("keydown", (e) => {
+    if (!isTyping(e.target)) pressed.add(e.key.toLowerCase());
+  });
   window.addEventListener("keyup", (e) => pressed.delete(e.key.toLowerCase()));
 
   return () => ({
