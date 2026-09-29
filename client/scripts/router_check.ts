@@ -173,6 +173,17 @@ const joined = (nowMs = 1000): GameState => {
   check("a plain close is no error", !plain.notices.failed);
 }
 
+// --- Pong: round-trip time ---------------------------------------------------------------
+{
+  const state = joined();
+  check("no round trip before the first Pong", state.rttMs === undefined);
+  routeMessage(state, msg({ case: "pong", value: { clientTimeMs: 1000, serverTick: 5 } } as never), 1038.7);
+  check("Pong: RTT = now - the echoed send time", state.rttMs === 38);
+  // Sent as uint32 ms: the clock wrapped between the Ping and its Pong.
+  routeMessage(state, msg({ case: "pong", value: { clientTimeMs: 2 ** 32 - 10, serverTick: 6 } } as never), 2 ** 32 + 28);
+  check("Pong: RTT across the uint32 wrap", state.rttMs === 38);
+}
+
 // --- The usual hint line ---------------------------------------------------------------
 {
   const state = joined();

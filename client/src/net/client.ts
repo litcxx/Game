@@ -16,10 +16,17 @@ export const PROTOCOL_VERSION: number = ProtocolVersion.CURRENT;
 // Ping goes out this often regardless while the socket is open.
 export const KEEPALIVE_MS = 2000;
 
+// A Ping carries the client's clock as uint32 ms (performance.now()); its Pong
+// echoes it back. The round trip, across a wrap of that clock too.
+export function roundTripMs(echoedMs: number, nowMs: number): number {
+  return (Math.floor(nowMs) - echoedMs) >>> 0;
+}
+
 // Thin transport: one WebSocket binary frame == one protobuf message.
 // Decodes incoming ServerMessages and hands them to `onMessage`; `onClose` gets
 // the socket's close code (4000 + ErrorCode when the server closed it for one).
-// Keeps the connection alive with a Ping every KEEPALIVE_MS.
+// Pings right after Hello (the first round trip) and then every KEEPALIVE_MS,
+// which also keeps the connection alive.
 export class GameClient {
   private ws?: WebSocket;
   private inputSeq = 0;
@@ -38,6 +45,7 @@ export class GameClient {
 
     ws.onopen = () => {
       this.sendHello(name);
+      this.sendPing();
       this.keepalive = setInterval(() => this.sendPing(), KEEPALIVE_MS);
     };
     ws.onmessage = (ev: MessageEvent) => {
