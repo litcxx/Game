@@ -43,13 +43,26 @@ class World {
     void finish_tick_metrics(std::chrono::steady_clock::time_point started);
 
     // Per-message handlers. `request_id` is echoed in any error they send.
+    // Hello joins a new character or, with a known session token, resumes one.
     void on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello,
                   std::uint32_t request_id);
     void on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn,
                   std::uint32_t request_id);
     void on_input(std::uint64_t session_id, const ::game::v1::Input& input);
     void on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping);
+    // The session stops driving its character, which stays in the world, away,
+    // for the reconnect grace.
     void on_disconnect(std::uint64_t session_id);
+
+    // `session_id` drives a known character again: taken over from the session
+    // driving it (SESSION_REPLACED), or back from away or out of the world.
+    void resume(std::uint64_t session_id, std::uint32_t character_id,
+                std::string_view session_token);
+    // Welcome, MapState and the full roster to a session that now drives `character`.
+    void greet(std::uint64_t session_id, const Character& character, std::string_view session_token,
+               bool resumed);
+    // Every tick: characters away past their reconnect grace leave the world.
+    void end_reconnect_graces();
 
     // Rebuild the spatial index of alive units (after movement, before combat).
     void index_alive_units();
@@ -78,6 +91,7 @@ class World {
 
     std::uint32_t snapshot_interval_{1};    // ticks between snapshots (tick_rate / snapshot_rate)
     std::uint32_t resync_window_ticks_{1};  // config.limits.resync_window_ms in ticks
+    std::uint32_t grace_ticks_{0};          // config.reconnect_grace_ms in ticks
     TickLimits limits_;                     // config.limits in ticks
     // Every open connection, from Connected (or its first message) to Disconnected.
     std::unordered_map<std::uint64_t, Connection> connections_;

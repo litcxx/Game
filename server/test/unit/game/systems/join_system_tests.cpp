@@ -4,7 +4,9 @@
 #include <string>
 
 #include "game/v1/protocol.pb.h"
+#include "state/world_state.hpp"
 #include "systems/join_system.hpp"
+#include "systems/presence_system.hpp"
 
 namespace {
 
@@ -77,6 +79,32 @@ TEST(PlayerName, RejectsInvisibleCharacters) {
     EXPECT_FALSE(name(kRightToLeftOverride + "evil"));
     EXPECT_FALSE(name("\uFEFFa"));   // byte order mark
     EXPECT_FALSE(name("a\u00ADb"));  // soft hyphen
+}
+
+TEST(PlayerName, IsTakenIgnoringCase) {
+    lit::game::WorldState state;
+    lit::game::create_character(state, "Tag", {});
+    lit::game::create_character(state, "Ёжик", {});
+    lit::game::create_character(state, "Ђура", {});
+
+    EXPECT_TRUE(lit::game::is_name_taken(state, "Tag"));
+    EXPECT_TRUE(lit::game::is_name_taken(state, "tag"));
+    EXPECT_TRUE(lit::game::is_name_taken(state, "TAG"));
+    EXPECT_TRUE(lit::game::is_name_taken(state, "ёЖИК"));  // Cyrillic, Ё included
+    EXPECT_TRUE(lit::game::is_name_taken(state, "ЁЖИК"));
+    EXPECT_TRUE(lit::game::is_name_taken(state, "ђУРА"));  // Ѐ–Џ fold too
+    EXPECT_FALSE(lit::game::is_name_taken(state, "Tag2"));
+    EXPECT_FALSE(lit::game::is_name_taken(state, "Ta"));
+    EXPECT_FALSE(lit::game::is_name_taken(state, "Еж"));
+}
+
+TEST(PlayerName, StaysTakenAfterItsCharacterLeaves) {
+    lit::game::WorldState state;
+    const auto id = lit::game::create_character(state, "Tag", {}).id;
+
+    lit::game::leave_world(state, id);
+
+    EXPECT_TRUE(lit::game::is_name_taken(state, "tag"));  // the record keeps it
 }
 
 TEST(PlayerName, RejectsInvalidUtf8) {

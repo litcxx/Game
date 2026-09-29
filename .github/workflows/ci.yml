@@ -49,7 +49,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            g++ cmake ninja-build protobuf-compiler libprotobuf-dev libboost-dev
+            g++ cmake ninja-build protobuf-compiler libprotobuf-dev libboost-dev libssl-dev
       # The runner kernel's 32 bits of mmap ASLR can collide with ASan's shadow
       # memory and crash sanitized binaries at start; 28 is the usual default.
       - name: ASan-friendly ASLR

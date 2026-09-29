@@ -1,6 +1,7 @@
 #include "sync/messages.hpp"
 
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace lit::game {
@@ -26,10 +27,13 @@ void fill_player_info(::game::v1::PlayerInfo* info, const WorldState& state,
 }  // namespace
 
 ::game::v1::ServerMessage make_welcome(const WorldState& state, const GameConfig& config,
-                                       const Character& character) {
+                                       const Character& character, std::string_view session_token,
+                                       bool resumed) {
     ::game::v1::ServerMessage msg;
     auto* welcome = msg.mutable_welcome();
     welcome->set_player_id(character.id);
+    welcome->set_session_token(std::string{session_token});
+    welcome->set_resumed(resumed);
     welcome->set_server_tick(state.tick);
 
     auto* cfg = welcome->mutable_config();
@@ -85,7 +89,7 @@ void fill_player_info(::game::v1::PlayerInfo* info, const WorldState& state,
     auto* roster = msg.mutable_roster();
     roster->set_full(true);
     for (const auto& [id, character] : state.characters) {
-        fill_player_info(roster->add_upsert(), state, character);
+        if (character.in_world) fill_player_info(roster->add_upsert(), state, character);
     }
     return msg;
 }
