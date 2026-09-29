@@ -177,7 +177,9 @@ lives on the server; the browser client predicts, interpolates, and renders.
 ../protocol/game/v1/protocol.proto   wire protocol (shared with the client)
 proto/         builds that schema into the `proto` library (protoc -> C++)
 third_party/   FetchContent: spdlog, nlohmann/json
+scripts/       install-protobuf.sh — the pinned protobuf, built from source
 src/main.cpp   entry point: config, io threads, game thread, shutdown on signal
+src/asan_default_options.cpp   ASan defaults for the server and the unit tests
 src/net/       server, session — WebSocket transport + coroutines
 src/game/      the simulation:
   world/         World — tick orchestration, event dispatch, delivery; fixed step;
@@ -204,25 +206,36 @@ Generated Protobuf headers land in the build tree (`build/proto/game/v1/`).
 
 ## Prerequisites
 
-The versions CI builds and tests with (Ubuntu 24.04 packages):
+The versions CI builds and tests with (Ubuntu 24.04):
 
-| Dependency | Version | Ubuntu 24.04 package |
+| Dependency | Version | Where from |
 |---|---|---|
 | GCC (C++23) | 13.3 | `g++` |
 | CMake | 3.28 (≥ 3.21 for the presets) | `cmake` |
 | Ninja | 1.11 | `ninja-build` (optional; any generator works) |
-| Protobuf (`protoc` + `libprotobuf`) | 3.21.12 | `protobuf-compiler`, `libprotobuf-dev` |
+| Protobuf (`protoc` + `libprotobuf`, with abseil) | 36.2 | `scripts/install-protobuf.sh` (from source) |
 | Boost (Asio + Beast, header-only) | 1.83 | `libboost-dev` |
 | OpenSSL (libcrypto) | 3.0.13 | `libssl-dev` |
 
 ```bash
-sudo apt-get install g++ cmake ninja-build protobuf-compiler libprotobuf-dev libboost-dev libssl-dev
+sudo apt-get install g++ cmake ninja-build libboost-dev libssl-dev
+scripts/install-protobuf.sh            # protobuf 36.2 into /usr/local (about 5 minutes)
+scripts/install-protobuf.sh ~/protobuf # ... or anywhere, then cmake -DCMAKE_PREFIX_PATH=~/protobuf
 ```
 
-Protobuf is found through its own CMake package when it ships one (protobuf ≥ 22,
-Homebrew, vcpkg) and through CMake's `FindProtobuf` otherwise (the distro's 3.21),
-so either works. `spdlog` 1.12.0, `nlohmann/json` 3.11.0 and `GoogleTest` 1.15.0
-are fetched (pinned by hash) via `FetchContent`.
+**Protobuf 36 only.** The build takes protobuf from its own CMake package, at
+version 36 or newer, and stops with a hint otherwise: one version is tested, and
+distro packages such as Ubuntu 24.04's 3.21 are too old (and ship no CMake
+package). The script builds the pinned release, checked by SHA-256, the same way
+CI does. `spdlog` 1.12.0, `nlohmann/json` 3.11.0 and `GoogleTest` 1.15.0 are
+fetched (pinned by hash) via `FetchContent`.
+
+**ASan and prebuilt libraries.** libprotobuf is not built with ASan, while its
+headers mark container memory for ASan in our instrumented code only; the two
+disagree, and ASan would report container overflows that are not there. So the
+server and the unit tests turn that one check off by default
+(`src/asan_default_options.cpp`: `detect_container_overflow=0`); `ASAN_OPTIONS`
+still overrides it.
 
 ## Build & run
 
