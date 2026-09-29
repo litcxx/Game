@@ -80,8 +80,7 @@ export class GameState {
   private readonly colors = new Map<number, number>(); // faction id -> colour
 
   // A new session (after Welcome, a reconnect too): forget the last one's life,
-  // bodies, projectiles, effects and errors — the server sends it all anew.
-  // The explored map and the choices stay.
+  // bodies, projectiles, effects and errors — the server sends them anew.
   startSession(): void {
     this.life = LifeState.NOT_SPAWNED;
     this.hp = 0;

@@ -18,10 +18,10 @@ interpolates the others, and renders.
 > The server runs a fixed-timestep authoritative simulation; the client adds
 > client-side prediction and interpolation for smooth play, plus a follow
 > camera, HUD, and minimap.
-> There are no accounts yet: a player joins with a name, and a session token
-> brings the same character back after a disconnect — it stays in the world for
-> a 30 s grace (the client keeps the token from GAME-009 on). The fuller
-> faction/economy systems come later.
+> There are no accounts yet: a player picks a nickname, and a session token
+> (kept in the browser with it) brings the same character back after a
+> disconnect — the client reconnects by itself, and the character stays in the
+> world for a 30 s grace. The fuller faction/economy systems come later.
 
 ## Repository layout
 

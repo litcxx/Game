@@ -15,32 +15,76 @@
 sequenceDiagram
     autonumber
     participant main as main.ts (PixiJS)
+    participant ses as Session
     participant net as GameClient
     participant ws as WebSocket
     participant srv as Server / Session
     participant world as World
 
-    main->>net: new GameClient(serverUrl(VITE_SERVER_URL, location), onMessage)
+    main->>ses: new Session({ createClient: → GameClient(serverUrl(…)), localStorage, onMessage, onStatus })
     Note over main: адрес: VITE_SERVER_URL сборки, иначе свой origin + /ws (wss для https)
-    main->>net: connect(uniqueName("player"))
-    Note over main: player-xxxx: имя занято до рестарта сервера; экран ника — GAME-009
+    main->>ses: start()
+    alt ника нет в localStorage (первый визит)
+        ses-->>main: status needName → экран ника
+        main->>ses: join(ник) — Enter / «Играть»; новый персонаж, без токена
+    else ник и токен сохранены
+        Note over ses: сразу входит с ними
+    end
+    ses->>net: connect(ник, токен)
     net->>ws: new WebSocket, binaryType = "arraybuffer"
     ws-->>net: onopen
-    net->>ws: send(ClientMessage{hello}) — 1 кадр = 1 сообщение
+    net->>ws: send(ClientMessage{hello{name, session_token}}) — 1 кадр = 1 сообщение
     net->>ws: send(Ping{client_time_ms}) — сразу и дальше раз в 2 с
     ws->>srv: WS binary frame
     srv->>world: push_packet(session_id, msg)
     world->>srv: send_to(id): Welcome, MapState, Roster
     srv->>ws: WS binary frames
     ws-->>net: onmessage
-    net->>main: onMessage(Welcome / MapState / Roster)
-    main->>main: routeMessage → GameState: конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта, ростер
-    Note over main: Welcome.session_token пока не хранится — его хранение и переподключение: GAME-009
+    net->>ses: onMessage(Welcome / MapState / Roster)
+    ses->>ses: Welcome: сохранить ник и session_token в localStorage; status playing → экран ника скрыт
+    ses->>main: onMessage
+    main->>main: routeMessage → GameState: новая сессия (старое состояние сброшено), конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта, ростер
     main->>main: showWelcome: карточки фракций, панель способностей
+    Note over ses,srv: сервер отверг ник (INVALID_NAME, закрытие 4007) → status needName с причиной: экран ника снова
     world->>srv: send_to(id): Pong{client_time_ms}
     srv->>ws: WS binary frame
     ws-->>net: onmessage → router: rttMs = сейчас − client_time_ms
     Note over main: HUD справа вверху: «В СЕТИ n · ПИНГ m»
+```
+
+## Потеря связи и переподключение
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant main as main.ts + ConnectionDialogs
+    participant ses as Session
+    participant net as GameClient
+    participant srv as Server / World
+
+    alt сокет закрылся (1000/1006, IDLE_TIMEOUT, HANDSHAKE_TIMEOUT, SERVER_SHUTDOWN)
+        net-->>ses: onClose(код)
+    else 6 с тишины (сеть пропала, сокет ничего не заметил)
+        net->>net: сторож в keepalive (раз в 2 с): закрыть сокет
+        net-->>ses: onClose(STALE_CLOSE_CODE)
+    end
+    Note over srv: персонаж остаётся в мире 30 с (grace)
+    ses-->>main: status reconnecting{попытка n, через 1, 2, 4, 8, затем 15 с}
+    main->>main: «Переподключение…» с обратным отсчётом, без кнопок; ввод не идёт в игру
+    opt браузер: событие online
+        main->>ses: retryNow() — не ждать конца задержки
+    end
+    ses->>net: connect(ник, токен) — тот же персонаж
+    Note over net: сторож считает от connect(): зависшая попытка тоже кончается через 6 с
+    net->>srv: Hello{name, session_token}
+    srv-->>net: Welcome{resumed = true, тот же player_id}, MapState, Roster{full}
+    net-->>ses: onMessage(Welcome)
+    ses-->>main: status playing: диалог закрыт; задержки заново с 1 с
+    main->>main: router: новая сессия; фракция воскрешённого тела — из полного ростера
+
+    Note over ses,srv: SESSION_REPLACED (игру открыли в другой вкладке, закрытие 4009) и прочие фатальные ошибки
+    ses-->>main: status failed{причина} — без переподключения
+    main->>main: «Игра остановлена»: причина и кнопка «Перезагрузить»
 ```
 
 ## Игровой цикл (тикер PixiJS, фиксированный шаг)
@@ -89,11 +133,12 @@ sequenceDiagram
 ```
 
 Роутер пишет только в `GameState` (данные, без PixiJS); виды в `src/render/`
-читают его. Текстовый UI поверх канваса — DOM-оверлей `src/ui/` (модальное окно,
-тосты); его первыми используют переподключение и экран ника (GAME-009).
+читают его. Текстовый UI поверх канваса — DOM-оверлей `src/ui/`: модальное окно,
+тосты, экран ника и диалоги соединения (переподключение, остановка игры).
 
-> Статус: реализован весь цикл MVP — выбор фракции (карточки внизу), спавн по
-> клику, движение (**WASD**), захват клетки (удержание **E**), бой (удержание
+> Статус: реализован весь цикл MVP — вход по нику (он и токен сессии хранятся в
+> браузере; при потере связи клиент сам возвращается тем же персонажем), выбор
+> фракции (карточки внизу), спавн по клику, движение (**WASD**), захват клетки (удержание **E**), бой (удержание
 > **ЛКМ**): способность из панели **1–5** — удар по площади или выстрел снарядом
 > в сторону курсора (общий кулдаун), блок (свой кулдаун) — удары и блоки других
 > видны всем, кто их видит — и смерть/респавн, с клиентским

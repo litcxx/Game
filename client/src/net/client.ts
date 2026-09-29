@@ -18,7 +18,8 @@ export const KEEPALIVE_MS = 2000;
 
 // The server talks many times a second (snapshots at 20 Hz, Pongs). Silence
 // this long means the connection is gone even if the socket has not noticed —
-// a dropped Wi-Fi often closes nothing for minutes.
+// a dropped Wi-Fi often closes nothing for minutes. It counts from connect(),
+// so a connection that never opens (made while the network was down) ends too.
 export const STALE_MS = 6000;
 // The close code reported for such a connection (never sent on the wire).
 export const STALE_CLOSE_CODE = 4900;
@@ -55,12 +56,12 @@ export class GameClient {
     const ws = new WebSocket(this.url);
     ws.binaryType = "arraybuffer";
     this.ws = ws;
+    this.lastHeardMs = performance.now();
+    this.keepalive = setInterval(() => this.keepAlive(), KEEPALIVE_MS);
 
     ws.onopen = () => {
-      this.lastHeardMs = performance.now();
       this.sendHello(name, sessionToken);
       this.sendPing();
-      this.keepalive = setInterval(() => this.keepAlive(), KEEPALIVE_MS);
     };
     ws.onmessage = (ev: MessageEvent) => {
       this.lastHeardMs = performance.now();
@@ -127,8 +128,8 @@ export class GameClient {
     this.dispatch(create(ClientMessageSchema, { payload: { case: "input", value: { frames } } }));
   }
 
-  // Every KEEPALIVE_MS: a Ping, or — after STALE_MS of silence — the end of a
-  // connection that is gone without saying so.
+  // Every KEEPALIVE_MS: a Ping (once open), or — after STALE_MS of silence —
+  // the end of a connection that is gone without saying so.
   private keepAlive(): void {
     if (performance.now() - this.lastHeardMs < STALE_MS) {
       this.sendPing();

@@ -51,11 +51,27 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   scene redraws the grid and fog only then.
 - **`src/net/router.ts`** — `routeMessage(state, msg, now)`: one handler per
   `ServerMessage` kind (Welcome, MapState, Roster, Snapshot, ServerError) —
-  pure data, checked headless; `routeClose` turns a close code 4000 + code into
-  a fatal notice.
+  pure data, checked headless. Every Welcome starts a session anew
+  (`GameState.startSession`: no life, bodies, projectiles, effects or errors of
+  the last one); for a resumed character the full roster tells its faction.
+- **`src/net/session.ts`** — `Session`: the connection's life around one
+  `GameClient`. It joins with the name and session token saved in
+  `localStorage` (or asks for a name), saves them on each Welcome (the name
+  only once the server has taken it), and after a lost connection reconnects
+  with backoff — 1, 2, 4, 8, then every 15 s, at once when the browser says the
+  network is back — with the token, so the same character returns. Server errors
+  about the connection (`IDLE_TIMEOUT`, `HANDSHAKE_TIMEOUT`, `SERVER_SHUTDOWN`)
+  are retried too; `INVALID_NAME` asks for another name; `SESSION_REPLACED`
+  (the game opened in another tab) and other fatal errors stop for good — two
+  tabs reconnecting would take the character back and forth. What the player
+  sees comes out as a status: need a name, playing, reconnecting (attempt, wait),
+  failed (why).
 
-- **`src/net/client.ts`** — `GameClient`: opens the WebSocket, sends `Hello`, and
-  encodes/decodes messages. `sendInputFrames` ships a batch of per-tick input
+- **`src/net/client.ts`** — `GameClient`: opens the WebSocket, sends `Hello`
+  (with the session token, if any), and encodes/decodes messages; what is sent
+  while no socket is open is dropped. A connection the server has been silent on
+  for 6 s — counted from `connect()`, so one that never opens too — is closed and
+  reported as lost (`STALE_CLOSE_CODE`): a dropped network often closes nothing. `sendInputFrames` ships a batch of per-tick input
   frames (each with its `seq`); `sendSpawn` requests spawn/respawn. A `Ping`
   goes out right after `Hello` and then every 2 s while the socket is open: its
   `Pong` gives the round trip (`roundTripMs`, shown as the HUD's ping), and it
@@ -94,10 +110,9 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   known state, visible untouched; one rect per run, the map border on top.
 - **`src/errors.ts`** — server errors as the player sees them: a text per
   `ErrorCode` (`ServerError.detail` is only for logs), the error a close code
-  4000 + code carries, and `Notices`: the hint line shows a fatal error for good
-  (the controls are hidden — the server has closed the socket), a refused
-  request (e.g. a spawn) for 3 s, else the usual hint. `GameClient` reports the
-  socket's close code, so a fatal error shows even if its frame was lost.
+  4000 + code carries, and `Notices`: the hint line shows a fatal error until
+  the next session (the controls are hidden — the server has closed the socket),
+  a refused request (e.g. a spawn) for 3 s, else the usual hint.
 - **`src/render/camera.ts`** — `Camera`: world↔screen mapping in two modes —
   **follow** (exactly 15 cells wide, clamped to the map) and **map** (whole map).
 - **`src/render/scene.ts`** — `Scene`, a view of `GameState` (it keeps only the
@@ -124,22 +139,27 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   usual text (respawn countdown, the M key).
 - **`src/ui/`** — the DOM overlay over the canvas for text UI (PixiJS keeps the
   world): `Overlay` (the layer; clicks pass through to the canvas), `Modal` (a
-  dialog: title, text, buttons — it takes the clicks while open) and `Toasts`
-  (short notices over everything, gone after a few seconds). `main.ts` mounts
-  the layer; the dialogs come with reconnect and the nickname screen (GAME-009).
+  dialog: title, text, buttons — it takes the clicks while open), `Toasts`
+  (short notices over everything, gone after a few seconds), `NicknameScreen`
+  (the name form: 1–16 characters, trimmed; shown on a first visit and when the
+  server refuses a name) and `ConnectionDialogs` (reconnecting — a countdown to
+  the next attempt, nothing to press; stopped — why, and «Перезагрузить»).
 - **`src/input/keyboard.ts`** — `installInput()` returns a reader for the current
-  WASD/arrows + **E** intent, sampled once per fixed step.
+  WASD/arrows + **E** intent, sampled once per fixed step; keys typed into a
+  text field (`isTyping`) are not game input.
 - **`src/input/mouse.ts`** — `installMouse()`: left-button hold (with a 60 ms
   min-hold so quick clicks reach a fixed step) and the cursor position for aiming.
-- **`src/main.ts`** — wires it together: `GameClient` → router → `GameState` →
-  views; the fixed-step loop (sample → predict → batch-send, with the active
-  ability and aim), interpolated positions for the scene, keys 1–5, faction
-  picking and click-to-spawn.
+- **`src/main.ts`** — wires it together: `Session` (over `GameClient`) → router
+  → `GameState` → views, and the session's status → the nickname screen and the
+  connection dialogs; the fixed-step loop (sample → predict → batch-send, with
+  the active ability and aim — paused while disconnected), interpolated
+  positions for the scene, keys 1–5, faction picking and click-to-spawn.
 
 ## Controls
 
 | Input | Action |
 |-------|--------|
+| **Enter** / «Играть» | Join under the nickname typed (a first visit; later the saved one joins by itself) |
 | **WASD** / arrows | Move |
 | Hold **E** | Capture the cell under you |
 | Hold **left mouse** | Use the active ability, repeating each cooldown: slot 1 hits every enemy around you, slot 2 fires a projectile toward the cursor, slot 3 blocks |
@@ -206,7 +226,7 @@ server's lifetime, so e.g. `capture_smoke` (captures the centre cell for Red)
 fails on a server where that cell is already Red — restart the server between
 runs. A new script is picked up by its name, no list to edit. Two things the
 server keeps matter to a new script: a name stays taken until the server
-restarts, so players join as `uniqueName("base")` (`src/net/uniqueName.ts`);
+restarts, so players join as `uniqueName("base")` (`scripts/uniqueName.ts`);
 and a player stays in the world for the reconnect grace (30 s) after its socket
 closes, so a script that fights or shoots spawns on cells of its own.
 
@@ -221,8 +241,9 @@ npx tsx scripts/picker_check.ts         # faction card layout + click hit-testin
 npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked effects, timing
 npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs
 npx tsx scripts/errors_check.ts         # error texts, close codes, fatal / refusal hints
-npx tsx scripts/router_check.ts         # each ServerMessage -> GameState (territory, roster, fog, you, effects)
-npx tsx scripts/ui_check.ts             # overlay: modal, toasts, clicks through to the canvas (happy-dom)
+npx tsx scripts/router_check.ts         # each ServerMessage -> GameState (territory, roster, fog, you, effects, a new session)
+npx tsx scripts/session_check.ts        # join with the saved name/token, reconnect backoff, when not to reconnect
+npx tsx scripts/ui_check.ts             # overlay: modal, toasts, nickname screen, connection dialogs (happy-dom)
 npx tsx scripts/status_check.ts         # what the HUD, bar and picker get from GameState (network line, hp, fatal)
 npx tsx scripts/server_url_check.ts     # the server address: VITE_SERVER_URL, else the page's origin at /ws
 ```
@@ -241,7 +262,9 @@ npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
 npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
 npx tsx scripts/bad_hello_smoke.ts # bad Hello -> fatal ServerError + close 4000+code; refused spawn
 npx tsx scripts/idle_smoke.ts      # timeouts (23 s): no Hello -> 4004, silence -> 4005, keepalive ok
-npx tsx scripts/reconnect_smoke.ts # the token: back as the same body; another tab -> 4009; a taken name -> 4007
+npx tsx scripts/reconnect_smoke.ts # Session: a dropped connection -> back as the same body by itself;
+                                   #   another tab -> SESSION_REPLACED, no reconnect; a taken name -> asked for another
+npx tsx scripts/network_drop_smoke.ts # the network gone 10 s (a proxy passes nothing) -> back as the same body
 npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones seen
                                    #   (VISION_CELLS = server vision_radius in cells, default 3)
 ```
@@ -255,14 +278,16 @@ src/effects.ts    snapshot events -> timed visual effects
 src/fog.ts        fog of war: cell sight (unexplored / explored / visible)
 src/errors.ts     server errors: texts, close codes, what the hint line shows
 src/hint.ts       the hint line's usual text
-src/main.ts       wiring: client -> router -> state -> views; input; the frame loop
+src/main.ts       wiring: session -> router -> state -> views; input; the frame loop
 src/state/     GameState (all client data), Territory, Roster
-src/net/       GameClient (transport), router (ServerMessage -> GameState),
-               Predictor (prediction), InterpolationBuffer
+src/net/       GameClient (transport), Session (join, token, reconnect),
+               router (ServerMessage -> GameState), Predictor (prediction),
+               InterpolationBuffer
 src/render/    PixiJS views of GameState: Camera, Scene (world + minimap), Hud,
                AbilityBar, FactionPicker, ProjectileView, EffectsView, FogView;
                status (HUD / bar / picker from the state)
-src/ui/        DOM overlay over the canvas: Overlay, Modal, Toasts
+src/ui/        DOM overlay over the canvas: Overlay, Modal, Toasts,
+               NicknameScreen, ConnectionDialogs
 src/input/     keyboard (movement + capture), mouse (attack hold + aim cursor)
 src/gen/       generated protobuf-es code (git-ignored; `npm run dev` / `build` regenerate it)
 scripts/       headless pure-logic checks + end-to-end smoke tests (tsx)
