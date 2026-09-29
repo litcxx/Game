@@ -12,6 +12,7 @@ FetchContent_MakeAvailable(googletest)
 
 set(SOURCES
   main.cpp
+  ${CMAKE_SOURCE_DIR}/src/asan_default_options.cpp
   shared/config_tests.cpp
   shared/session_token_tests.cpp
   shared/ts_queue_tests.cpp

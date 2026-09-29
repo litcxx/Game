@@ -227,7 +227,8 @@ scripts/install-protobuf.sh ~/protobuf # ... or anywhere, then cmake -DCMAKE_PRE
 version 36 or newer, and stops with a hint otherwise: one version is tested, and
 distro packages such as Ubuntu 24.04's 3.21 are too old (and ship no CMake
 package). The script builds the pinned release, checked by SHA-256, the same way
-CI does. `spdlog` 1.12.0, `nlohmann/json` 3.11.0 and `GoogleTest` 1.15.0 are
+CI does. A build directory once configured against another protobuf keeps it in
+its cache: delete the directory, or reconfigure with `-UProtobuf_DIR`. `spdlog` 1.12.0, `nlohmann/json` 3.11.0 and `GoogleTest` 1.15.0 are
 fetched (pinned by hash) via `FetchContent`.
 
 **ASan and prebuilt libraries.** libprotobuf is not built with ASan, while its
