@@ -151,8 +151,6 @@ src/shared/    config, net (IClientGateway, ClientEvent), utils (TSQueue)
 config/        config.json (runtime settings + game rules)
 test/unit/     unit tests (GoogleTest), mirroring src/
 docs/          sequence + ownership diagrams
-certs/         server.crt — a self-signed localhost certificate, unused: the
-               server speaks plain ws (TLS is planned on a reverse proxy)
 ```
 
 Generated Protobuf headers land in the build tree (`build/proto/game/v1/`).
