@@ -21,8 +21,8 @@ flowchart TD
     q["incoming_msgs<br/>(очередь ClientEvent)"]
     srv["Server (IClientGateway)"]
     world["World"]
-    wstate["WorldState<br/>(игроки, территория, снаряды, события)"]
-    sindex["SpatialIndex<br/>(живые игроки, пересборка каждый тик)"]
+    wstate["WorldState<br/>(персонажи, тела Unit, игровые сессии,<br/>территория, снаряды, события)"]
+    sindex["SpatialIndex<br/>(живые тела Unit, пересборка каждый тик)"]
     sess["Session<br/>(в sessions_, by value)"]
     sock["websocket::stream"]
     ch["send_queue (канал сессии)"]
@@ -57,7 +57,7 @@ flowchart TD
 | **incoming_msgs** | `main` (by value) | очередь `ClientEvent` | конец программы |
 | **Server** | `main` (by value) | `sessions_`, `acceptor_`, `config_` (копия NetConfig); ссылки на `io_` / `incoming_msgs_` — не владеет | конец программы |
 | **Session** | `Server::sessions_[id]` (**by value**) | `socket_`, `send_queue_`; ссылка `server_` — не владеет | `sessions_.erase(id)` в `run_session`, после завершения обеих корутин |
-| **World** | `main` (by value) | `config_` (копия GameConfig); `connections_` — `Connection` на каждую открытую сессию (бюджет сообщений, таймауты); `closing_` / `released_` — сессии, которые мир закрывает; `state_` — `WorldState` (игроки с пер-тик очередью ввода и состоянием доставки клиенту `ClientSync`: последняя сообщённая видимость, флаг resync, тик отказа; сетка территорий, снаряды в полёте, события до снапшота); `alive_index_` — `SpatialIndex` (производные данные, пересобирается каждый тик); ссылки на `incoming_msgs_` / `gateway_` — не владеет | конец программы |
+| **World** | `main` (by value) | `config_` (копия GameConfig); `connections_` — `Connection` на каждую открытую сессию (бюджет сообщений, таймауты); `closing_` / `released_` — сессии, которые мир закрывает; `state_` — `WorldState`: `characters` (персонаж: id = `player_id`, имя), `units` (боевые тела: позиция, HP, жизнь, фракция, кулдауны, намерение `Intent`; тело игрока — с id его персонажа, есть от спавна до ухода), `sessions` (`ClientSession` на соединение: какого персонажа ведёт, пер-тик очередь ввода `InputQueue` и состояние доставки клиенту `ClientSync` — последняя сообщённая видимость, флаг resync, тик отказа); сетка территорий, снаряды в полёте, события до снапшота; `alive_index_` — `SpatialIndex` (производные данные, пересобирается каждый тик); ссылки на `incoming_msgs_` / `gateway_` — не владеет | конец программы |
 | **ClientEvent** | тот, кто держит сейчас (очередь / локальная) | `ClientMessage` by value (+ `session_id`, `kind`) | перемещается по очереди; удаляется после обработки в тике |
 | **исходящие байты** (`vector<byte>`) | `send_queue`, затем локально в `do_send` | сам буфер | после `async_write` |
 | **game_thread** (`jthread`) | `main` | — (ссылается на `world` через `[&world]`) | выход `main` → stop-token → join |
