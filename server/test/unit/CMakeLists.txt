@@ -24,11 +24,6 @@ set(SOURCES
   game/sync/delivery_tests.cpp
   game/world/connection_tests.cpp
   game/world/world_tests.cpp
-  # Disabled until their subjects are ready:
-  #   player_tests — Player will be reworked for the top-down MVP
-  #   sha256_tests — auth/crypto is parked
-  # game/player/player_tests.cpp
-  # cryptography/sha256_tests.cpp
 )
 
 add_executable(unit_tests
@@ -42,7 +37,6 @@ target_link_libraries(unit_tests PRIVATE
   net
   game
   shared
-  crypto
   project_options
   project_warnings
 )
