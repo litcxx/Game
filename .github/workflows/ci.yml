@@ -1,6 +1,7 @@
 # CI (GAME-005): every PR and every push to main builds and tests both halves.
 #   client — protobuf codegen, typecheck, pure checks (npm run check)
-#   server — Debug + ASan/UBSan build, unit tests, then the e2e smoke suite
+#   server — against protobuf 36 (server/scripts/install-protobuf.sh, cached):
+#            Debug + ASan/UBSan build, unit tests, then the e2e smoke suite
 #            (npm run smoke) against that server, which must also shut down clean
 # A red run blocks the merge once "client" and "server" are required checks
 # (Settings → Branches → main).
@@ -40,6 +41,8 @@ jobs:
     env:
       # UBSan only prints by default; make any report fail the run.
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      # Where protobuf 36 is installed (and cached); CMake searches it.
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/.protobuf
     defaults:
       run:
         working-directory: server
@@ -49,7 +52,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            g++ cmake ninja-build protobuf-compiler libprotobuf-dev libboost-dev libssl-dev
+            g++ cmake ninja-build libboost-dev libssl-dev
+      # protobuf 36 is built from source (about 5 minutes) only when the install
+      # script — and so the version — changes; otherwise it comes from the cache.
+      - name: Cache protobuf
+        id: protobuf
+        uses: actions/cache@v4
+        with:
+          path: .protobuf
+          key: protobuf-ubuntu-24.04-${{ hashFiles('server/scripts/install-protobuf.sh') }}
+      - name: Build protobuf
+        if: steps.protobuf.outputs.cache-hit != 'true'
+        run: scripts/install-protobuf.sh "$CMAKE_PREFIX_PATH"
       # The runner kernel's 32 bits of mmap ASLR can collide with ASan's shadow
       # memory and crash sanitized binaries at start; 28 is the usual default.
       - name: ASan-friendly ASLR

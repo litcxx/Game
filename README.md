@@ -52,12 +52,13 @@ the client at all.
 ## Quick start
 
 Build and run the server, then start the client and open it in a browser.
-Needs GCC 13+ / CMake 3.21+ with Boost, Protobuf and OpenSSL (exact versions in
+Needs GCC 13+ / CMake 3.21+ with Boost, OpenSSL and protobuf 36 (exact versions in
 [server/README.md](server/README.md#prerequisites)) and Node 22+.
 
 ```bash
 # 1) server (default ws://localhost:27998/)
 cd server
+scripts/install-protobuf.sh    # once: protobuf 36.2 into /usr/local, from source
 cmake --preset debug-asan && cmake --build build -j
 ./build/bin/server config/config.json
 
