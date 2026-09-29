@@ -18,7 +18,9 @@ interpolates the others, and renders.
 > The server runs a fixed-timestep authoritative simulation; the client adds
 > client-side prediction and interpolation for smooth play, plus a follow
 > camera, HUD, and minimap.
-> There is no authentication yet (a player joins with a name); the fuller
+> There are no accounts yet: a player joins with a name, and a session token
+> brings the same character back after a disconnect — it stays in the world for
+> a 30 s grace (the client keeps the token from GAME-009 on). The fuller
 > faction/economy systems come later.
 
 ## Repository layout
@@ -50,7 +52,7 @@ the client at all.
 ## Quick start
 
 Build and run the server, then start the client and open it in a browser.
-Needs GCC 13+ / CMake 3.21+ with Boost and Protobuf (exact versions in
+Needs GCC 13+ / CMake 3.21+ with Boost, Protobuf and OpenSSL (exact versions in
 [server/README.md](server/README.md#prerequisites)) and Node 22+.
 
 ```bash

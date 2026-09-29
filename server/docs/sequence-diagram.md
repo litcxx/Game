@@ -112,17 +112,58 @@ sequenceDiagram
 **Вход и ошибки.** Первое сообщение соединения — `Hello`. `check_hello()` проверяет
 версию (`PROTOCOL_VERSION_CURRENT` из proto) и имя (обрезка пробелов, 1–16
 символов, без управляющих и невидимых). Любое другое сообщение до `Hello` и
-повторный `Hello` — `UNEXPECTED_MESSAGE`. `send_error()` шлёт `ServerError` с
-`request_id` запроса; коды 1–19 fatal: сессия отпускается — уходит из мира, её
-`send_queue` дописывает ошибку и закрывает WebSocket с кодом 4000 + code, а всё,
-что она ещё пришлёт, игнорируется до её `Disconnected`. Коды 20+ — отказ
-(например, спавна), соединение живёт.
+повторный `Hello` — `UNEXPECTED_MESSAGE`. Имя нового игрока не должно совпадать с
+именем уже существующего персонажа без учёта регистра латиницы и кириллицы
+(`is_name_taken()`, временно до аккаунтов) — иначе `INVALID_NAME`. `send_error()`
+шлёт `ServerError` с `request_id` запроса; коды 1–19 fatal: сессия отпускается —
+её персонаж отходит (см. ниже), её `send_queue` дописывает ошибку и закрывает
+WebSocket с кодом 4000 + code, а всё, что она ещё пришлёт, игнорируется до её
+`Disconnected`. Коды 20+ — отказ (например, спавна), соединение живёт.
 
-Принятый `Hello` создаёт персонажа (`create_character`: новый `player_id`, тела
-ещё нет) и привязывает к нему игровую сессию соединения (`attach_session`); тело
-`Unit` с id персонажа появляется при спавне. При отключении сессия отвязывается
-(`detach_session`), и персонаж уходит из мира вместе с телом (`remove_character`);
-reconnect с грейс-периодом — GAME-008.
+Принятый `Hello` без известного токена создаёт персонажа (`create_character`:
+новый `player_id`, хеш нового токена сессии, тела ещё нет) и привязывает к нему
+игровую сессию соединения (`attach_session`); `Welcome.session_token` — 128 бит
+из `RAND_bytes` в hex, сервер хранит только SHA-256. Тело `Unit` с id персонажа
+появляется при спавне. При отключении сессия отвязывается (`detach_session`), и
+персонаж **отходит**: остаётся в мире — видим и уязвим, тело стоит — на
+`reconnect_grace_ms` (30 с). По истечении `leave_after_grace` уводит его из мира
+вместе с телом (`Roster.removed`), запись о персонаже остаётся.
+
+**Reconnect.** `Hello` с известным токеном возвращает того же персонажа, какое бы
+имя в нём ни было. Пока персонаж в мире — `Welcome{resumed=true}`: то же тело в
+том же состоянии, остальные ничего не замечают. После грейс-периода —
+`resumed=false`, тот же id, `NOT_SPAWNED`, остальные видят вход. Сессия в обоих
+случаях новая: полное приветствие (`MapState`, полный roster), и первый снапшот
+раскрывает всю видимость. Тот же токен из другой вкладки перехватывает
+персонажа: прежняя сессия получает `SESSION_REPLACED` (fatal). Неизвестный токен
+(например, после рестарта сервера) — как его отсутствие: новый персонаж.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as вкладка A
+    participant B as вкладка B
+    participant world as World
+    participant others as остальные
+
+    A->>world: Hello{name}
+    world->>A: Welcome{player_id, session_token}, MapState, Roster{full}
+    world->>others: Roster{upsert}
+    A--xworld: разрыв → Disconnected
+    world->>world: detach_session: отошёл до tick + grace, намерение сброшено
+    Note over world,others: тело в мире: его видят и могут ударить
+    A->>world: Hello{name, session_token} (новое соединение, в грейс-период)
+    world->>A: Welcome{resumed=true, тот же player_id}, MapState, Roster{full}
+    Note over A: первый снапшот раскрывает всю видимость
+    B->>world: Hello{name, session_token} (другая вкладка)
+    world->>A: ServerError{SESSION_REPLACED, fatal} → close 4009
+    world->>B: Welcome{resumed=true, тот же player_id}, MapState, Roster{full}
+    B--xworld: разрыв; грейс-период истёк
+    world->>others: Roster{removed: player_id}
+    B->>world: Hello{name, session_token}
+    world->>B: Welcome{resumed=false, тот же player_id} → NOT_SPAWNED
+    world->>others: Roster{upsert}
+```
 
 ```mermaid
 sequenceDiagram
@@ -161,7 +202,7 @@ sequenceDiagram
 
 `World` только оркестрирует: всё состояние симуляции — простая структура
 `WorldState` (`src/game/state`), а правила — свободные функции-системы над ней
-(`src/game/systems`). Персонаж (`Character`: id = `player_id`, имя) отделён и от
+(`src/game/systems`). Персонаж (`Character`: id = `player_id`, имя, хеш токена) отделён и от
 соединения (`ClientSession`), и от боевого тела (`Unit`: позиция, HP, жизнь,
 фракция, кулдауны, намерение). Системы движения и боя работают только над `Unit`,
 поэтому тело без персонажа (монстр с ИИ — позже) бьёт и получает урон тем же
@@ -178,7 +219,7 @@ flowchart LR
     combat["resolve_attacks(state, index)<br/>способность: удар по площади / запуск снаряда"]
     proj["update_projectiles(state, index, dt)<br/>полёт + свип-попадания → apply_damage"]
     cap["update_captures(state)<br/>захват клетки под центром"]
-    timeouts["time_out_connections()<br/>HANDSHAKE_TIMEOUT / IDLE_TIMEOUT"]
+    timeouts["time_out_connections()<br/>HANDSHAKE_TIMEOUT / IDLE_TIMEOUT<br/>end_reconnect_graces(): уход отошедших"]
     snap["send_snapshots()<br/>compute_vision(фракция) → build_snapshot(state, получатель, vision)"]
     close["close_released_sessions()<br/>отпущенные сессии уходят из мира"]
     metrics["finish_tick_metrics()<br/>время тика → Metrics; раз в период — строка metrics"]
