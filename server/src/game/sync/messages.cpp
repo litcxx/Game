@@ -17,18 +17,19 @@ namespace {
     return ::game::v1::ABILITY_KIND_UNSPECIFIED;
 }
 
-void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
-    info->set_id(player.id);
-    info->set_name(player.name);
-    info->set_faction_id(player.faction_id);
+void fill_player_info(::game::v1::PlayerInfo* info, const WorldState& state,
+                      const Character& character) {
+    info->set_id(character.id);
+    info->set_name(character.name);
+    info->set_faction_id(faction_of(state, character.id));
 }
 }  // namespace
 
 ::game::v1::ServerMessage make_welcome(const WorldState& state, const GameConfig& config,
-                                       const Player& player) {
+                                       const Character& character) {
     ::game::v1::ServerMessage msg;
     auto* welcome = msg.mutable_welcome();
-    welcome->set_player_id(player.id);
+    welcome->set_player_id(character.id);
     welcome->set_server_tick(state.tick);
 
     auto* cfg = welcome->mutable_config();
@@ -83,15 +84,15 @@ void fill_player_info(::game::v1::PlayerInfo* info, const Player& player) {
     ::game::v1::ServerMessage msg;
     auto* roster = msg.mutable_roster();
     roster->set_full(true);
-    for (const auto& [session_id, player] : state.players) {
-        fill_player_info(roster->add_upsert(), player);
+    for (const auto& [id, character] : state.characters) {
+        fill_player_info(roster->add_upsert(), state, character);
     }
     return msg;
 }
 
-::game::v1::ServerMessage make_roster_upsert(const Player& player) {
+::game::v1::ServerMessage make_roster_upsert(const WorldState& state, const Character& character) {
     ::game::v1::ServerMessage msg;
-    fill_player_info(msg.mutable_roster()->add_upsert(), player);
+    fill_player_info(msg.mutable_roster()->add_upsert(), state, character);
     return msg;
 }
 

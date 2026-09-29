@@ -30,7 +30,7 @@ void SpatialIndex::clear() {
     occupied_.clear();
 }
 
-void SpatialIndex::insert(std::uint64_t key, double x, double y) {
+void SpatialIndex::insert(std::uint32_t key, double x, double y) {
     const std::uint32_t b = row_of(y) * cols_ + col_of(x);
     if (buckets_[b].empty()) occupied_.push_back(b);
     buckets_[b].push_back(Entry{key, x, y});

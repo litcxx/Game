@@ -9,11 +9,13 @@ namespace lit::game {
 // dropped). At most limits.max_input_frames are taken from one Input and at most
 // limits.input_queue are kept; the frames beyond are dropped — a burst after a
 // stall costs only a prediction correction, never the connection. Frames are
-// queued even when the player is not alive, so last_input_seq (the client's ack)
-// keeps advancing.
-void enqueue_frames(Player& player, const ::game::v1::Input& input, const LimitsConfig& limits);
+// queued even when its character has no alive body, so last_input_seq (the
+// client's ack) keeps advancing.
+void enqueue_frames(InputQueue& queue, const ::game::v1::Input& input, const LimitsConfig& limits);
 
-// Pop one queued command per player and make it the current intent; with an empty
-// queue the last intent repeats. Sets last_input_seq (the ack for reconciliation).
+// Pop one queued command per session and make it the intent of the body of the
+// character it drives (if spawned); with an empty queue the last intent repeats.
+// Sets last_input_seq (the ack for reconciliation). Units without a session —
+// a monster's — keep whatever intent they were given.
 void consume_inputs(WorldState& state);
 }  // namespace lit::game

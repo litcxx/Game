@@ -4,9 +4,9 @@
 #include <vector>
 
 namespace lit::game {
-// Uniform-grid broad phase over points (player centres). Rebuilt every tick
-// (clear + insert). A radius query scans only the buckets overlapping the
-// circle's bounding box, then filters by exact distance.
+// Uniform-grid broad phase over points (unit centres, keyed by unit id). Rebuilt
+// every tick (clear + insert). A radius query scans only the buckets overlapping
+// the circle's bounding box, then filters by exact distance.
 class SpatialIndex {
   public:
     // width/height: world extent in units; bucket_size: bucket edge in units.
@@ -14,7 +14,7 @@ class SpatialIndex {
 
     // Remove every entry: O(occupied buckets), bucket capacity is kept.
     void clear();
-    void insert(std::uint64_t key, double x, double y);
+    void insert(std::uint32_t key, double x, double y);
 
     // Call fn(key) for every entry with (x - cx)^2 + (y - cy)^2 <= radius^2
     // (inclusive). Visiting order is unspecified; fn must not modify the index.
@@ -38,7 +38,7 @@ class SpatialIndex {
 
   private:
     struct Entry {
-        std::uint64_t key;
+        std::uint32_t key;
         double x;
         double y;
     };

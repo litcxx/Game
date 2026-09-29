@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <vector>
 
-#include "state/units.hpp"
+#include "state/map_scale.hpp"
 
 namespace lit::game {
 // Territory grid: every cell's owner plus in-progress capture state. Changed

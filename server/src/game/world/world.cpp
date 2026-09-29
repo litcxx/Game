@@ -17,6 +17,7 @@
 #include "systems/input_system.hpp"
 #include "systems/join_system.hpp"
 #include "systems/movement_system.hpp"
+#include "systems/presence_system.hpp"
 #include "systems/projectile_system.hpp"
 #include "systems/spawn_system.hpp"
 #include "systems/vision_system.hpp"
@@ -82,7 +83,7 @@ void World::tick(double dt) {
 
     consume_inputs(state_);
     integrate_movement(state_, config_, dt);
-    index_alive_players();                           // positions are final for this tick
+    index_alive_units();                             // positions are final for this tick
     activate_blocks(state_, config_);                // before attacks: same-tick blocks count
     resolve_attacks(state_, config_, alive_index_);  // melee hits + projectile launches
     update_projectiles(state_, config_, alive_index_, dt);
@@ -92,10 +93,10 @@ void World::tick(double dt) {
     close_released_sessions();
 }
 
-void World::index_alive_players() {
+void World::index_alive_units() {
     alive_index_.clear();
-    for (const auto& [session_id, p] : state_.players) {
-        if (p.life == ::game::v1::LIFE_STATE_ALIVE) alive_index_.insert(session_id, p.x, p.y);
+    for (const auto& [id, u] : state_.units) {
+        if (u.life == ::game::v1::LIFE_STATE_ALIVE) alive_index_.insert(id, u.x, u.y);
     }
 }
 
@@ -124,7 +125,7 @@ void World::process_event(const ClientEvent& ev) {
                    "over the message budget");
         return;
     }
-    const bool joined = state_.players.contains(sid);
+    const bool joined = state_.sessions.contains(sid);
     if (msg.payload_case() == ::game::v1::ClientMessage::kHello) {
         if (joined) {
             send_error(sid, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, msg.request_id(),
@@ -169,49 +170,51 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello,
                        : "the name must be 1-16 printable characters");
         return;
     }
-    Player player;
-    player.id = state_.next_player_id++;
-    player.name = *std::move(name);
-    state_.players[session_id] = player;
+    const std::uint32_t character_id = create_character(state_, *std::move(name)).id;
+    attach_session(state_, session_id, character_id);
+    const Character& character = state_.characters.at(character_id);
 
     // Greet the joiner: Welcome, then the map (as far as it sees: nothing yet —
     // snapshots reveal the rest), then the full roster.
-    send(session_id, make_welcome(state_, config_, player));
-    send(session_id, make_map_state(state_, player.sync.vision));
+    send(session_id, make_welcome(state_, config_, character));
+    send(session_id, make_map_state(state_, state_.sessions.at(session_id).sync.vision));
     send(session_id, make_full_roster(state_));
 
     // Tell everyone else that a new player joined.
-    broadcast_except(session_id, make_roster_upsert(player));
+    broadcast_except(session_id, make_roster_upsert(state_, character));
 
-    spdlog::info("World::on_hello session={} name='{}' -> player_id={}", session_id, player.name,
-                 player.id);
+    spdlog::info("World::on_hello session={} name='{}' -> player_id={}", session_id, character.name,
+                 character.id);
 }
 
 void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn,
                      std::uint32_t request_id) {
-    auto it = state_.players.find(session_id);
-    if (it == state_.players.end()) {
+    auto it = state_.sessions.find(session_id);
+    if (it == state_.sessions.end()) {
         return;  // never sent Hello
     }
-    Player& player = it->second;
-    if (auto spawned = try_spawn(state_, config_, player, spawn.cell(), spawn.faction_id());
+    ClientSession& session = it->second;
+    const std::uint32_t character_id = session.character_id;
+    if (auto spawned = try_spawn(state_, config_, character_id, spawn.cell(), spawn.faction_id());
         !spawned) {
         send_error(session_id, spawned.error(), request_id, "spawn refused");
         return;
     }
+    // Drop stale pre-spawn commands (last_enqueued_seq stays monotonic).
+    session.input.commands.clear();
 
     // Faction (colour) chosen -> tell everyone else.
-    broadcast_except(session_id, make_roster_upsert(player));
+    broadcast_except(session_id, make_roster_upsert(state_, state_.characters.at(character_id)));
     spdlog::info("World::on_spawn session={} player_id={} cell={} faction={}", session_id,
-                 player.id, spawn.cell(), player.faction_id);
+                 character_id, spawn.cell(), spawn.faction_id());
 }
 
 void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
-    auto it = state_.players.find(session_id);
-    if (it == state_.players.end()) {
+    auto it = state_.sessions.find(session_id);
+    if (it == state_.sessions.end()) {
         return;
     }
-    enqueue_frames(it->second, input, config_.limits);  // applied one per tick by consume_inputs
+    enqueue_frames(it->second.input, input, config_.limits);  // one per tick: consume_inputs
 }
 
 void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
@@ -219,30 +222,29 @@ void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
 }
 
 void World::on_disconnect(std::uint64_t session_id) {
-    auto it = state_.players.find(session_id);
-    if (it == state_.players.end()) {
+    const auto character_id = detach_session(state_, session_id);
+    if (!character_id) {
         return;  // connected but never sent Hello, or already gone
     }
-
-    const std::uint32_t player_id = it->second.id;
-    state_.players.erase(it);
+    // No reconnect yet: the character leaves the world with the connection.
+    remove_character(state_, *character_id);
 
     // Tell the remaining players the player left (broadcast now excludes it).
-    broadcast(make_roster_removed(player_id));
+    broadcast(make_roster_removed(*character_id));
 
-    spdlog::info("World::on_disconnect session={} player_id={}", session_id, player_id);
+    spdlog::info("World::on_disconnect session={} player_id={}", session_id, *character_id);
 }
 
 void World::send_snapshots() {
     if (snapshot_interval_ == 0 || state_.tick % snapshot_interval_ != 0) {
         return;
     }
-    // Every connected player gets a Snapshot — even before spawning — filtered by
-    // fog of war: what its faction sees, computed once per faction.
+    // Every session gets a Snapshot — even before spawning — filtered by fog of
+    // war: what its character's faction sees, computed once per faction.
     std::unordered_map<std::uint32_t, Vision> sight;  // faction id -> its vision
-    for (auto& [session_id, recipient] : state_.players) {
+    for (auto& [session_id, recipient] : state_.sessions) {
         if (closing_.contains(session_id)) continue;
-        const std::uint32_t faction = recipient.faction_id;
+        const std::uint32_t faction = faction_of(state_, recipient.character_id);
         if (!sight.contains(faction)) {
             sight.emplace(faction, compute_vision(state_, config_, faction));
         }
@@ -276,11 +278,11 @@ bool World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg)
 }
 
 void World::on_dropped(std::uint64_t session_id) {
-    auto it = state_.players.find(session_id);
-    if (it == state_.players.end()) return;  // not in the world (yet or anymore)
+    auto it = state_.sessions.find(session_id);
+    if (it == state_.sessions.end()) return;  // not in the world (yet or anymore)
     if (note_drop(it->second.sync, state_.tick, resync_window_ticks_) == DropVerdict::Close) {
         spdlog::warn("World: session={} player_id={} keeps falling behind, closing", session_id,
-                     it->second.id);
+                     it->second.character_id);
         closing_.try_emplace(session_id, ::game::v1::ERROR_CODE_UNSPECIFIED);  // nothing to tell
     }
 }
@@ -298,7 +300,7 @@ void World::send_error(std::uint64_t session_id, ::game::v1::ErrorCode code,
 void World::time_out_connections() {
     for (const auto& [session_id, connection] : connections_) {
         if (closing_.contains(session_id) || released_.contains(session_id)) continue;
-        const bool joined = state_.players.contains(session_id);
+        const bool joined = state_.sessions.contains(session_id);
         if (const auto code = overdue(connection, joined, state_.tick, limits_)) {
             send_error(session_id, *code, 0,
                        *code == ::game::v1::ERROR_CODE_HANDSHAKE_TIMEOUT
@@ -320,13 +322,13 @@ void World::close_released_sessions() {
 }
 
 void World::broadcast(const ::game::v1::ServerMessage& msg) {
-    for (const auto& [session_id, player] : state_.players) {
+    for (const auto& [session_id, session] : state_.sessions) {
         send(session_id, msg);
     }
 }
 
 void World::broadcast_except(std::uint64_t session_id, const ::game::v1::ServerMessage& msg) {
-    for (const auto& [sid, player] : state_.players) {
+    for (const auto& [sid, session] : state_.sessions) {
         if (sid != session_id) {
             send(sid, msg);
         }

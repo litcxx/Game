@@ -44,8 +44,8 @@ class World {
     void on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping);
     void on_disconnect(std::uint64_t session_id);
 
-    // Rebuild the spatial index of alive players (after movement, before combat).
-    void index_alive_players();
+    // Rebuild the spatial index of alive units (after movement, before combat).
+    void index_alive_units();
 
     // Outbound helpers (serialize once, deliver via the gateway). A refused frame
     // marks its recipient for a resync — or for closing (see note_drop).
@@ -80,6 +80,6 @@ class World {
     std::unordered_map<std::uint64_t, ::game::v1::ErrorCode> closing_;
     std::unordered_set<std::uint64_t> released_;
     WorldState state_;          // all simulation state (plain data)
-    SpatialIndex alive_index_;  // alive players by position, rebuilt each tick
+    SpatialIndex alive_index_;  // alive units by position, rebuilt each tick
 };
 }  // namespace lit::game

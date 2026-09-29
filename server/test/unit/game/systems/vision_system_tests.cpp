@@ -26,16 +26,16 @@ struct Field {
         return s;
     }();
 
-    // A player (session id == player id) of `faction` at (x, y).
-    lit::game::Player& add_player(std::uint32_t id, std::uint32_t faction, double x, double y,
-                                  ::game::v1::LifeState life = ::game::v1::LIFE_STATE_ALIVE) {
-        lit::game::Player p;
-        p.id = id;
-        p.faction_id = faction;
-        p.life = life;
-        p.x = x;
-        p.y = y;
-        return state.players[id] = p;
+    // A unit of `faction` at (x, y).
+    lit::game::Unit& add_unit(std::uint32_t id, std::uint32_t faction, double x, double y,
+                              ::game::v1::LifeState life = ::game::v1::LIFE_STATE_ALIVE) {
+        lit::game::Unit u;
+        u.id = id;
+        u.faction_id = faction;
+        u.life = life;
+        u.x = x;
+        u.y = y;
+        return state.units[id] = u;
     }
 
     void own(std::uint32_t col, std::uint32_t row, std::uint8_t faction) {
@@ -61,7 +61,7 @@ int count_visible(const lit::game::Vision& v) {
 
 TEST(Vision, AlivePlayerSeesCellsWithinTheRadius) {
     Field f;
-    f.add_player(1, 1, 550, 550);  // centre of cell (5,5)
+    f.add_unit(1, 1, 550, 550);  // centre of cell (5,5)
 
     const auto v = f.of(1);
 
@@ -75,7 +75,7 @@ TEST(Vision, AlivePlayerSeesCellsWithinTheRadius) {
 
 TEST(Vision, TheRadiusIsInclusive) {
     Field f;
-    f.add_player(1, 1, 550, 550);
+    f.add_unit(1, 1, 550, 550);
 
     const auto v = f.of(1);
 
@@ -85,7 +85,7 @@ TEST(Vision, TheRadiusIsInclusive) {
 
 TEST(Vision, IsMeasuredFromThePlayersExactPosition) {
     Field f;
-    f.add_player(1, 1, 599, 550);  // near the right edge of cell (5,5)
+    f.add_unit(1, 1, 599, 550);  // near the right edge of cell (5,5)
 
     const auto v = f.of(1);
 
@@ -95,7 +95,7 @@ TEST(Vision, IsMeasuredFromThePlayersExactPosition) {
 
 TEST(Vision, StopsAtTheMapEdge) {
     Field f;
-    f.add_player(1, 1, 50, 50);  // the corner cell
+    f.add_unit(1, 1, 50, 50);  // the corner cell
 
     const auto v = f.of(1);
 
@@ -107,8 +107,8 @@ TEST(Vision, StopsAtTheMapEdge) {
 
 TEST(Vision, AlliesShareVision) {
     Field f;
-    f.add_player(1, 1, 150, 150);
-    f.add_player(2, 1, 850, 850);  // same faction, far away
+    f.add_unit(1, 1, 150, 150);
+    f.add_unit(2, 1, 850, 850);  // same faction, far away
 
     const auto v = f.of(1);
 
@@ -119,7 +119,7 @@ TEST(Vision, AlliesShareVision) {
 
 TEST(Vision, EnemiesGiveNoVision) {
     Field f;
-    f.add_player(1, 2, 550, 550);
+    f.add_unit(1, 2, 550, 550);
 
     EXPECT_EQ(count_visible(f.of(1)), 0);
     EXPECT_EQ(count_visible(f.of(2)), 13);
@@ -127,14 +127,14 @@ TEST(Vision, EnemiesGiveNoVision) {
 
 TEST(Vision, DeadPlayersGiveNoVision) {
     Field f;
-    f.add_player(1, 1, 550, 550, ::game::v1::LIFE_STATE_DEAD);
+    f.add_unit(1, 1, 550, 550, ::game::v1::LIFE_STATE_DEAD);
 
     EXPECT_EQ(count_visible(f.of(1)), 0);
 }
 
 TEST(Vision, ABodyKeepsItsSightUntilItsDeathIsReported) {
     Field f;
-    f.add_player(1, 1, 550, 550, ::game::v1::LIFE_STATE_DEAD);
+    f.add_unit(1, 1, 550, 550, ::game::v1::LIFE_STATE_DEAD);
     f.state.events.emplace_back().mutable_death()->set_victim_id(1);  // not yet in a snapshot
 
     EXPECT_EQ(count_visible(f.of(1)), 13);  // the snapshot reporting the death still sees
@@ -154,7 +154,7 @@ TEST(Vision, OwnedCellsGiveVision) {
 
 TEST(Vision, NoFactionSeesNothing) {
     Field f;  // every cell is neutral (owner 0): still not a source for "no faction"
-    f.add_player(1, 1, 550, 550);
+    f.add_unit(1, 1, 550, 550);
 
     EXPECT_EQ(count_visible(f.of(0)), 0);
 }
