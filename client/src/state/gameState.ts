@@ -65,6 +65,7 @@ export class GameState {
   blockCooldownTicks = 0;
   serverTick = 0;
   serverTickAtMs = 0; // performance.now() when serverTick arrived
+  rttMs: number | undefined; // the last Ping's round trip; unknown before its Pong
   readonly players = new Map<number, Body>(); // everyone in the last snapshot
   readonly territory = new Territory();
   readonly roster = new Roster();

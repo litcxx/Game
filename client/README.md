@@ -56,9 +56,15 @@ is redrawn from predicted (self) and interpolated (remote) positions.
 
 - **`src/net/client.ts`** — `GameClient`: opens the WebSocket, sends `Hello`, and
   encodes/decodes messages. `sendInputFrames` ships a batch of per-tick input
-  frames (each with its `seq`); `sendSpawn` requests spawn/respawn. A keepalive
-  `Ping` goes out every 2 s while the socket is open — a hidden tab sends no
-  input, and the server closes a connection silent for 20 s (`IDLE_TIMEOUT`).
+  frames (each with its `seq`); `sendSpawn` requests spawn/respawn. A `Ping`
+  goes out right after `Hello` and then every 2 s while the socket is open: its
+  `Pong` gives the round trip (`roundTripMs`, shown as the HUD's ping), and it
+  keeps the connection alive — a hidden tab sends no input, and the server
+  closes a connection silent for 20 s (`IDLE_TIMEOUT`).
+- **`src/net/serverUrl.ts`** — where to connect: `VITE_SERVER_URL` when the
+  build sets it, else the page's own origin at `/ws` (`wss` for an https page),
+  where the reverse proxy in front of the server takes it (see
+  [Server address](#server-address)).
 - **`src/net/prediction.ts`** — `integrate()` (the server's movement maths,
   mirrored exactly) + `Predictor`: applies each fixed-step input locally, and on
   each snapshot **reconciles** — drop acked inputs (`SelfState.last_input_seq`),
@@ -110,8 +116,9 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   name) above the hint line while not alive; click routing via the pure layout
   in `src/render/cardRow.ts`.
 - **`src/render/hud.ts`** — `Hud`: faction badge + territory stats (top-left),
-  online + FPS (top-right), an HP gauge (bottom-left), a current-cell gauge
-  (bottom-right), and a centered hint line. **`src/render/status.ts`** fills the
+  "В СЕТИ n · ПИНГ m" (players online, round trip in ms — as in the concept;
+  no ping until the first `Pong`) + FPS (top-right), an HP gauge (bottom-left),
+  a current-cell gauge (bottom-right), and a centered hint line. **`src/render/status.ts`** fills the
   HUD, the bar and the picker from `GameState`: after Welcome, after each
   snapshot, and at once on a fatal error; **`src/hint.ts`** is the hint line's
   usual text (respawn countdown, the M key).
@@ -149,7 +156,7 @@ projectile, deals damage — so you can block, switch and attack at once.
 ## Prerequisites
 
 - **Node ≥ 22** (Vite 8; the smoke scripts use Node's global `WebSocket`)
-- A running game server (default `ws://localhost:27998/`, set in `src/main.ts`)
+- A running game server (see [Server address](#server-address))
 
 ## Getting started
 
@@ -165,6 +172,22 @@ Start the server first (see [`../server`](../server)). Other scripts:
 npm run typecheck    # tsc --noEmit
 npm run build        # generate + typecheck + vite build (-> dist/)
 ```
+
+## Server address
+
+The address is fixed at build time from `VITE_SERVER_URL`:
+
+- **`npm run dev`** — `.env.development` sets `ws://localhost:27998/`: the local
+  server, directly.
+- **`npm run build`** — unset: the built page connects to its own origin at
+  `/ws` (`wss://<host>/ws` when served over https, `ws://` over http). Serve
+  `dist/` and the game server behind one reverse proxy that forwards `/ws` to
+  it (e.g. Caddy: `reverse_proxy /ws 127.0.0.1:27998`); the server takes a
+  WebSocket on any path.
+- **Anywhere else** — `VITE_SERVER_URL=wss://game.example/ws npm run build`.
+
+The smoke scripts take the address from `SERVER_URL` (default
+`ws://127.0.0.1:27998/`).
 
 ## Headless checks & smoke tests
 
@@ -196,6 +219,8 @@ npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memor
 npx tsx scripts/errors_check.ts         # error texts, close codes, fatal / refusal hints
 npx tsx scripts/router_check.ts         # each ServerMessage -> GameState (territory, roster, fog, you, effects)
 npx tsx scripts/ui_check.ts             # overlay: modal, toasts, clicks through to the canvas (happy-dom)
+npx tsx scripts/status_check.ts         # what the HUD, bar and picker get from GameState (network line, hp, fatal)
+npx tsx scripts/server_url_check.ts     # the server address: VITE_SERVER_URL, else the page's origin at /ws
 ```
 
 **End-to-end (start the server first):**

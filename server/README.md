@@ -39,7 +39,8 @@ lives on the server; the browser client predicts, interpolates, and renders.
 
 - **Transport / framing.** WebSocket binary frames; **one frame = one Protobuf
   message** — no hand-rolled length/opcode framing (the WebSocket layer already
-  delimits messages).
+  delimits messages). The upgrade is taken on any path, so a reverse proxy can
+  forward e.g. `/ws` (where a production client connects) as it is.
 - **Session** (`src/net/session`) is pure transport: read a whole message, parse
   a `ClientMessage`, and forward it tagged with its session id (`ClientEvent`).
   Outgoing frames go through a per-session concurrent channel (64 frames)

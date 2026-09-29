@@ -36,7 +36,7 @@ export function showStatus(state: GameState, views: StatusViews, mapMode: boolea
   const playing = !state.notices.failed;
   bar.setVisible(playing && state.alive);
   picker.setVisible(playing && !state.alive);
-  hud.setOnline(state.roster.online);
+  hud.setNetwork(state.roster.online, state.rttMs);
   const stats = state.territory.stats(shownFaction);
   hud.setTerritory(stats.cells, stats.percent);
   hud.setHp(state.hp, state.maxHp, state.alive);

@@ -6,6 +6,7 @@ import { installMouse } from "./input/mouse.js";
 import { GameClient } from "./net/client.js";
 import type { PendingInput } from "./net/prediction.js";
 import { routeClose, routeMessage } from "./net/router.js";
+import { serverUrl } from "./net/serverUrl.js";
 import { AbilityBar } from "./render/abilityBar.js";
 import { FactionPicker } from "./render/factionPicker.js";
 import { Hud } from "./render/hud.js";
@@ -36,7 +37,7 @@ async function main(): Promise<void> {
   const scene = new Scene(app, state);
   const views: StatusViews = { hud: new Hud(app), bar: new AbilityBar(app), picker: new FactionPicker(app) };
   const client = new GameClient(
-    "ws://localhost:27998/",
+    serverUrl(import.meta.env.VITE_SERVER_URL, window.location),
     (msg) => {
       routeMessage(state, msg, performance.now());
       if (msg.payload.case === "welcome") showWelcome(state, views);

@@ -10,7 +10,7 @@ interface Gauge {
 
 const mono = (size: number, fill: string) => ({ fill, fontFamily: "monospace", fontSize: size });
 
-// Corner HUD: faction badge + territory (top-left), online + FPS (top-right),
+// Corner HUD: faction badge + territory (top-left), online · ping + FPS (top-right),
 // HP gauge (bottom-left), capture gauge (bottom-right), centered hint line.
 export class Hud {
   private readonly factionBadge = new Graphics();
@@ -63,8 +63,10 @@ export class Hud {
     this.territory.text = `${cells} клеток · ${percent}% карты`;
   }
 
-  setOnline(n: number): void {
-    this.online.text = `В СЕТИ ${n}`;
+  // "В СЕТИ n · ПИНГ m" (the round trip in ms, as in the concept); just the
+  // online count until the first Pong.
+  setNetwork(online: number, rttMs: number | undefined): void {
+    this.online.text = rttMs === undefined ? `В СЕТИ ${online}` : `В СЕТИ ${online} · ПИНГ ${rttMs}`;
   }
 
   setFps(n: number): void {

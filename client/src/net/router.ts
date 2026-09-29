@@ -4,6 +4,7 @@ import { closeError, errorText } from "../errors.js";
 import {
   LifeState,
   type MapState,
+  type Pong,
   type Roster,
   type ServerError,
   type ServerMessage,
@@ -11,6 +12,7 @@ import {
   type Welcome,
 } from "../gen/game/v1/protocol_pb.js";
 import { FIXED_DT, INTERP_DELAY_MS, type GameState } from "../state/gameState.js";
+import { roundTripMs } from "./client.js";
 import type { RemoteState } from "./interpolation.js";
 import { Predictor } from "./prediction.js";
 
@@ -35,6 +37,9 @@ export function routeMessage(state: GameState, msg: ServerMessage, nowMs: number
       break;
     case "error":
       onError(state, msg.payload.value, nowMs);
+      break;
+    case "pong":
+      onPong(state, msg.payload.value, nowMs);
       break;
     default:
       break;
@@ -131,6 +136,11 @@ function onSnapshot(state: GameState, s: Snapshot, nowMs: number): void {
   }
   state.shots.push(nowMs, shots);
   for (const [id, m] of state.shotMeta) if (nowMs - m.seenMs > SHOT_MEMORY_MS) state.shotMeta.delete(id);
+}
+
+// The round trip of the Ping it answers (shown in the HUD).
+function onPong(state: GameState, p: Pong, nowMs: number): void {
+  state.rttMs = roundTripMs(p.clientTimeMs, nowMs);
 }
 
 function onError(state: GameState, e: ServerError, nowMs: number): void {
