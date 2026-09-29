@@ -12,6 +12,13 @@ struct NetConfig {
     std::uint8_t io_threads;
 };
 
+// Logging (server-only): the spdlog level and how often the World logs its
+// `metrics` line (GAME-012).
+struct LogConfig {
+    std::string level;                 // trace | debug | info | warn | error | critical | off
+    std::uint32_t metrics_interval_s;  // seconds between `metrics` lines (60); logged at info
+};
+
 // A playable faction (colour). Server-defined; sent to clients in Welcome.
 struct FactionConfig {
     std::uint32_t id;  // 1..255; 0 = neutral / not chosen
@@ -79,6 +86,10 @@ struct GameConfig {
 // a block without a duration, a zero vision radius or limit).
 GameConfig parse_game_config(const std::string& config_json);
 
+// Parses the "log" section of a config document. Throws on a missing value, an
+// unknown level or a zero metrics interval.
+LogConfig parse_log_config(const std::string& config_json);
+
 class Config {
   public:
     Config(const Config&) = delete;
@@ -94,12 +105,16 @@ class Config {
 
     const GameConfig& game_config() const noexcept { return game_config_; }
 
+    const LogConfig& log_config() const noexcept { return log_config_; }
+
   private:
     explicit Config(const std::string& filename);
     void init_net_config(const std::string& filename);
     void init_game_config(const std::string& filename);
+    void init_log_config(const std::string& filename);
 
     NetConfig net_config_{};
     GameConfig game_config_{};
+    LogConfig log_config_{};
 };
 }  // namespace lit

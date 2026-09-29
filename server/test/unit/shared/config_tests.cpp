@@ -159,3 +159,46 @@ TEST(GameConfigParse, RejectsBlockWithoutDuration) {
                            "duration_ticks": 0 }])")),
                  std::exception);
 }
+
+namespace {
+
+// A config document whose "log" section is `log` (omitted when empty).
+std::string with_log(const std::string& log) {
+    return R"({ "server": { "ip": "0.0.0.0", "port": 27998, "io_threads": 1 })" +
+           (log.empty() ? std::string{} : R"(, "log": )" + log) + " }";
+}
+
+}  // namespace
+
+TEST(LogConfigParse, ReadsTheLevelAndTheMetricsInterval) {
+    const auto c =
+        lit::parse_log_config(with_log(R"({ "level": "warn", "metrics_interval_s": 60 })"));
+
+    EXPECT_EQ(c.level, "warn");
+    EXPECT_EQ(c.metrics_interval_s, 60u);
+}
+
+TEST(LogConfigParse, TakesEveryLevelName) {
+    for (const std::string level : {"trace", "debug", "info", "warn", "error", "critical", "off"}) {
+        EXPECT_EQ(lit::parse_log_config(
+                      with_log(R"({ "level": ")" + level + R"(", "metrics_interval_s": 1 })"))
+                      .level,
+                  level);
+    }
+}
+
+TEST(LogConfigParse, RejectsAnUnknownLevel) {
+    EXPECT_THROW(
+        lit::parse_log_config(with_log(R"({ "level": "loud", "metrics_interval_s": 60 })")),
+        std::exception);
+}
+
+TEST(LogConfigParse, RejectsAZeroMetricsInterval) {
+    EXPECT_THROW(lit::parse_log_config(with_log(R"({ "level": "info", "metrics_interval_s": 0 })")),
+                 std::exception);
+}
+
+TEST(LogConfigParse, RequiresTheSection) {
+    EXPECT_THROW(lit::parse_log_config(with_log("")), std::exception);
+    EXPECT_THROW(lit::parse_log_config(with_log(R"({ "level": "info" })")), std::exception);
+}

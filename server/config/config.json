@@ -4,6 +4,10 @@
     "port": 27998,
     "io_threads": 4
   },
+  "log": {
+    "level": "info",
+    "metrics_interval_s": 60
+  },
   "game": {
     "tick_rate": 60,
     "snapshot_rate": 20,

@@ -1,12 +1,18 @@
 #include <gtest/gtest.h>
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <memory>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -2101,4 +2107,87 @@ TEST(WorldLimits, InputBeyondTheLimitsIsDropped) {
     ASSERT_TRUE(snap.has_value());
     EXPECT_EQ(snap->you().last_input_seq(), 3u);  // frames 4 and 5 were dropped
     EXPECT_TRUE(errors_to(gw, 1).empty());        // not an error
+}
+
+// --- Metrics: one `metrics {json}` log line per interval ----------------------
+// A 1 s interval at 60 ticks/s: the line is logged at the end of tick 60.
+
+namespace {
+
+// Captures what the default logger writes while it lives (the message only).
+class LogCapture {
+  public:
+    LogCapture() : sink_{std::make_shared<spdlog::sinks::ostream_sink_mt>(out_)} {
+        sink_->set_pattern("%v");
+        spdlog::default_logger()->sinks().push_back(sink_);
+    }
+    ~LogCapture() { std::erase(spdlog::default_logger()->sinks(), sink_); }
+    LogCapture(const LogCapture&) = delete;
+    LogCapture& operator=(const LogCapture&) = delete;
+
+    // The JSON of every `metrics` line so far.
+    std::vector<nlohmann::json> metrics() const {
+        std::vector<nlohmann::json> out;
+        std::istringstream lines{out_.str()};
+        for (std::string line; std::getline(lines, line);)
+            if (line.starts_with("metrics ")) out.push_back(nlohmann::json::parse(line.substr(8)));
+        return out;
+    }
+
+  private:
+    std::ostringstream out_;
+    std::shared_ptr<spdlog::sinks::ostream_sink_mt> sink_;
+};
+
+}  // namespace
+
+TEST(WorldMetrics, OneLineEveryInterval) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    const LogCapture log;
+    lit::game::World world(incoming, gw, test_config(), std::chrono::seconds{1});
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_v(2, /*version=*/2, "future"));
+    run_ticks(world, 59, kTick);
+    EXPECT_TRUE(log.metrics().empty());
+
+    world.tick(kTick);  // tick 60
+    const auto lines = log.metrics();
+    ASSERT_EQ(lines.size(), 1u);
+    const auto& m = lines[0];
+    EXPECT_EQ(m.at("period_s"), 1);
+    EXPECT_EQ(m.at("ccu"), 1);
+    EXPECT_EQ(m.at("ticks"), 60);
+    EXPECT_EQ(m.at("snapshot_ticks"), 20);
+    EXPECT_EQ(m.at("snapshots"), 20);  // to ann only: "future" never joined
+    EXPECT_GT(m.at("snapshot_bytes_avg"), 0);
+    EXPECT_GT(m.at("tick_us").at("max"), 0);
+    EXPECT_EQ(m.at("joins"), 1);
+    EXPECT_EQ(m.at("errors").at("PROTOCOL_VERSION"), 1);
+}
+
+TEST(WorldMetrics, CountsDropsResyncsAndLeaves) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    const LogCapture log;
+    lit::game::World world(incoming, gw, test_config(), std::chrono::seconds{1});
+    gw.accept = drop_snapshots(2, 3, 3);  // bob's first snapshot: resynced on tick 6
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    run_ticks(world, 30, kTick);
+    incoming.push(disconnect_event(2));
+    run_ticks(world, 30, kTick);
+
+    const auto lines = log.metrics();
+    ASSERT_EQ(lines.size(), 1u);
+    const auto& m = lines[0];
+    EXPECT_EQ(m.at("ccu"), 1);
+    EXPECT_EQ(m.at("drops"), 1);
+    EXPECT_EQ(m.at("resyncs"), 1);
+    EXPECT_EQ(m.at("closed_behind"), 0);
+    EXPECT_EQ(m.at("joins"), 2);
+    EXPECT_EQ(m.at("leaves"), 1);
+    EXPECT_TRUE(m.at("errors").empty());
 }

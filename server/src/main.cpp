@@ -1,6 +1,7 @@
 #include <spdlog/spdlog.h>
 
 #include <boost/asio.hpp>
+#include <chrono>
 #include <cstdlib>
 #include <stop_token>
 #include <thread>
@@ -22,9 +23,9 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    spdlog::set_level(spdlog::level::debug);
-
+    // The config logs itself at the default level (info); its own level applies after.
     const lit::Config& config = lit::Config::get_instance(argv[1]);
+    spdlog::set_level(spdlog::level::from_str(config.log_config().level));
     const auto io_threads = std::max<int>(1, config.net_config().io_threads);
 
     // BOOST
@@ -39,7 +40,8 @@ int main(int argc, char* argv[]) {
     lit::net::Server server(io, config.net_config(), incoming_events);
 
     // --- GAME LOOP ---
-    lit::game::World world(incoming_events, server, config.game_config());
+    lit::game::World world(incoming_events, server, config.game_config(),
+                           std::chrono::seconds{config.log_config().metrics_interval_s});
     std::jthread game_thread([&world](std::stop_token stop) { world.run(stop); });
 
     // Graceful shutdown: stop accepting and close sessions so their coroutines

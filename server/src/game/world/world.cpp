@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdint>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -28,13 +29,18 @@ namespace {
 constexpr double kIndexBucketUnits = 2.0 * kUnitsPerCell;
 }  // namespace
 
-World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config)
+World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config,
+             std::chrono::seconds metrics_interval)
     : incoming_{incoming},
       gateway_{gateway},
       config_{config},
       limits_{TickLimits::from(config.limits, config.tick_rate)},
       alive_index_{static_cast<double>(config.map_width * kUnitsPerCell),
-                   static_cast<double>(config.map_height * kUnitsPerCell), kIndexBucketUnits} {
+                   static_cast<double>(config.map_height * kUnitsPerCell), kIndexBucketUnits},
+      // At least a second (and a tick): the config refuses 0 anyway.
+      metrics_interval_s_{
+          static_cast<std::uint32_t>(std::max<std::int64_t>(metrics_interval.count(), 1))},
+      metrics_interval_ticks_{std::max<std::uint32_t>(metrics_interval_s_ * config.tick_rate, 1)} {
     state_.territory.reset(config_.map_width, config_.map_height);
 
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
@@ -69,6 +75,7 @@ void World::run(std::stop_token stop) {
 }
 
 void World::tick(double dt) {
+    const auto started = std::chrono::steady_clock::now();
     ++state_.tick;
 
     // Move the whole inbound queue into a tick-local one in one shot.
@@ -91,6 +98,16 @@ void World::tick(double dt) {
     time_out_connections();
     send_snapshots();
     close_released_sessions();
+    finish_tick_metrics(started);
+}
+
+void World::finish_tick_metrics(std::chrono::steady_clock::time_point started) {
+    const auto took = std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - started);
+    metrics_.record_tick(static_cast<std::uint32_t>(took.count()), is_snapshot_tick());
+    if (state_.tick % metrics_interval_ticks_ != 0) return;
+    const auto ccu = static_cast<std::uint32_t>(state_.sessions.size());
+    spdlog::info("metrics {}", to_json(metrics_.report(metrics_interval_s_, ccu)));
 }
 
 void World::index_alive_units() {
@@ -182,6 +199,7 @@ void World::on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello,
 
     // Tell everyone else that a new player joined.
     broadcast_except(session_id, make_roster_upsert(state_, character));
+    metrics_.record_join();
 
     spdlog::info("World::on_hello session={} name='{}' -> player_id={}", session_id, character.name,
                  character.id);
@@ -231,12 +249,13 @@ void World::on_disconnect(std::uint64_t session_id) {
 
     // Tell the remaining players the player left (broadcast now excludes it).
     broadcast(make_roster_removed(*character_id));
+    metrics_.record_leave();
 
     spdlog::info("World::on_disconnect session={} player_id={}", session_id, *character_id);
 }
 
 void World::send_snapshots() {
-    if (snapshot_interval_ == 0 || state_.tick % snapshot_interval_ != 0) {
+    if (!is_snapshot_tick()) {
         return;
     }
     // Every session gets a Snapshot — even before spawning — filtered by fog of
@@ -254,8 +273,13 @@ void World::send_snapshots() {
         // it again (or closes it).
         const bool resync = recipient.sync.resync;
         recipient.sync.resync = false;
-        if (resync) send(session_id, make_full_roster(state_));
-        send(session_id, build_snapshot(state_, recipient, vision, resync));
+        if (resync) {
+            metrics_.record_resync();
+            send(session_id, make_full_roster(state_));
+        }
+        const auto snapshot = build_snapshot(state_, recipient, vision, resync);
+        metrics_.record_snapshot(snapshot.ByteSizeLong());
+        send(session_id, snapshot);
         recipient.sync.vision = vision;  // what this client now knows it sees
     }
     // This period's cell changes and events are delivered; start the next one.
@@ -278,11 +302,13 @@ bool World::send(std::uint64_t session_id, const ::game::v1::ServerMessage& msg)
 }
 
 void World::on_dropped(std::uint64_t session_id) {
+    metrics_.record_drop();
     auto it = state_.sessions.find(session_id);
     if (it == state_.sessions.end()) return;  // not in the world (yet or anymore)
     if (note_drop(it->second.sync, state_.tick, resync_window_ticks_) == DropVerdict::Close) {
         spdlog::warn("World: session={} player_id={} keeps falling behind, closing", session_id,
                      it->second.character_id);
+        metrics_.record_closed_behind();
         closing_.try_emplace(session_id, ::game::v1::ERROR_CODE_UNSPECIFIED);  // nothing to tell
     }
 }
@@ -290,6 +316,7 @@ void World::on_dropped(std::uint64_t session_id) {
 void World::send_error(std::uint64_t session_id, ::game::v1::ErrorCode code,
                        std::uint32_t request_id, std::string_view detail) {
     send(session_id, make_error(code, request_id, detail));
+    metrics_.record_error(code);
     const bool fatal = is_fatal(code);
     spdlog::warn("World: session={} {} {} ({}), request_id={}", session_id,
                  fatal ? "closing with" : "refused:", ::game::v1::ErrorCode_Name(code), detail,

@@ -14,6 +14,7 @@ add_library(game
   sync/messages.cpp
   sync/snapshot_builder.cpp
   world/connection.cpp
+  world/metrics.cpp
   world/world.cpp
 )
 

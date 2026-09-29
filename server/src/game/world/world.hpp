@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <stop_token>
 #include <string_view>
@@ -15,13 +16,16 @@
 #include "utils/ts_queue.hpp"
 #include "world/connection.hpp"
 #include "world/fixed_step.hpp"
+#include "world/metrics.hpp"
 
 namespace lit::game {
 // Authoritative game loop. Drains net→game events each tick, updates state, and
 // replies through the gateway. Runs on a single (game) thread — no locking.
+// Every `metrics_interval` it logs what it did as one `metrics {json}` line.
 class World {
   public:
-    World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config);
+    World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config,
+          std::chrono::seconds metrics_interval = std::chrono::seconds{60});
     World(const World&) = delete;
     World& operator=(const World&) = delete;
     ~World() = default;
@@ -33,7 +37,10 @@ class World {
 
   private:
     void process_event(const ClientEvent& ev);
+    bool is_snapshot_tick() const { return state_.tick % snapshot_interval_ == 0; }
     void send_snapshots();
+    // End of tick: record how long it took; log the period's metrics when it ends.
+    void finish_tick_metrics(std::chrono::steady_clock::time_point started);
 
     // Per-message handlers. `request_id` is echoed in any error they send.
     void on_hello(std::uint64_t session_id, const ::game::v1::Hello& hello,
@@ -81,5 +88,9 @@ class World {
     std::unordered_set<std::uint64_t> released_;
     WorldState state_;          // all simulation state (plain data)
     SpatialIndex alive_index_;  // alive units by position, rebuilt each tick
+
+    Metrics metrics_;
+    std::uint32_t metrics_interval_s_;
+    std::uint32_t metrics_interval_ticks_;
 };
 }  // namespace lit::game

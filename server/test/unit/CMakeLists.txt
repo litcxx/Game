@@ -25,6 +25,7 @@ set(SOURCES
   game/systems/vision_system_tests.cpp
   game/sync/delivery_tests.cpp
   game/world/connection_tests.cpp
+  game/world/metrics_tests.cpp
   game/world/world_tests.cpp
 )
 
@@ -39,6 +40,7 @@ target_link_libraries(unit_tests PRIVATE
   net
   game
   shared
+  third_party
   project_options
   project_warnings
 )
