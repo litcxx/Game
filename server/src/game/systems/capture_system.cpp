@@ -10,13 +10,13 @@ void update_captures(WorldState& state, const GameConfig& config) {
 
     // One faction per cell; mixed factions -> contested (0) -> no progress.
     std::unordered_map<std::uint32_t, std::uint32_t> claim;  // cell index -> faction
-    for (const auto& [session_id, p] : state.players) {
-        if (p.life != ::game::v1::LIFE_STATE_ALIVE || !p.capturing) {
+    for (const auto& [id, u] : state.units) {
+        if (u.life != ::game::v1::LIFE_STATE_ALIVE || !u.intent.capturing) {
             continue;
         }
-        const std::uint32_t index = t.index_at(p.x, p.y);
-        auto [it, inserted] = claim.try_emplace(index, p.faction_id);
-        if (!inserted && it->second != p.faction_id) it->second = 0;  // contested
+        const std::uint32_t index = t.index_at(u.x, u.y);
+        auto [it, inserted] = claim.try_emplace(index, u.faction_id);
+        if (!inserted && it->second != u.faction_id) it->second = 0;  // contested
     }
 
     const double step = config.capture_ticks == 0 ? 100.0 : 100.0 / config.capture_ticks;

@@ -5,10 +5,10 @@
 #include <algorithm>
 
 namespace lit::game {
-bool apply_damage(WorldState& state, const GameConfig& config, Player& target, std::uint32_t amount,
+bool apply_damage(WorldState& state, const GameConfig& config, Unit& target, std::uint32_t amount,
                   std::uint32_t attacker_id) {
     if (target.life != ::game::v1::LIFE_STATE_ALIVE) {
-        return false;  // a body (or an unspawned player) takes no damage
+        return false;  // a body takes no damage
     }
     if (state.tick < target.block_until_tick) {  // blocking: the hit is stopped
         auto& blocked_ev = state.events.emplace_back();
@@ -35,10 +35,7 @@ bool apply_damage(WorldState& state, const GameConfig& config, Player& target, s
     }
     target.life = ::game::v1::LIFE_STATE_DEAD;
     target.respawn_tick = state.tick + config.respawn_delay_ticks;
-    target.move_x = 0;
-    target.move_y = 0;
-    target.capturing = false;
-    target.attack = false;
+    target.intent = Intent{};  // a body does nothing
 
     auto& death_ev = state.events.emplace_back();
     death_ev.set_tick(state.tick);
@@ -46,7 +43,7 @@ bool apply_damage(WorldState& state, const GameConfig& config, Player& target, s
     death->set_victim_id(target.id);
     death->set_killer_id(attacker_id);
 
-    spdlog::info("player_id={} killed player_id={}", attacker_id, target.id);
+    spdlog::info("unit {} killed unit {}", attacker_id, target.id);
     return true;
 }
 }  // namespace lit::game

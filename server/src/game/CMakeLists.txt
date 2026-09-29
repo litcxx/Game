@@ -6,6 +6,7 @@ add_library(game
   systems/input_system.cpp
   systems/join_system.cpp
   systems/movement_system.cpp
+  systems/presence_system.cpp
   systems/projectile_system.cpp
   systems/spawn_system.cpp
   systems/vision_system.cpp

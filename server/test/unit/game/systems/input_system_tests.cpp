@@ -5,7 +5,7 @@
 
 #include "config/config.hpp"
 #include "game/v1/protocol.pb.h"
-#include "state/player.hpp"
+#include "state/input_queue.hpp"
 #include "systems/input_system.hpp"
 
 namespace {
@@ -17,9 +17,9 @@ namespace {
     return input;
 }
 
-std::vector<std::uint32_t> queued(const lit::game::Player& p) {
+std::vector<std::uint32_t> queued(const lit::game::InputQueue& q) {
     std::vector<std::uint32_t> out;
-    for (const auto& cmd : p.inputs) out.push_back(cmd.seq);
+    for (const auto& cmd : q.commands) out.push_back(cmd.seq);
     return out;
 }
 
@@ -34,7 +34,7 @@ const lit::LimitsConfig kLimits;  // 8 frames an Input, 32 queued
 }  // namespace
 
 TEST(InputLimits, TakesAtMostEightFramesFromOneInput) {
-    lit::game::Player p;
+    lit::game::InputQueue p;
 
     lit::game::enqueue_frames(p, frames(1, 10), kLimits);
 
@@ -42,21 +42,21 @@ TEST(InputLimits, TakesAtMostEightFramesFromOneInput) {
 }
 
 TEST(InputLimits, TheQueueStopsAtItsLimit) {
-    lit::game::Player p;
+    lit::game::InputQueue p;
 
     for (std::uint32_t first = 1; first <= 33; first += 8) {
         lit::game::enqueue_frames(p, frames(first, first + 7), kLimits);  // 5 x 8 = 40
     }
 
     EXPECT_EQ(queued(p), seqs(1, 32));  // the newer 8 are dropped
-    p.inputs.pop_front();
+    p.commands.pop_front();
     lit::game::enqueue_frames(p, frames(41, 42), kLimits);
-    EXPECT_EQ(p.inputs.back().seq, 41u);  // room for one again
-    EXPECT_EQ(p.inputs.size(), 32u);
+    EXPECT_EQ(p.commands.back().seq, 41u);  // room for one again
+    EXPECT_EQ(p.commands.size(), 32u);
 }
 
 TEST(InputLimits, OldOrRepeatedFramesAreIgnored) {
-    lit::game::Player p;
+    lit::game::InputQueue p;
     lit::game::enqueue_frames(p, frames(1, 3), kLimits);
 
     lit::game::enqueue_frames(p, frames(2, 5), kLimits);

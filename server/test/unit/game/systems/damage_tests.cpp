@@ -16,18 +16,15 @@ lit::GameConfig damage_config() {
     return c;
 }
 
-// An alive player that is moving, capturing and attacking.
-lit::game::Player alive_player(std::uint32_t id, std::uint32_t hp) {
-    lit::game::Player p;
-    p.id = id;
-    p.faction_id = 1;
-    p.life = ::game::v1::LIFE_STATE_ALIVE;
-    p.hp = hp;
-    p.move_x = 1;
-    p.move_y = -1;
-    p.capturing = true;
-    p.attack = true;
-    return p;
+// An alive unit that is moving, capturing and attacking.
+lit::game::Unit alive_unit(std::uint32_t id, std::uint32_t hp) {
+    lit::game::Unit u;
+    u.id = id;
+    u.faction_id = 1;
+    u.life = ::game::v1::LIFE_STATE_ALIVE;
+    u.hp = hp;
+    u.intent = {.move_x = 1, .move_y = -1, .capturing = true, .attack = true};
+    return u;
 }
 
 }  // namespace
@@ -36,7 +33,7 @@ TEST(Damage, NonLethalHitReducesHpAndRecordsHitEvent) {
     lit::game::WorldState state;
     state.tick = 7;
     auto config = damage_config();
-    auto target = alive_player(2, 100);
+    auto target = alive_unit(2, 100);
 
     const bool killed = lit::game::apply_damage(state, config, target, 30, 1);
 
@@ -55,7 +52,7 @@ TEST(Damage, NonLethalHitReducesHpAndRecordsHitEvent) {
 TEST(Damage, OverkillIsClampedToRemainingHp) {
     lit::game::WorldState state;
     auto config = damage_config();
-    auto target = alive_player(2, 15);
+    auto target = alive_unit(2, 15);
 
     lit::game::apply_damage(state, config, target, 40, 1);
 
@@ -69,7 +66,7 @@ TEST(Damage, LethalHitKillsTargetAndRecordsDeath) {
     lit::game::WorldState state;
     state.tick = 100;
     auto config = damage_config();
-    auto target = alive_player(2, 30);
+    auto target = alive_unit(2, 30);
 
     const bool killed = lit::game::apply_damage(state, config, target, 30, 1);
 
@@ -78,10 +75,10 @@ TEST(Damage, LethalHitKillsTargetAndRecordsDeath) {
     EXPECT_EQ(target.life, ::game::v1::LIFE_STATE_DEAD);
     EXPECT_EQ(target.respawn_tick, 105u);  // tick + respawn_delay_ticks
     // A body keeps no intent.
-    EXPECT_EQ(target.move_x, 0);
-    EXPECT_EQ(target.move_y, 0);
-    EXPECT_FALSE(target.capturing);
-    EXPECT_FALSE(target.attack);
+    EXPECT_EQ(target.intent.move_x, 0);
+    EXPECT_EQ(target.intent.move_y, 0);
+    EXPECT_FALSE(target.intent.capturing);
+    EXPECT_FALSE(target.intent.attack);
 
     ASSERT_EQ(state.events.size(), 2u);  // hit, then death
     EXPECT_TRUE(state.events[0].has_hit());
@@ -95,7 +92,7 @@ TEST(Damage, LethalHitKillsTargetAndRecordsDeath) {
 TEST(Damage, TargetThatIsNotAliveIsIgnored) {
     lit::game::WorldState state;
     auto config = damage_config();
-    auto body = alive_player(2, 0);
+    auto body = alive_unit(2, 0);
     body.life = ::game::v1::LIFE_STATE_DEAD;
     body.respawn_tick = 50;
 
@@ -110,8 +107,8 @@ TEST(Damage, BlockingTargetTakesNoDamage) {
     lit::game::WorldState state;
     state.tick = 20;
     auto config = damage_config();
-    auto target = alive_player(2, 20);  // this hit would kill without the block
-    target.block_until_tick = 21;       // blocking through tick 20
+    auto target = alive_unit(2, 20);  // this hit would kill without the block
+    target.block_until_tick = 21;     // blocking through tick 20
 
     const bool killed = lit::game::apply_damage(state, config, target, 30, 1);
 
@@ -132,7 +129,7 @@ TEST(Damage, BlockEndsAtItsUntilTick) {
     lit::game::WorldState state;
     state.tick = 21;
     auto config = damage_config();
-    auto target = alive_player(2, 100);
+    auto target = alive_unit(2, 100);
     target.block_until_tick = 21;  // covered ticks up to 20
 
     lit::game::apply_damage(state, config, target, 30, 1);

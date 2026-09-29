@@ -14,7 +14,7 @@ bool sees_point(const Vision& vision, const Territory& territory, double x, doub
     return vision.sees(territory.index_at(std::max(0.0, x), std::max(0.0, y)));
 }
 
-// An event reaches a recipient only when every player it names is visible to it:
+// An event reaches a recipient only when every unit it names is visible to it:
 // a hit from the fog tells the victim nothing. Id 0 names nobody.
 bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::uint32_t>& visible) {
     const auto shown = [&visible](std::uint32_t id) { return id == 0 || visible.contains(id); };
@@ -32,7 +32,7 @@ bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::u
 }
 }  // namespace
 
-::game::v1::ServerMessage build_snapshot(const WorldState& state, const Player& recipient,
+::game::v1::ServerMessage build_snapshot(const WorldState& state, const ClientSession& recipient,
                                          const Vision& vision, bool resync) {
     const Territory& territory = state.territory;
     const Vision nothing;
@@ -42,29 +42,32 @@ bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::u
     snap->set_tick(state.tick);
     snap->set_resync(resync);
 
+    const std::uint32_t self = recipient.character_id;
     auto* you = snap->mutable_you();
-    you->set_life(recipient.life);
-    you->set_last_input_seq(recipient.last_input_seq);
-    you->set_respawn_tick(recipient.respawn_tick);
-    you->set_attack_ready_tick(recipient.attack_ready_tick);
-    you->set_attack_cooldown_ticks(recipient.cooldown_ticks);
-    you->set_block_ready_tick(recipient.block_ready_tick);
-    you->set_block_cooldown_ticks(recipient.block_cooldown_ticks);
+    you->set_last_input_seq(recipient.input.last_input_seq);
+    if (const Unit* body = find_unit(state, self)) {
+        you->set_life(body->life);
+        you->set_respawn_tick(body->respawn_tick);
+        you->set_attack_ready_tick(body->attack_ready_tick);
+        you->set_attack_cooldown_ticks(body->cooldown_ticks);
+        you->set_block_ready_tick(body->block_ready_tick);
+        you->set_block_cooldown_ticks(body->block_cooldown_ticks);
+    } else {
+        you->set_life(::game::v1::LIFE_STATE_NOT_SPAWNED);
+    }
 
-    std::unordered_set<std::uint32_t> visible{recipient.id};  // players this recipient sees
-    for (const auto& [session_id, p] : state.players) {
-        if (p.life == ::game::v1::LIFE_STATE_NOT_SPAWNED) {
-            continue;  // no body yet; alive players and dead bodies are both shown
+    // Alive units and dead bodies are both shown.
+    std::unordered_set<std::uint32_t> visible{self};  // units this recipient sees
+    for (const auto& [id, u] : state.units) {
+        if (id != self && !sees_point(vision, territory, u.x, u.y)) {
+            continue;  // in the fog; the recipient's own body is always shown
         }
-        if (p.id != recipient.id && !sees_point(vision, territory, p.x, p.y)) {
-            continue;  // in the fog; the recipient itself is always shown
-        }
-        visible.insert(p.id);
+        visible.insert(id);
         auto* ps = snap->add_players();
-        ps->set_id(p.id);
-        ps->set_x(static_cast<std::uint32_t>(p.x));
-        ps->set_y(static_cast<std::uint32_t>(p.y));
-        ps->set_hp(p.hp);  // 0 for a dead body
+        ps->set_id(id);
+        ps->set_x(static_cast<std::uint32_t>(u.x));
+        ps->set_y(static_cast<std::uint32_t>(u.y));
+        ps->set_hp(u.hp);  // 0 for a dead body
     }
 
     // Cells entering / leaving sight since what the recipient was last told; a

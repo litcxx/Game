@@ -51,31 +51,48 @@ lives on the server; the browser client predicts, interpolates, and renders.
   teardown never frees a session out from under a live coroutine.
 - **World** (`src/game/world`) is the authoritative loop, run at a **fixed
   timestep** (accumulator). It only orchestrates: each tick it drains the inbound
-  queue (dispatch → handlers, input frames → per-player queue), then runs the
-  systems in order — consume one input command per player, integrate movement,
+  queue (dispatch → handlers, input frames → the session's queue), then runs
+  the systems in order — consume one input command per session into its
+  character's body, integrate movement,
   rebuild the spatial index, start blocks, resolve attacks (melee hits,
   projectile launches), fly projectiles (swept hits), advance territory
   capture — and sends a per-recipient snapshot, filtered by fog of war.
   `SelfState.last_input_seq` acks the consumed command so the client can
   reconcile its prediction.
 - **Systems over plain data.** All simulation state is one plain struct,
-  `WorldState` (`src/game/state`: players, territory grid, pending events). The
+  `WorldState` (`src/game/state`: characters, units, sessions, territory grid,
+  projectiles, pending events). The
   per-tick logic lives in free functions over it (`src/game/systems`), so each
   rule is small and testable on its own. Every hp loss goes through a single
   choke point, `apply_damage()` (hit/death events, respawn timer). A uniform-grid
   `SpatialIndex` (`src/game/spatial`) answers "who is within r of here" without
   scanning every pair. Outbound messages are pure builders in `src/game/sync`;
   the snapshot is built per recipient.
+- **Characters, sessions and units.** A *character* is a player's identity: its
+  `id` is the public `player_id` (never reused) and it has a name. A *session*
+  (`ClientSession`, one per connection) drives one character; the input it sends
+  (queue, seqs, ack) and what it has been told (`ClientSync`) belong to the
+  connection, so another session taking the character over starts both afresh.
+  The character's *body* is a `Unit` with the same id — position, hp, life,
+  faction, cooldowns and the current `Intent` — from its spawn on (a dead body
+  stays until it respawns); with no unit the player is `NOT_SPAWNED`. Movement,
+  blocks, attacks, projectiles, `apply_damage()`, capture, vision and the
+  `SpatialIndex` work over units only, so a unit without a character — a
+  monster later, its intent written by an AI — fights through the same code.
+  `World` joins and leaves through `src/game/systems/presence_system`
+  (`create_character`, `attach_session`, `detach_session`, `remove_character`);
+  for now a disconnect still takes the character out of the world (reconnect
+  comes with GAME-008).
 - **Fog of war is a delivery filter.** The simulation ignores sight — attacks
   from the fog land as usual. On each snapshot `compute_vision()` marks, once
   per faction, the cells whose centre is within `vision_radius` (config; 300 = 3 cells)
-  of a source: an alive player of the faction or a cell it owns (a body still
+  of a source: an alive unit of the faction or a cell it owns (a body still
   sees in the snapshot reporting its death, not after). `build_snapshot()` then
-  sends a recipient only players and projectiles on visible cells (itself
-  always), events whose named players are all visible (a hit from the fog tells
+  sends a recipient only units and projectiles on visible cells (its own body
+  always), events whose named units are all visible (a hit from the fog tells
   the victim nothing), and the visible cells that changed plus every newly
   revealed cell with its current state. The difference from what the client was
-  told last time (`Player::sync.vision`) goes out as `revealed` / `hidden`; the
+  told last time (`ClientSession::sync.vision`) goes out as `revealed` / `hidden`; the
   client remembers explored cells. A joiner's `MapState` reveals nothing.
 - **Delivery is checked.** The protocol is delta-based (cells, sight, roster),
   so a lost frame would leave the client out of step for good.
@@ -86,7 +103,7 @@ lives on the server; the browser client predicts, interpolates, and renders.
   it held as visible to explored). Another refusal on a later tick within
   `limits.resync_window_ms` (5 s) means it can't keep up: `World` closes the
   session at the end of the tick and it leaves the world. What was told to a
-  client and how delivery goes is kept per connection in `Player::sync`
+  client and how delivery goes is kept per connection in `ClientSession::sync`
   (`ClientSync`).
 - **Abilities are data.** The config lists them (`melee` / `projectile` with
   cooldown, damage, range, projectile speed and radius); Welcome sends them to
@@ -96,7 +113,7 @@ lives on the server; the browser client predicts, interpolates, and renders.
   against alive enemies (segment vs body + projectile radius, first contact
   wins), so fast shots can't tunnel and a target that moves out of the line
   dodges it. A `block` ability runs on its own timer, independent of the attack
-  cooldown: for `duration_ticks` the player takes no damage — `apply_damage()`
+  cooldown: for `duration_ticks` the unit takes no damage — `apply_damage()`
   records a blocked hit instead (a projectile is spent on it). Blocks start
   before attacks in the tick, so one pressed together with a swing already
   stops it. Every ability use is announced (`AbilityEvent`) so clients can show
@@ -138,12 +155,14 @@ src/main.cpp   entry point: config, io threads, game thread, shutdown on signal
 src/net/       server, session — WebSocket transport + coroutines
 src/game/      the simulation:
   world/         World — tick orchestration, event dispatch, delivery; fixed step
-  state/         WorldState, Player, Territory, Vision, ClientSync — plain data
+  state/         WorldState, Character, Unit (Intent), ClientSession (InputQueue,
+                 ClientSync), Projectile, Territory, Vision — plain data
   systems/       input, movement, combat (abilities: blocks, melee, projectile
                  launch), projectiles (flight, swept hits), damage, capture, spawn
-                 (refusal reasons), join (Hello rules: version, name), vision (fog
-                 of war: what a faction sees)
-  spatial/       SpatialIndex — uniform-grid broad phase over player positions;
+                 (refusal reasons), join (Hello rules: version, name), presence
+                 (characters and the sessions driving them), vision (fog of war:
+                 what a faction sees)
+  spatial/       SpatialIndex — uniform-grid broad phase over unit positions;
                  geometry — swept segment-vs-circle hit test
   sync/          ServerMessage builders + per-recipient snapshot (fog-filtered,
                  resync), delivery policy for dropped frames (note_drop)
@@ -209,7 +228,10 @@ The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`
 `Limits`) test the game end to end through a mock gateway; `Damage`,
 `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`, `Delivery`, `HelloRules`,
 `PlayerName`, `ConnectionLimits`, `InputLimits`, `FixedStep`, `GameConfigParse`
-and `TSQueueTest` test those units directly. All of them run by default.
+and `TSQueueTest` test those units directly; `Presence` covers characters and
+sessions (two sessions in a row driving one character) and `UnitWithoutCharacter`
+a body no player drives fighting through the same systems. All of them run by
+default.
 
 ## Code style
 

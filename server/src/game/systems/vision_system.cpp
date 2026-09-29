@@ -7,7 +7,7 @@
 #include <unordered_set>
 #include <utility>
 
-#include "state/units.hpp"
+#include "state/map_scale.hpp"
 
 namespace lit::game {
 namespace {
@@ -52,11 +52,11 @@ Vision compute_vision(const WorldState& state, const GameConfig& config, std::ui
     for (const auto& ev : state.events) {
         if (ev.has_death()) dying.insert(ev.death().victim_id());
     }
-    for (const auto& [session_id, p] : state.players) {
-        if (p.faction_id != faction_id) continue;
-        const bool alive = p.life == ::game::v1::LIFE_STATE_ALIVE;
-        if (!alive && !dying.contains(p.id)) continue;  // a body, its death already told
-        reveal_around(vision, t, p.x, p.y, radius);
+    for (const auto& [id, u] : state.units) {
+        if (u.faction_id != faction_id) continue;
+        const bool alive = u.life == ::game::v1::LIFE_STATE_ALIVE;
+        if (!alive && !dying.contains(id)) continue;  // a body, its death already told
+        reveal_around(vision, t, u.x, u.y, radius);
     }
     for (std::uint32_t index = 0; index < t.owners.size(); ++index) {
         if (t.owners[index] != faction_id) continue;

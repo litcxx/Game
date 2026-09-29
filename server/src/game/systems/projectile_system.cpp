@@ -6,7 +6,7 @@
 #include <vector>
 
 #include "spatial/geometry.hpp"
-#include "state/units.hpp"
+#include "state/map_scale.hpp"
 #include "systems/damage.hpp"
 
 namespace lit::game {
@@ -26,21 +26,20 @@ void update_projectiles(WorldState& state, const GameConfig& config, const Spati
 
         // The first enemy the step touches: candidates within reach of the segment.
         const double reach = body + p.radius;
-        Player* first = nullptr;
+        Unit* first = nullptr;
         double first_t = 2.0;
         index.for_each_in_radius(
-            (p.x + x1) / 2.0, (p.y + y1) / 2.0, step / 2.0 + reach, [&](std::uint64_t sid) {
-                auto it = state.players.find(sid);
-                if (it == state.players.end()) return;
-                Player& target = it->second;
+            (p.x + x1) / 2.0, (p.y + y1) / 2.0, step / 2.0 + reach, [&](std::uint32_t id) {
+                Unit* target = find_unit(state, id);
+                if (target == nullptr) return;
                 // Killed earlier this tick: a body doesn't stop shots.
-                if (target.life != ::game::v1::LIFE_STATE_ALIVE) return;
-                if (target.id == p.owner_id) return;            // never its shooter
-                if (target.faction_id == p.faction_id) return;  // allies
-                const auto t = segment_circle_hit(p.x, p.y, x1, y1, target.x, target.y, reach);
+                if (target->life != ::game::v1::LIFE_STATE_ALIVE) return;
+                if (target->id == p.owner_id) return;            // never its shooter
+                if (target->faction_id == p.faction_id) return;  // allies
+                const auto t = segment_circle_hit(p.x, p.y, x1, y1, target->x, target->y, reach);
                 if (t && *t < first_t) {
                     first_t = *t;
-                    first = &target;
+                    first = target;
                 }
             });
         if (first != nullptr) {

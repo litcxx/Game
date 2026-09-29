@@ -29,16 +29,16 @@ struct Arena {
     lit::game::WorldState state;
     lit::game::SpatialIndex index{1000.0, 1000.0, 200.0};
 
-    // An alive player (session id == player id) with full hp at (x, y).
-    lit::game::Player& add_player(std::uint32_t id, std::uint32_t faction, double x, double y) {
-        lit::game::Player p;
-        p.id = id;
-        p.faction_id = faction;
-        p.life = kAlive;
-        p.hp = 100;
-        p.x = x;
-        p.y = y;
-        return state.players[id] = p;
+    // An alive unit with full hp at (x, y).
+    lit::game::Unit& add_unit(std::uint32_t id, std::uint32_t faction, double x, double y) {
+        lit::game::Unit u;
+        u.id = id;
+        u.faction_id = faction;
+        u.life = kAlive;
+        u.hp = 100;
+        u.x = x;
+        u.y = y;
+        return state.units[id] = u;
     }
 
     // A projectile of `owner` (of `faction`) at (x, y) with velocity (vx, vy)
@@ -49,11 +49,11 @@ struct Arena {
                                                           faction, 30, 8.0, x, y, vx, vy, range});
     }
 
-    // Index this tick's alive players, as World does after movement.
+    // Index this tick's alive units, as World does after movement.
     void index_alive() {
         index.clear();
-        for (const auto& [sid, p] : state.players) {
-            if (p.life == kAlive) index.insert(sid, p.x, p.y);
+        for (const auto& [id, u] : state.units) {
+            if (u.life == kAlive) index.insert(id, u.x, u.y);
         }
     }
 
@@ -64,7 +64,7 @@ struct Arena {
         fly(dt);
     }
 
-    std::uint32_t hp(std::uint32_t id) { return state.players.at(id).hp; }
+    std::uint32_t hp(std::uint32_t id) { return state.units.at(id).hp; }
 
     int hits() const {
         int n = 0;
@@ -107,9 +107,9 @@ TEST(Projectiles, DespawnWhenLeavingTheMap) {
 
 TEST(Projectiles, HitTheFirstEnemyOnTheirPath) {
     Arena a;
-    a.add_player(1, 1, 100, 500);           // shooter
-    a.add_player(2, 2, 300, 500);           // first on the path
-    a.add_player(3, 2, 380, 500);           // further along
+    a.add_unit(1, 1, 100, 500);             // shooter
+    a.add_unit(2, 2, 300, 500);             // first on the path
+    a.add_unit(3, 2, 380, 500);             // further along
     a.fire(1, 1, 100, 500, 3000, 0, 1000);  // one 300-unit step covers both
 
     a.step(0.1);
@@ -126,8 +126,8 @@ TEST(Projectiles, HitTheFirstEnemyOnTheirPath) {
 
 TEST(Projectiles, PassAlliesAndTheirOwner) {
     Arena a;
-    a.add_player(1, 1, 100, 500);  // shooter, overlapping the launch point
-    a.add_player(4, 1, 250, 500);  // ally on the path
+    a.add_unit(1, 1, 100, 500);  // shooter, overlapping the launch point
+    a.add_unit(4, 1, 250, 500);  // ally on the path
     a.fire(1, 1, 100, 500, 3000, 0, 1000);
 
     a.step(0.1);
@@ -141,7 +141,7 @@ TEST(Projectiles, PassAlliesAndTheirOwner) {
 
 TEST(Projectiles, FastProjectileDoesNotTunnel) {
     Arena a;
-    a.add_player(2, 2, 300, 500);
+    a.add_unit(2, 2, 300, 500);
     a.fire(1, 1, 100, 500, 6000, 0, 1000);  // one step jumps from x=100 to x=700
 
     a.step(0.1);
@@ -151,10 +151,10 @@ TEST(Projectiles, FastProjectileDoesNotTunnel) {
 
 TEST(Projectiles, IgnoreBodiesKilledEarlierThisTick) {
     Arena a;
-    a.add_player(2, 2, 300, 500);
+    a.add_unit(2, 2, 300, 500);
     a.fire(1, 1, 100, 500, 3000, 0, 1000);
     a.index_alive();
-    auto& body = a.state.players.at(2);  // killed after indexing (e.g. by melee)
+    auto& body = a.state.units.at(2);  // killed after indexing (e.g. by melee)
     body.life = ::game::v1::LIFE_STATE_DEAD;
     body.hp = 0;
 
@@ -166,8 +166,8 @@ TEST(Projectiles, IgnoreBodiesKilledEarlierThisTick) {
 
 TEST(Projectiles, HitOnlyOneTarget) {
     Arena a;
-    a.add_player(2, 2, 300, 500);
-    a.add_player(3, 2, 300, 505);  // overlapping the first
+    a.add_unit(2, 2, 300, 500);
+    a.add_unit(3, 2, 300, 505);  // overlapping the first
     a.fire(1, 1, 100, 500, 3000, 0, 1000);
 
     a.step(0.1);
@@ -178,7 +178,7 @@ TEST(Projectiles, HitOnlyOneTarget) {
 
 TEST(Projectiles, PointBlankOverlapHitsAtOnce) {
     Arena a;
-    a.add_player(2, 2, 105, 500);  // overlaps the launch point
+    a.add_unit(2, 2, 105, 500);  // overlaps the launch point
     a.fire(1, 1, 100, 500, 800, 0, 500);
 
     a.step(1.0 / 60.0);
@@ -188,7 +188,7 @@ TEST(Projectiles, PointBlankOverlapHitsAtOnce) {
 
 TEST(Projectiles, ContactWithinTheLastPartialStepCounts) {
     Arena a;
-    a.add_player(2, 2, 160, 500);        // touched at x = 136
+    a.add_unit(2, 2, 160, 500);          // touched at x = 136
     a.fire(1, 1, 100, 500, 600, 0, 40);  // last step: x 100 -> 140
 
     a.step(0.1);
@@ -198,7 +198,7 @@ TEST(Projectiles, ContactWithinTheLastPartialStepCounts) {
 
 TEST(Projectiles, NothingIsHitBeyondTheRange) {
     Arena a;
-    a.add_player(2, 2, 170, 500);  // would be touched at x = 146, past the range end
+    a.add_unit(2, 2, 170, 500);  // would be touched at x = 146, past the range end
     a.fire(1, 1, 100, 500, 600, 0, 40);
 
     a.step(0.1);
@@ -209,8 +209,8 @@ TEST(Projectiles, NothingIsHitBeyondTheRange) {
 
 TEST(Projectiles, AreSpentOnABlockWithoutDamage) {
     Arena a;
-    a.add_player(2, 2, 300, 500).block_until_tick = 5;  // blocking (tick 0 < 5)
-    a.add_player(3, 2, 380, 500);                       // right behind it
+    a.add_unit(2, 2, 300, 500).block_until_tick = 5;  // blocking (tick 0 < 5)
+    a.add_unit(3, 2, 380, 500);                       // right behind it
     a.fire(1, 1, 100, 500, 3000, 0, 1000);
 
     a.step(0.1);
