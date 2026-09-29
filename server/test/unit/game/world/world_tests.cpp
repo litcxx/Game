@@ -1494,7 +1494,7 @@ namespace {
 
 ::game::v1::ServerMessage parse(const std::vector<std::byte>& bytes) {
     ::game::v1::ServerMessage m;
-    m.ParseFromArray(bytes.data(), static_cast<int>(bytes.size()));
+    EXPECT_TRUE(m.ParseFromArray(bytes.data(), static_cast<int>(bytes.size())));
     return m;
 }
 
