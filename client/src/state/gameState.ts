@@ -79,6 +79,25 @@ export class GameState {
   private effects: Effect[] = []; // new ones, for the view to take
   private readonly colors = new Map<number, number>(); // faction id -> colour
 
+  // A new session (after Welcome, a reconnect too): forget the last one's life,
+  // bodies, projectiles, effects and errors — the server sends it all anew.
+  // The explored map and the choices stay.
+  startSession(): void {
+    this.life = LifeState.NOT_SPAWNED;
+    this.hp = 0;
+    this.respawnTick = 0;
+    this.attackReadyTick = this.attackCooldownTicks = 0;
+    this.blockReadyTick = this.blockCooldownTicks = 0;
+    this.rttMs = undefined;
+    this.myFaction = 0; // the roster tells it for a resumed body
+    this.players.clear();
+    this.interp.clear();
+    this.shots.clear();
+    this.shotMeta.clear();
+    this.effects = [];
+    this.notices.clear();
+  }
+
   get alive(): boolean {
     return this.life === LifeState.ALIVE;
   }

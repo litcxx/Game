@@ -1,6 +1,6 @@
 import { abilitiesFromWelcome } from "../abilities.js";
 import { effectsFromEvents } from "../effects.js";
-import { closeError, errorText } from "../errors.js";
+import { errorText } from "../errors.js";
 import {
   LifeState,
   type MapState,
@@ -46,14 +46,9 @@ export function routeMessage(state: GameState, msg: ServerMessage, nowMs: number
   }
 }
 
-// The socket closed: a close code 4000 + ErrorCode is fatal (the error frame
-// usually came first; this covers a lost one).
-export function routeClose(state: GameState, closeCode: number): void {
-  const reason = closeError(closeCode);
-  if (reason !== undefined) state.notices.fail(errorText(reason));
-}
-
+// Welcome starts a session — the first one or a reconnect.
 function onWelcome(state: GameState, w: Welcome): void {
+  state.startSession();
   state.myId = w.playerId;
   state.mapWidth = w.config?.mapWidth ?? 0;
   state.mapHeight = w.config?.mapHeight ?? 0;
@@ -84,6 +79,10 @@ function onMapState(state: GameState, m: MapState): void {
 
 function onRoster(state: GameState, r: Roster): void {
   state.roster.apply(r.upsert, r.full, r.removed);
+  // A resumed character is back with its faction: the full roster after Welcome
+  // is the first to tell it.
+  const mine = state.roster.factionOf(state.myId);
+  if (r.full && state.myFaction === 0 && mine !== 0) state.myFaction = state.selectedFaction = mine;
 }
 
 function onSnapshot(state: GameState, s: Snapshot, nowMs: number): void {

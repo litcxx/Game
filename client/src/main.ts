@@ -1,13 +1,13 @@
 import { Application } from "pixi.js";
 
 import { aimVector, selectSlot } from "./abilities.js";
-import { installInput } from "./input/keyboard.js";
+import { installInput, isTyping } from "./input/keyboard.js";
 import { installMouse } from "./input/mouse.js";
 import { GameClient } from "./net/client.js";
 import type { PendingInput } from "./net/prediction.js";
-import { routeClose, routeMessage } from "./net/router.js";
+import { routeMessage } from "./net/router.js";
 import { serverUrl } from "./net/serverUrl.js";
-import { uniqueName } from "./net/uniqueName.js";
+import { browserStore, Session, type SessionStatus } from "./net/session.js";
 import { AbilityBar } from "./render/abilityBar.js";
 import { FactionPicker } from "./render/factionPicker.js";
 import { Hud } from "./render/hud.js";
@@ -15,13 +15,18 @@ import type { ProjectileSprite } from "./render/projectiles.js";
 import { Scene } from "./render/scene.js";
 import { showFailure, showStatus, showWelcome, type StatusViews } from "./render/status.js";
 import { FIXED_DT, GameState } from "./state/gameState.js";
+import { ConnectionDialogs } from "./ui/connectionDialogs.js";
+import { Modal } from "./ui/modal.js";
+import { NicknameScreen } from "./ui/nicknameScreen.js";
 import { Overlay } from "./ui/overlay.js";
 
 const MAX_ACCUM = 0.25;
 
-// Wires the game together: server messages go through the router into
+// Wires the game together: the session (net/session.ts) keeps the connection —
+// joining, reconnecting — and its messages go through the router into
 // GameState; the PixiJS views (render/) draw it; input changes the local
-// choices and feeds the predictor; the DOM overlay (ui/) holds text UI.
+// choices and feeds the predictor; the DOM overlay (ui/) holds text UI: the
+// nickname screen and the connection dialogs.
 async function main(): Promise<void> {
   const app = new Application();
   await app.init({
@@ -32,28 +37,61 @@ async function main(): Promise<void> {
     autoDensity: true,
   });
   document.getElementById("app")!.appendChild(app.canvas);
-  new Overlay(document.body); // text UI over the canvas; empty until a dialog needs it
+  const overlay = new Overlay(document.body); // text UI over the canvas
 
   const state = new GameState();
   const scene = new Scene(app, state);
   const views: StatusViews = { hud: new Hud(app), bar: new AbilityBar(app), picker: new FactionPicker(app) };
-  const client = new GameClient(
-    serverUrl(import.meta.env.VITE_SERVER_URL, window.location),
-    (msg) => {
+  const nickname = new NicknameScreen(overlay, (name) => session.join(name));
+  const dialogs = new ConnectionDialogs(new Modal(overlay), window);
+  let connected = false; // between a Welcome and the connection's loss
+  const url = serverUrl(import.meta.env.VITE_SERVER_URL, window.location);
+  const session = new Session({
+    createClient: (onMessage, onClose) => new GameClient(url, onMessage, onClose),
+    store: browserStore(),
+    timers: window,
+    onMessage: (msg) => {
       routeMessage(state, msg, performance.now());
       if (msg.payload.case === "welcome") showWelcome(state, views);
       if (msg.payload.case === "snapshot") showStatus(state, views, scene.mapMode, performance.now());
       if (msg.payload.case === "error") showFailure(state, views, performance.now());
     },
-    (code) => {
-      routeClose(state, code);
-      showFailure(state, views, performance.now());
-    },
-  );
-  client.connect(uniqueName("player")); // until the nickname screen (GAME-009)
+    onStatus: (status) => showSession(status),
+  });
+  const client = session.client;
+
+  // The session as the player sees it: the nickname screen, a reconnect
+  // countdown, or why the game stopped.
+  function showSession(status: SessionStatus): void {
+    connected = status.kind === "playing";
+    switch (status.kind) {
+      case "needName":
+        dialogs.close();
+        nickname.show(session.name ?? "", status.error);
+        break;
+      case "connecting":
+        nickname.hide();
+        break;
+      case "playing":
+        nickname.hide();
+        dialogs.close();
+        break;
+      case "reconnecting":
+        dialogs.reconnecting(status.attempt, status.retryInMs);
+        break;
+      case "failed":
+        dialogs.failed(status.text, () => window.location.reload());
+        state.notices.fail(status.text);
+        showFailure(state, views, performance.now());
+        break;
+    }
+  }
+  // The network is back: no need to wait out the backoff.
+  window.addEventListener("online", () => session.retryNow());
 
   const readKeys = installInput();
   window.addEventListener("keydown", (e) => {
+    if (isTyping(e.target)) return; // the nickname field
     if (e.key.toLowerCase() === "m") {
       scene.toggleMap();
       return;
@@ -102,7 +140,8 @@ async function main(): Promise<void> {
       fpsAccum = 0;
       views.hud.setFps(Math.round(ticker.FPS));
     }
-    const predictor = state.predictor;
+    // Offline, the local player waits for the server rather than walk off alone.
+    const predictor = connected ? state.predictor : undefined;
     if (predictor) {
       acc = Math.min(acc + ticker.deltaMS / 1000, MAX_ACCUM);
       while (acc >= FIXED_DT) {
@@ -151,6 +190,8 @@ async function main(): Promise<void> {
     }
     scene.frame();
   });
+
+  session.start();
 }
 
 void main();

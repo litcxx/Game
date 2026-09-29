@@ -9,6 +9,11 @@ const STYLE = `
   border: 1px solid #3a3a46; border-radius: 6px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); }
 .overlay-dialog h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; color: #f0f0e8; }
 .overlay-dialog p { margin: 0; font-size: 13px; line-height: 1.5; color: #b8b8ae; white-space: pre-line; }
+.overlay-dialog label { display: block; font-size: 13px; line-height: 1.5; color: #b8b8ae; }
+.overlay-field { display: block; box-sizing: border-box; width: 100%; margin-top: 8px; padding: 7px 10px; font: inherit;
+  font-size: 14px; color: #f0f0e8; background: #0e0e13; border: 1px solid #4a4a58; border-radius: 4px; }
+.overlay-field:focus-visible { outline: 2px solid #e8c050; outline-offset: 1px; }
+.overlay-error { min-height: 1.5em; margin-top: 6px; font-size: 12px; line-height: 1.5; color: #e8806a; }
 .overlay-buttons { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .overlay-buttons button { font: inherit; font-size: 13px; padding: 6px 14px; color: #f0f0e8; background: #26262f;
   border: 1px solid #4a4a58; border-radius: 4px; cursor: pointer; }
@@ -20,8 +25,8 @@ const STYLE = `
   border-radius: 4px; }
 `;
 
-// The DOM layer over the game canvas for text UI — dialogs and notices now, the
-// nickname screen and chat later; PixiJS keeps drawing the world. It covers the
+// The DOM layer over the game canvas for text UI — dialogs, notices and the
+// nickname screen now, chat later; PixiJS keeps drawing the world. It covers the
 // page but lets clicks through to the canvas: a component takes input only
 // where it must (see Modal).
 export class Overlay {

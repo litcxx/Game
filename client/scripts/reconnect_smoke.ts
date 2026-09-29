@@ -18,7 +18,7 @@ import {
   type PlayerState,
   type ServerMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
-import { uniqueName } from "../src/net/uniqueName.js";
+import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const CELL = 15 * 100 + 85; // its own cell (col 85, row 15) — away from other smokes' cells

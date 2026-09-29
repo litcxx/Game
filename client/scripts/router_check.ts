@@ -13,7 +13,7 @@ import {
   type ServerMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
 import { usualHint } from "../src/hint.js";
-import { routeClose, routeMessage } from "../src/net/router.js";
+import { routeMessage } from "../src/net/router.js";
 import { GameState, INTERP_DELAY_MS } from "../src/state/gameState.js";
 
 let failures = 0;
@@ -162,15 +162,34 @@ const joined = (nowMs = 1000): GameState => {
   check("a refusal fades", state.notices.hint("usual", 1000 + NOTICE_MS) === "usual");
   routeMessage(state, msg({ case: "error", value: { code: ErrorCode.KICKED, fatal: true } } as never), 1000);
   check("a fatal error stays", state.notices.failed && state.notices.hint("usual", 99999) === errorText(ErrorCode.KICKED));
-  routeClose(state, 4000 + ErrorCode.IDLE_TIMEOUT);
-  check("the close after it keeps the first reason", state.notices.hint("", 0) === errorText(ErrorCode.KICKED));
+}
 
-  const lost = joined();
-  routeClose(lost, 4000 + ErrorCode.IDLE_TIMEOUT);
-  check("a close code alone tells the reason", lost.notices.failed && lost.notices.hint("", 0) === errorText(ErrorCode.IDLE_TIMEOUT));
-  const plain = joined();
-  routeClose(plain, 1006);
-  check("a plain close is no error", !plain.notices.failed);
+// --- A new session on the same page (a reconnect) -----------------------------------------
+{
+  const state = joined();
+  const you = { life: LifeState.ALIVE, attackReadyTick: 130, attackCooldownTicks: 45 };
+  routeMessage(state, snapshot({ tick: 100, you, players: [{ id: 7, x: 150, y: 150, hp: 90 }, { id: 9, x: 250, y: 150, hp: 50 }], projectiles: [{ id: 3, x: 1, y: 1, factionId: 2 }] }), 2000);
+  routeMessage(state, snapshot({ tick: 101, you, players: [{ id: 7, x: 150, y: 150, hp: 90 }], events: [{ tick: 101, kind: { case: "ability", value: { playerId: 9, abilityId: 1 } } }] }), 2050);
+  check("(alive before it)", state.alive && state.hp === 90);
+  routeMessage(state, msg({ case: "pong", value: { clientTimeMs: 1000 } } as never), 1040);
+  routeMessage(state, msg({ case: "error", value: { code: ErrorCode.IDLE_TIMEOUT, fatal: true } } as never), 2100);
+  state.myFaction = 2;
+
+  routeMessage(state, welcome(), 5000);
+  check("a new Welcome: nothing of the old session is alive", state.life === LifeState.NOT_SPAWNED && state.hp === 0 && !state.alive);
+  check("... no players, no remote positions, no projectiles", state.players.size === 0 && state.interp.ids(5000).size === 0 && state.shotMeta.size === 0 && state.shots.ids(5000).size === 0);
+  check("... no pending effects, no cooldowns", state.takeEffects().length === 0 && state.cooldownProgress(5000).attack === 1);
+  check("... the error that ended it is gone", !state.notices.failed && state.notices.hint("usual", 5000) === "usual");
+  check("... the round trip is measured anew", state.rttMs === undefined);
+  check("... the faction comes back with the roster", state.myFaction === 0);
+}
+{
+  const state = joined();
+  routeMessage(state, msg({ case: "roster", value: { upsert: [{ id: 7, name: "Me", factionId: 2 }, { id: 9, name: "Bob", factionId: 1 }], full: true } } as never), 1000);
+  check("a full roster tells your own faction (a resumed body)", state.myFaction === 2 && state.selectedFaction === 2);
+  const fresh = joined();
+  routeMessage(fresh, msg({ case: "roster", value: { upsert: [{ id: 7, name: "Me", factionId: 0 }], full: true } } as never), 1000);
+  check("... none yet: the first faction stays selected", fresh.myFaction === 0 && fresh.selectedFaction === 1);
 }
 
 // --- Pong: round-trip time ---------------------------------------------------------------

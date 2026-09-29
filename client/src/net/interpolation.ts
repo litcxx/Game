@@ -23,6 +23,10 @@ export class InterpolationBuffer {
     while (this.snaps.length > 2 && this.snaps[0]!.time < cutoff) this.snaps.shift();
   }
 
+  clear(): void {
+    this.snaps = [];
+  }
+
   // Ids on screen at renderTime = nowMs - delayMs: those in either snapshot
   // around it — an entity gone from the newer one (e.g. a projectile that hit)
   // stays until the render time passes its last known position.
