@@ -1,5 +1,6 @@
-// Layout of a centred row of equal cards near the bottom of the screen (the
-// faction picker) — pure, so click hit-testing is checkable without a renderer.
+// Layout of the faction choice in the middle of the screen — a note above a
+// centred row of equal cards — pure, so click hit-testing is checkable without a
+// renderer.
 export interface CardRow {
   x0: number; // left edge of the first card, canvas px
   y: number; // top edge of the row
@@ -12,17 +13,31 @@ export interface CardRow {
 export const CARD_W = 150;
 export const CARD_H = 44;
 export const CARD_GAP = 12;
+export const NOTE_GAP = 28; // between the note and the cards; the row's title sits in it
 
-export function cardRow(screenW: number, screenH: number, count: number, bottomMargin: number): CardRow {
+// A row of `count` cards centred across the screen, its top edge at `top`.
+export function cardRow(screenW: number, count: number, top: number): CardRow {
   const width = count * CARD_W + Math.max(0, count - 1) * CARD_GAP;
   return {
     x0: Math.round((screenW - width) / 2),
-    y: Math.round(screenH - bottomMargin - CARD_H),
+    y: Math.round(top),
     w: CARD_W,
     h: CARD_H,
     gap: CARD_GAP,
     count,
   };
+}
+
+// The choice as one block in the middle of the screen: the note (`noteH` px
+// tall, centred at noteY), the gap, then the row of cards.
+export function choiceLayout(
+  screenW: number,
+  screenH: number,
+  count: number,
+  noteH: number,
+): { noteY: number; row: CardRow } {
+  const top = Math.round((screenH - (noteH + NOTE_GAP + CARD_H)) / 2);
+  return { noteY: top + noteH / 2, row: cardRow(screenW, count, top + noteH + NOTE_GAP) };
 }
 
 // Index of the card under a canvas point, or -1 (outside the row or in a gap).
