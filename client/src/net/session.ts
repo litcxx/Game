@@ -42,6 +42,7 @@ export type SessionStatus =
   | { kind: "connecting" } // joining; nothing to show yet
   | { kind: "playing" } // Welcome came
   | { kind: "reconnecting"; attempt: number; retryInMs: number } // lost; the next try in
+  | { kind: "away" } // lost while the tab is hidden; reconnects when it is shown
   | { kind: "failed"; text: string }; // over: why
 
 // The transport as the session uses it (GameClient).
@@ -99,7 +100,7 @@ export function browserStore(storage?: Storage): KeyValueStore {
   };
 }
 
-type Phase = "idle" | "connecting" | "playing" | "waiting" | "stopped";
+type Phase = "idle" | "connecting" | "playing" | "waiting" | "away" | "stopped";
 
 export class Session<C extends SessionClient = SessionClient> {
   readonly client: C;
@@ -108,6 +109,7 @@ export class Session<C extends SessionClient = SessionClient> {
   private phase: Phase = "idle";
   private attempt = 0; // reconnect attempts since the last Welcome
   private retryTimer: unknown;
+  private hidden = false; // the tab: see setHidden
 
   constructor(private readonly options: SessionOptions<C>) {
     this.client = options.createClient(
@@ -134,6 +136,23 @@ export class Session<C extends SessionClient = SessionClient> {
     this.playerName = name;
     this.token = "";
     this.begin();
+  }
+
+  // The tab is hidden (or shown again). A hidden tab sends no input and pings
+  // rarely, so the server closes it as idle; reconnecting then would only loop,
+  // the character standing unplayed. So while hidden a lost connection waits
+  // (away) and comes back the moment the tab is shown — in the grace period as
+  // the same character. A live connection is kept: a short look away is fine.
+  setHidden(hidden: boolean): void {
+    this.hidden = hidden;
+    if (hidden && this.phase === "waiting") {
+      this.options.timers.clearTimeout(this.retryTimer);
+      this.goAway();
+    } else if (!hidden && this.phase === "away") {
+      this.attempt = 1;
+      this.options.onStatus({ kind: "reconnecting", attempt: this.attempt, retryInMs: 0 });
+      this.connect();
+    }
   }
 
   // Reconnect now instead of waiting out the backoff (the network is back).
@@ -170,6 +189,10 @@ export class Session<C extends SessionClient = SessionClient> {
     if (this.phase === "stopped") return;
     switch (closeOutcome(code)) {
       case "retry": {
+        if (this.hidden) {
+          this.goAway();
+          break;
+        }
         this.phase = "waiting";
         this.attempt++;
         const retryInMs = reconnectDelayMs(this.attempt);
@@ -186,5 +209,10 @@ export class Session<C extends SessionClient = SessionClient> {
         this.options.onStatus({ kind: "failed", text: errorText(closeError(code)!) });
         break;
     }
+  }
+
+  private goAway(): void {
+    this.phase = "away";
+    this.options.onStatus({ kind: "away" });
   }
 }

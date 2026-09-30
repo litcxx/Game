@@ -66,13 +66,19 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   (the game opened in another tab) and other fatal errors stop for good — two
   tabs reconnecting would take the character back and forth. What the player
   sees comes out as a status: need a name, playing, reconnecting (attempt, wait),
-  failed (why).
+  away, failed (why). While the tab is hidden (`setHidden`, from
+  `visibilitychange`) a lost connection is not retried — status away: a hidden
+  tab sends no input and pings rarely, so the server would close it as idle
+  again and again with the character standing unplayed. Shown again, it
+  reconnects at once — within the grace as the same character. A live
+  connection is kept while hidden.
 
 - **`src/net/client.ts`** — `GameClient`: opens the WebSocket, sends `Hello`
   (with the session token, if any), and encodes/decodes messages; what is sent
   while no socket is open is dropped. A connection the server has been silent on
   for 6 s — counted from `connect()`, so one that never opens too — is closed and
-  reported as lost (`STALE_CLOSE_CODE`): a dropped network often closes nothing. `sendInputFrames` ships a batch of per-tick input
+  reported as lost (`STALE_CLOSE_CODE`, 4900, sent with the reason «no word from
+  the server» for the server's log): a dropped network often closes nothing. `sendInputFrames` ships a batch of per-tick input
   frames (each with its `seq`); `sendSpawn` requests spawn/respawn. A `Ping`
   goes out right after `Hello` and then every 2 s while the socket is open: its
   `Pong` gives the round trip (`roundTripMs`, shown as the HUD's ping), and it
@@ -242,7 +248,10 @@ Both run every script, print a pass/fail summary and exit 1 if any failed. The
 smoke suite expects a **freshly started** server: the territory persists for the
 server's lifetime, so e.g. `capture_smoke` (captures the centre cell for Red)
 fails on a server where that cell is already Red — restart the server between
-runs. A new script is picked up by its name, no list to edit. Two things the
+runs. It also reads the server's log (`close_reason_smoke`): start the server
+with it at `../server/server.log`, as CI does —
+`cd ../server && ./build/bin/server config/config.json > server.log 2>&1 &` — or
+point `SERVER_LOG` at it. A new script is picked up by its name, no list to edit. Two things the
 server keeps matter to a new script: a name stays taken until the server
 restarts, so players join as `uniqueName("base")` (`scripts/uniqueName.ts`);
 and a player stays in the world for the reconnect grace (30 s) after its socket
@@ -287,6 +296,9 @@ npx tsx scripts/idle_smoke.ts      # timeouts (23 s): no Hello -> 4004, silence 
 npx tsx scripts/reconnect_smoke.ts # Session: a dropped connection -> back as the same body by itself;
                                    #   another tab -> SESSION_REPLACED, no reconnect; a taken name -> asked for another
 npx tsx scripts/network_drop_smoke.ts # the network gone 10 s (a proxy passes nothing) -> back as the same body
+SERVER_LOG=../server/server.log npx tsx scripts/close_reason_smoke.ts
+                                   # a client's close (4900 + a reason) shows up in the server's log;
+                                   #   SERVER_LOG: the running server's log (that path is CI's and the default)
 npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones seen
                                    #   (VISION_CELLS = server vision_radius in cells, default 3)
 ```

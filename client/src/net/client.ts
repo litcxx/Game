@@ -21,8 +21,10 @@ export const KEEPALIVE_MS = 2000;
 // a dropped Wi-Fi often closes nothing for minutes. It counts from connect(),
 // so a connection that never opens (made while the network was down) ends too.
 export const STALE_MS = 6000;
-// The close code reported for such a connection (never sent on the wire).
+// The close code for such a connection: reported to onClose and sent with
+// STALE_REASON, so the server's log tells it from a closed tab.
 export const STALE_CLOSE_CODE = 4900;
+const STALE_REASON = "no word from the server";
 
 // What each Ping tells the server for its metrics (the playtests): the last
 // round trip (0: not measured yet) and the prediction corrections since the
@@ -155,19 +157,20 @@ export class GameClient {
       return;
     }
     console.log(`[net] no word from the server for ${STALE_MS} ms: connection lost`);
-    this.drop();
+    this.drop(STALE_CLOSE_CODE, STALE_REASON);
     this.onClose(STALE_CLOSE_CODE);
   }
 
-  // Lets go of the current socket, if any: no more events from it.
-  private drop(): void {
+  // Lets go of the current socket, if any: no more events from it. A close code
+  // and reason, if given, tell the server why.
+  private drop(code?: number, reason?: string): void {
     clearInterval(this.keepalive);
     this.keepalive = undefined;
     const ws = this.ws;
     if (!ws) return;
     this.ws = undefined;
     ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
-    if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) ws.close();
+    if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) ws.close(code, reason);
   }
 
   private dispatch(msg: ClientMessage): void {
