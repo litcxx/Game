@@ -14,7 +14,7 @@ import {
 } from "../src/gen/game/v1/protocol_pb.js";
 import { usualHint } from "../src/hint.js";
 import { routeMessage } from "../src/net/router.js";
-import { GameState, INTERP_DELAY_MS } from "../src/state/gameState.js";
+import { FADE_MS, GameState, INTERP_DELAY_MS } from "../src/state/gameState.js";
 
 let failures = 0;
 const check = (name: string, cond: boolean) => {
@@ -162,20 +162,66 @@ const joined = (nowMs = 1000): GameState => {
   const state = joined();
   const yours = { id: 3, x: 100, y: 100, factionId: 1, vx: 600, vy: 0, mine: true };
   const theirs = { id: 4, x: 300, y: 100, factionId: 2, vx: -600, vy: 0 };
-  routeMessage(state, snapshot({ tick: 1, projectiles: [yours, theirs] }), 1000);
+  routeMessage(state, snapshot({ tick: 1, revealed: [0, 1, 2, 3, 4, 5, 6, 7], projectiles: [yours, theirs] }), 1000);
   const drawn = (nowMs: number) => state.shotsAt(nowMs);
   check("your shot is not interpolated", !state.shots.ids(1100).has(3) && state.shots.ids(1100).has(4));
   check(
     "your shot: from the latest snapshot on by its velocity, no delay",
-    same(drawn(1030).find((d) => d.factionId === 1), { x: 118, y: 100, vx: 600, vy: 0, factionId: 1 }),
+    same(drawn(1030).find((d) => d.factionId === 1), { x: 118, y: 100, vx: 600, vy: 0, factionId: 1, alpha: 1 }),
   );
   check("... at most 100 ms ahead (snapshots late)", drawn(1500).find((d) => d.factionId === 1)?.x === 160);
   check(
     "others' shots: interpolated, the delay behind",
-    same(drawn(1000 + INTERP_DELAY_MS).find((d) => d.factionId === 2), { x: 300, y: 100, vx: -600, vy: 0, factionId: 2 }),
+    same(drawn(1000 + INTERP_DELAY_MS).find((d) => d.factionId === 2), { x: 300, y: 100, vx: -600, vy: 0, factionId: 2, alpha: 1 }),
   );
   routeMessage(state, snapshot({ tick: 4, projectiles: [{ ...theirs, x: 270 }] }), 1050);
-  check("your shot gone from the latest snapshot (a hit, its range): gone at once", drawn(1050).every((d) => d.factionId !== 1));
+  check("your shot gone from the latest snapshot in sight (a hit, its range): gone at once", drawn(1050).every((d) => d.factionId !== 1));
+}
+
+// --- Projectiles leaving sight -------------------------------------------------------
+// The server sends only the projectiles in sight: one flying into the fog drops
+// out of the snapshots and used to vanish there, as if it hit a wall. Now one
+// gone where it would have flown out of sight flies on and fades over FADE_MS;
+// one gone in sight (a hit, the end of its range) is gone as before.
+{
+  const state = joined(); // 4x3 cells of 100; cells 0,1 (row 0) and 4,5 (row 1) in sight
+  routeMessage(state, snapshot({ tick: 3, revealed: [0, 1, 4, 5] }), 1000); // tick 3 = 50 ms: offset 950
+  const intoFog = { id: 20, x: 190, y: 50, factionId: 2, vx: 600, vy: 0 }; // in 50 ms at 220: cell 2, fog
+  const inSight = { id: 21, x: 110, y: 150, factionId: 3, vx: 600, vy: 0 }; // in 50 ms at 140: cell 5, sight
+  const yoursIntoFog = { id: 22, x: 190, y: 150, factionId: 1, vx: 600, vy: 0, mine: true }; // -> cell 6, fog
+  routeMessage(state, snapshot({ tick: 6, projectiles: [intoFog, inSight, yoursIntoFog] }), 1050);
+  routeMessage(state, snapshot({ tick: 9 }), 1100); // all three gone
+  const of = (nowMs: number, faction: number) => state.shotsAt(nowMs).find((d) => d.factionId === faction);
+  // Others' shots are drawn INTERP_DELAY_MS behind: the last snapshot with them is
+  // stamped 1050, so they leave it at now 1150.
+  check("others' shot into the fog flies on from where it was", same(of(1200, 2), { x: 220, y: 50, vx: 600, vy: 0, factionId: 2, alpha: 0.75 }));
+  check("... fading out over FADE_MS", (of(1100 + INTERP_DELAY_MS + FADE_MS - 60, 2)?.alpha ?? 1) < 0.35 && of(1050 + INTERP_DELAY_MS + FADE_MS, 2) === undefined);
+  check("others' shot gone in sight (a hit): gone as before", of(1200, 3) === undefined);
+  check("your shot into the fog flies on from its last snapshot, fading", same(of(1100, 1), { x: 220, y: 150, vx: 600, vy: 0, factionId: 1, alpha: 0.75 }));
+  check("... and is gone after FADE_MS", of(1050 + FADE_MS, 1) === undefined);
+}
+
+// --- Remote motion: snapshots on the server's clock -------------------------------------
+// Snapshots arrive unevenly (Wi-Fi: ±15 ms). Placed by their arrival time, a
+// running player's interpolated motion went uneven and wobbled against the
+// camera — its name unreadable (playtest #0). Placed on the server's clock
+// (SnapshotClock), it stays even.
+{
+  const state = joined(); // 60 ticks/s: a snapshot every 3 ticks = 50 ms
+  const jitter = [0, -15, 12, -9, 15, -14, 6, -3, 11, 8, 2, -12, 14, -6, 9, -11, 4, 13, -8, 1, -13, 10, -2, 15, -10];
+  const arrivals = jitter.map((j, k) => ({ tick: 3 * k, x: 1000 + 15 * k, at: 1000 + 50 * k + 40 + j })); // 300 units/s
+  const xs: number[] = [];
+  let next = 0;
+  for (let now = 1300; now < 2200; now += 1000 / 60) {
+    while (next < arrivals.length && arrivals[next]!.at <= now) {
+      const a = arrivals[next++]!;
+      routeMessage(state, snapshot({ tick: a.tick, players: [{ id: 9, x: a.x, y: 500, hp: 100 }] }), a.at);
+    }
+    xs.push(state.interp.sample(9, now)!.x);
+  }
+  const steps = xs.slice(1).map((x, i) => x - xs[i]!);
+  const spread = Math.max(...steps) - Math.min(...steps);
+  check(`a running player moves evenly despite uneven arrivals (frame steps vary by ${spread.toFixed(3)})`, spread < 0.01);
 }
 
 // --- Errors and closes ---------------------------------------------------------------

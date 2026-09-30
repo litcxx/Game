@@ -105,7 +105,17 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   last position. Your own shots (`ProjectileState.mine`) skip it:
   `GameState.shotsAt()` runs them on from the latest snapshot by their velocity
   (at most 100 ms), so they leave your token — drawn at the predicted position —
-  along the aim line instead of behind it.
+  along the aim line instead of behind it. A projectile that flew out of sight
+  (the server sends only what is in sight) flies on and fades out over 0.2 s;
+  one gone in sight (a hit, the end of its range) is simply gone.
+- **`src/net/snapshotClock.ts`** — `SnapshotClock`: where each snapshot goes on
+  the interpolation's clock — its server time (tick) plus the smallest
+  arrival-minus-server offset seen, creeping up by 1 ms/s, and never more than
+  50 ms before its arrival (a latency grown for good: remote players would
+  freeze and jump while the creep caught up). Stamped by arrival
+  time instead, network jitter made remote motion uneven: at ±15 ms a running
+  player wobbled ~7 px against the camera, its name unreadable (playtest #0);
+  now ~0.6 px.
 - **`src/abilities.ts`** — the ability model from `Welcome.abilities` (bar
   order), slot selection for keys 1–5, the aim vector sent in each input frame
   (unit vector × 1000 toward the cursor) and the cooldown-arc progress.
@@ -135,13 +145,16 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   **follow** (exactly 15 cells wide, clamped to the map) and **map** (whole map).
 - **`src/render/scene.ts`** — `Scene`, a view of `GameState` (it keeps only the
   camera, sprites and this frame's positions): camera-driven world (tonal territory cells,
-  coordinate labels, gridlines), player tokens (shadow, glow, faction dot, name
-  pill, hp bar), the self ring showing the **active ability's** range with the
+  coordinate labels, gridlines), player tokens on whole pixels (shadow, glow,
+  faction dot, name pill, hp bar — laid out by the pure `nameplate()` in
+  `src/render/nameplate.ts`: the pill grows with the name, the bar is 32 px for
+  everyone), the self ring showing the **active ability's** range with the
   shared-cooldown arc (and an aim line for the ranged attack), projectiles, the
   fog of war, and the local **minimap** (~1.5× the view, gridded and fogged,
   viewport rect + player dots).
 - **`src/render/projectiles.ts`** — `ProjectileView`: each projectile as a glowing
-  dot in the shooter's faction colour at its real radius, with a short trail.
+  dot in the shooter's faction colour at its real radius, with a short trail;
+  one flying out of sight fades out.
 - **`src/render/abilityBar.ts`** — `AbilityBar`: the bottom-centre 1–5 bar (◆ melee,
   ● ranged, a shield for block, empty slots), the active slot gold-rimmed, each
   slot darkened from the top while its cooldown runs; shown while alive, above
@@ -268,11 +281,12 @@ closes, so a script that fights or shoots spawns on cells of its own.
 npx tsx scripts/prediction_check.ts     # integrate / predict / reconcile, corrections counted
 npx tsx scripts/client_check.ts         # GameClient over a fake WebSocket: the Ping's report
 npx tsx scripts/playtest_report_check.ts  # a playtest's log -> the summary for the report
-npx tsx scripts/interpolation_check.ts  # snapshot interpolation
+npx tsx scripts/interpolation_check.ts  # snapshot interpolation; SnapshotClock (server-time stamps)
 npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
 npx tsx scripts/input_check.ts          # keys by place (any layout), release on blur, no right-click menu (happy-dom)
 npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
+npx tsx scripts/nameplate_check.ts      # name pill grows with the name, the hp bar is one width
 npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked/your-hit effects, timing
 npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs
 npx tsx scripts/errors_check.ts         # error texts, close codes, fatal / refusal hints
