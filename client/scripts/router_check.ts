@@ -213,7 +213,23 @@ const joined = (nowMs = 1000): GameState => {
   routeMessage(state, snapshot({ tick: 260, you: { life: LifeState.DEAD, respawnTick: 260 } }), 1000);
   check("hint: dead, may respawn", usualHint(state, false).startsWith("Убит · выберите фракцию"));
   routeMessage(state, snapshot({ tick: 300, you: { life: LifeState.ALIVE } }), 1000);
-  check("hint: none while alive", usualHint(state, false) === "");
+  check("hint: alive, no cell captured yet -> how to capture", usualHint(state, false) === "Встаньте на чужую или ничью клетку и держите E — захват");
+  state.captureLearned = true; // see onboarding_check.ts
+  check("hint: none while alive once you have captured", usualHint(state, false) === "");
+}
+
+// --- The cell under you --------------------------------------------------------------
+{
+  const state = joined();
+  check("not spawned: no cell under you", state.cellUnderMe() === undefined);
+  const owners = new Uint8Array([0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0]);
+  routeMessage(state, msg({ case: "mapState", value: { owners, captures: [] } } as never), 1000);
+  routeMessage(state, snapshot({ tick: 10, you: { life: LifeState.ALIVE }, players: [{ id: 7, x: 150, y: 150, hp: 90 }] }), 1000);
+  check("alive: the cell under the predicted position", state.cellUnderMe()?.index === 5 && state.cellUnderMe()?.owner === 2);
+  state.predictor?.reset({ x: 399, y: 250 });
+  check("... it follows the prediction", state.cellUnderMe()?.index === 11);
+  routeMessage(state, snapshot({ tick: 20, you: { life: LifeState.DEAD, respawnTick: 400 } }), 1000);
+  check("dead: no cell under you", state.cellUnderMe() === undefined);
 }
 
 console.log("VERDICT:", failures === 0 ? "PASS" : `FAIL (${failures})`);

@@ -1,10 +1,10 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 
 import { CARD_H, CARD_W, cardAt, cardRow, type CardRow } from "./cardRow.js";
+import { ABOVE_HINT_LINE } from "./hud.js";
 
 const SELECTED = 0xe0b060; // gold rim, as the active ability slot
 const BORDER = 0x3a3a46;
-const BOTTOM_MARGIN = 56; // keeps the row above the hint line
 
 interface Card {
   id: number;
@@ -25,7 +25,7 @@ export class FactionPicker {
   });
   private cards: Card[] = [];
   private selected = 0;
-  private row: CardRow = cardRow(0, 0, 0, BOTTOM_MARGIN);
+  private row: CardRow = cardRow(0, 0, 0, ABOVE_HINT_LINE);
 
   constructor(private readonly app: Application) {
     this.title.anchor.set(0.5, 1);
@@ -77,7 +77,7 @@ export class FactionPicker {
   }
 
   private layout(): void {
-    this.row = cardRow(this.app.screen.width, this.app.screen.height, this.cards.length, BOTTOM_MARGIN);
+    this.row = cardRow(this.app.screen.width, this.app.screen.height, this.cards.length, ABOVE_HINT_LINE);
     this.cards.forEach((c, i) => c.root.position.set(this.row.x0 + i * (this.row.w + this.row.gap), this.row.y));
     this.title.position.set(Math.round(this.app.screen.width / 2), this.row.y - 8);
   }

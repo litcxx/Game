@@ -10,6 +10,10 @@ interface Gauge {
 
 const mono = (size: number, fill: string) => ({ fill, fontFamily: "monospace", fontSize: size });
 
+// px from the screen's bottom: the bottom row — the faction cards, or the ability
+// bar while alive — sits above the hint line, which the capture hint uses in play.
+export const ABOVE_HINT_LINE = 56;
+
 // Corner HUD: faction badge + territory (top-left), online · ping + FPS (top-right),
 // HP gauge (bottom-left), capture gauge (bottom-right), centered hint line.
 export class Hud {

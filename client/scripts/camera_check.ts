@@ -1,6 +1,7 @@
 // Unit check for the pure camera math (no rendering, no server).
 //   run: npx tsx scripts/camera_check.ts
-import { Camera, UNITS_PER_CELL } from "../src/render/camera.js";
+import { Camera } from "../src/render/camera.js";
+import { UNITS_PER_CELL } from "../src/state/territory.js";
 
 let failures = 0;
 function check(name: string, cond: boolean): void {

@@ -1,7 +1,7 @@
 import { Graphics } from "pixi.js";
 
 import type { CellSight, FogOfWar } from "../fog.js";
-import { UNITS_PER_CELL } from "./camera.js";
+import { UNITS_PER_CELL } from "../state/territory.js";
 
 const BORDER = 0x33333f; // the map's bounds are always known
 // Brightness falls visible > explored > unexplored. Unexplored: dense fog —

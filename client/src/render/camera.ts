@@ -1,4 +1,4 @@
-export const UNITS_PER_CELL = 100;
+import { UNITS_PER_CELL } from "../state/territory.js";
 
 export type CameraMode = "follow" | "map";
 

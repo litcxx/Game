@@ -130,7 +130,8 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   dot in the shooter's faction colour at its real radius, with a short trail.
 - **`src/render/abilityBar.ts`** — `AbilityBar`: the bottom-centre 1–5 bar (◆ melee,
   ● ranged, a shield for block, empty slots), the active slot gold-rimmed, each
-  slot darkened from the top while its cooldown runs; shown while alive.
+  slot darkened from the top while its cooldown runs; shown while alive, above
+  the hint line (`ABOVE_HINT_LINE`, as the faction cards).
 - **`src/render/factionPicker.ts`** — `FactionPicker`: faction cards (badge +
   name) above the hint line while not alive; click routing via the pure layout
   in `src/render/cardRow.ts`.
@@ -140,7 +141,12 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   a current-cell gauge (bottom-right), and a centered hint line. **`src/render/status.ts`** fills the
   HUD, the bar and the picker from `GameState`: after Welcome, after each
   snapshot, and at once on a fatal error; **`src/hint.ts`** is the hint line's
-  usual text (respawn countdown, the M key).
+  usual text (how to capture until the first capture, the respawn countdown,
+  the M key).
+- **`src/onboarding.ts`** — `CaptureLesson`: the capture hint stays until the
+  player captures a cell themselves — the cell under them turns their
+  faction's while they hold **E** — then it is gone for good (remembered in
+  `localStorage`, `territory.captured`).
 - **`src/ui/`** — the DOM overlay over the canvas for text UI (PixiJS keeps the
   world): `Overlay` (the layer; clicks pass through to the canvas), `Modal` (a
   dialog: title, text, buttons — it takes the clicks while open), `Toasts`
@@ -257,6 +263,7 @@ npx tsx scripts/router_check.ts         # each ServerMessage -> GameState (terri
 npx tsx scripts/session_check.ts        # join with the saved name/token, reconnect backoff, when not to reconnect
 npx tsx scripts/ui_check.ts             # overlay: modal, toasts, nickname screen, connection dialogs (happy-dom)
 npx tsx scripts/status_check.ts         # what the HUD, bar and picker get from GameState (network line, hp, fatal)
+npx tsx scripts/onboarding_check.ts     # the capture hint goes after your own first capture, and stays gone
 npx tsx scripts/server_url_check.ts     # the server address: VITE_SERVER_URL, else the page's origin at /ws
 ```
 
@@ -290,6 +297,7 @@ src/effects.ts    snapshot events -> timed visual effects
 src/fog.ts        fog of war: cell sight (unexplored / explored / visible)
 src/errors.ts     server errors: texts, close codes, what the hint line shows
 src/hint.ts       the hint line's usual text
+src/onboarding.ts the first-capture lesson: the capture hint until the first capture
 src/main.ts       wiring: session -> router -> state -> views; input; the frame loop
 src/state/     GameState (all client data), Territory, Roster
 src/net/       GameClient (transport), Session (join, token, reconnect),

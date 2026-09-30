@@ -8,6 +8,7 @@ import type { PendingInput } from "./net/prediction.js";
 import { routeMessage } from "./net/router.js";
 import { serverUrl } from "./net/serverUrl.js";
 import { browserStore, Session, type SessionStatus } from "./net/session.js";
+import { CaptureLesson } from "./onboarding.js";
 import { AbilityBar } from "./render/abilityBar.js";
 import { FactionPicker } from "./render/factionPicker.js";
 import { Hud } from "./render/hud.js";
@@ -52,14 +53,19 @@ async function main(): Promise<void> {
     const corrections = state.predictor?.takeCorrections() ?? { count: 0, max: 0 };
     return { rttMs: state.rttMs ?? 0, corrections: corrections.count, maxCorrection: corrections.max };
   };
+  const store = browserStore(); // the name, the session token, what the player has learned
+  const lesson = new CaptureLesson(state, store); // the capture hint until the first capture
   const session = new Session({
     createClient: (onMessage, onClose) => new GameClient(url, onMessage, onClose, pingReport),
-    store: browserStore(),
+    store,
     timers: window,
     onMessage: (msg) => {
       routeMessage(state, msg, performance.now());
       if (msg.payload.case === "welcome") showWelcome(state, views);
-      if (msg.payload.case === "snapshot") showStatus(state, views, scene.mapMode, performance.now());
+      if (msg.payload.case === "snapshot") {
+        lesson.observe();
+        showStatus(state, views, scene.mapMode, performance.now());
+      }
       if (msg.payload.case === "error") showFailure(state, views, performance.now());
     },
     onStatus: (status) => showSession(status),
@@ -154,6 +160,7 @@ async function main(): Promise<void> {
       while (acc >= FIXED_DT) {
         acc -= FIXED_DT;
         const k = readKeys();
+        lesson.noteCapturing(k.capturing);
         const cur = mouse.cursor();
         const [wx, wy] = cur ? scene.screenToWorld(cur.x, cur.y) : [predictor.position.x, predictor.position.y];
         const aim = aimVector(predictor.position, { x: wx, y: wy });
