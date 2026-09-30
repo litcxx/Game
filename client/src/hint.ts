@@ -11,8 +11,9 @@ export const FACTION_ONCE = "Выберите фракцию — это можн
 
 // The hint line's usual text (server errors take its place, see errors.ts):
 // while alive, how to capture until the first capture, then nothing; otherwise
-// how to (re)spawn — choosing the faction only before the first spawn — the
-// respawn countdown, and the M key. `mapMode`: the full-map view is on.
+// how to (re)spawn — at the faction's capital, with the button in the middle;
+// choosing the faction only before the first spawn — the respawn countdown, and
+// the M key. `mapMode`: the full-map view is on.
 export function usualHint(state: GameState, mapMode: boolean): string {
   if (state.alive) return state.captureLearned ? "" : CAPTURE_HINT;
   const mapHint = `M — ${mapMode ? "к игроку" : "вся карта"}`;
@@ -20,9 +21,9 @@ export function usualHint(state: GameState, mapMode: boolean): string {
     const left = Math.max(0, Math.ceil((state.respawnTick - state.serverTick) / state.tickRate));
     return left > 0
       ? `Убит · возрождение через ${left}с · ${mapHint}`
-      : `Убит · кликните по клетке — возрождение · ${mapHint}`;
+      : `Убит · «Возродиться» — снова в столице · ${mapHint}`;
   }
   return state.choosingFaction
-    ? `Выберите фракцию и кликните по клетке — старт · ${mapHint}`
-    : `Кликните по клетке — старт · ${mapHint}`;
+    ? `Выберите фракцию и нажмите «В бой» · ${mapHint}`
+    : `«В бой» — в столицу фракции · ${mapHint}`;
 }

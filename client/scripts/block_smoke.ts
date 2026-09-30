@@ -8,9 +8,11 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
   AbilityKind,
   ClientMessageSchema,
+  ProtocolVersion,
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
@@ -35,16 +37,16 @@ let blockedHits = 0;
 let landedDamage = -1;
 let defHpAfterLanded = -1;
 
-const atkCell = 35 * 100 + 35; // (col 35, row 35) -> (3550, 3550)
-const defCell = 35 * 100 + 36; // (col 36, row 35) -> (3650, 3550): 100 units away
+// Their capitals on the smoke map: (35, 35) and (36, 35), 100 units apart.
+const ATK = spot("block-attacker");
+const DEF = spot("block-defender");
 
 function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
 }
 const helloMsg = (name: string) =>
-  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName(name) } } });
-const spawnMsg = (cell: number, factionId: number) =>
-  create(ClientMessageSchema, { payload: { case: "spawn", value: { cell, factionId } } });
+  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
+const spawnMsg = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
 const framesMsg = (frames: { seq: number; attack: boolean; ability: number }[]) =>
   create(ClientMessageSchema, {
     payload: {
@@ -75,7 +77,7 @@ attacker.onmessage = (ev: MessageEvent) => {
     meleeId = melee?.id ?? 0;
     meleeDamage = melee?.damage ?? 0;
     blockId = w.abilities.find((a) => a.kind === AbilityKind.BLOCK)?.id ?? 0;
-    send(attacker, spawnMsg(atkCell, w.factions[0]?.id ?? 1));
+    send(attacker, spawnMsg(ATK.factionId));
   } else if (m.payload.case === "snapshot") {
     const s = m.payload.value;
     atkAlive = s.players.some((p) => p.id === atkId && p.hp > 0);
@@ -102,8 +104,7 @@ defender.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case === "welcome") {
     defId = m.payload.value.playerId;
-    const factions = m.payload.value.factions;
-    send(defender, spawnMsg(defCell, factions[1]?.id ?? 2));
+    send(defender, spawnMsg(DEF.factionId));
   }
 };
 

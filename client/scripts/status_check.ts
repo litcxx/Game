@@ -1,4 +1,4 @@
-// Checks for what render/status.ts hands the HUD, bar and picker from GameState
+// Checks for what render/status.ts hands the HUD, bar, picker and respawn button from GameState
 // — with fake views that record the calls, so no PixiJS. Run:
 //   npx tsx scripts/status_check.ts
 import { create } from "@bufbuild/protobuf";
@@ -21,7 +21,7 @@ const fakeViews = () => {
   const last: Record<string, unknown[]> = {};
   const recorder = (prefix: string) =>
     new Proxy({}, { get: (_, name) => (...args: unknown[]) => void (last[`${prefix}.${String(name)}`] = args) });
-  const views = { hud: recorder("hud"), bar: recorder("bar"), picker: recorder("picker") } as unknown as StatusViews;
+  const views = { hud: recorder("hud"), bar: recorder("bar"), picker: recorder("picker"), respawn: recorder("respawn") } as unknown as StatusViews;
   return { views, last };
 };
 
@@ -54,6 +54,16 @@ const joined = (): GameState => {
   check("the network line: online and ping", same(last["hud.setNetwork"], [2, 42]));
   check("not spawned: the picker, no bar", same(last["picker.setVisible"], [true]) && same(last["bar.setVisible"], [false]));
   check("not spawned: the faction picked for the spawn", same(last["hud.setFaction"], ["Red", 0xff0000]));
+  check("... no lone button: «В бой» is in the picker", same(last["respawn.show"], [undefined]));
+  state.myFaction = 1; // back without a body, the faction locked
+  showStatus(state, views, false, 0);
+  check("back with a faction: no picker, «В бой» in the middle", same(last["picker.setVisible"], [false]) && same(last["respawn.show"], ["В бой"]));
+  routeMessage(state, msg({ case: "snapshot", value: { tick: 10, you: { life: LifeState.DEAD, respawnTick: 20 } } }), 0);
+  showStatus(state, views, false, 0);
+  check("dead, waiting: no button", same(last["respawn.show"], [undefined]));
+  routeMessage(state, msg({ case: "snapshot", value: { tick: 20, you: { life: LifeState.DEAD, respawnTick: 20 } } }), 0);
+  showStatus(state, views, false, 0);
+  check("dead, may respawn: «Возродиться» in the middle", same(last["respawn.show"], ["Возродиться"]));
 }
 {
   const state = joined();
@@ -63,14 +73,16 @@ const joined = (): GameState => {
   check("alive: the bar, no picker", same(last["bar.setVisible"], [true]) && same(last["picker.setVisible"], [false]));
   check("alive: hp", same(last["hud.setHp"], [80, 100, true]));
   check("alive: the cell under you", same(last["hud.setCell"], [1, undefined, undefined, 0]));
+  check("alive: no respawn button", same(last["respawn.show"], [undefined]));
 }
 {
   const state = joined();
   const { views, last } = fakeViews();
   routeMessage(state, msg({ case: "error", value: { code: ErrorCode.KICKED, fatal: true } }), 0);
   showFailure(state, views, 0);
-  check("fatal: no bar, no picker, the reason on the hint line",
-    same(last["bar.setVisible"], [false]) && same(last["picker.setVisible"], [false]) && last["hud.setHint"]?.[0] === "Вы отключены от сервера");
+  check("fatal: no bar, no picker, no button, the reason on the hint line",
+    same(last["bar.setVisible"], [false]) && same(last["picker.setVisible"], [false]) && same(last["respawn.show"], [undefined]) &&
+      last["hud.setHint"]?.[0] === "Вы отключены от сервера");
 }
 
 console.log("VERDICT:", failures === 0 ? "PASS" : `FAIL (${failures})`);

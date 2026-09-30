@@ -1,13 +1,24 @@
 #include "systems/spawn_system.hpp"
 
 #include <algorithm>
+#include <optional>
 
 #include "state/map_scale.hpp"
 
 namespace lit::game {
+SpawnPoint capital_spawn_point(const GameConfig& config) {
+    return [capitals = config.capitals](const WorldState& /*state*/, std::uint32_t /*character_id*/,
+                                        std::uint32_t faction_id) -> std::optional<std::uint32_t> {
+        const auto it = std::ranges::find(capitals, faction_id, &CapitalConfig::faction_id);
+        if (it == capitals.end()) return std::nullopt;
+        return it->cell;
+    };
+}
+
 std::expected<void, ::game::v1::ErrorCode> try_spawn(WorldState& state, const GameConfig& config,
-                                                     std::uint32_t character_id, std::uint32_t cell,
-                                                     std::uint32_t faction_id) {
+                                                     std::uint32_t character_id,
+                                                     std::uint32_t faction_id,
+                                                     const SpawnPoint& spawn_point) {
     if (const Unit* body = find_unit(state, character_id)) {
         if (body->life == ::game::v1::LIFE_STATE_ALIVE) {
             return std::unexpected(::game::v1::ERROR_CODE_ALREADY_SPAWNED);
@@ -16,9 +27,6 @@ std::expected<void, ::game::v1::ErrorCode> try_spawn(WorldState& state, const Ga
             return std::unexpected(::game::v1::ERROR_CODE_SPAWN_TOO_EARLY);  // still waiting it out
         }
     }
-    if (cell >= config.map_width * config.map_height) {
-        return std::unexpected(::game::v1::ERROR_CODE_SPAWN_INVALID_CELL);
-    }
     const bool valid_faction = std::ranges::any_of(
         config.factions, [faction_id](const auto& f) { return f.id == faction_id; });
     Character& character = state.characters.at(character_id);
@@ -26,10 +34,14 @@ std::expected<void, ::game::v1::ErrorCode> try_spawn(WorldState& state, const Ga
     if (!valid_faction || locked_elsewhere) {
         return std::unexpected(::game::v1::ERROR_CODE_INVALID_FACTION);
     }
+    const std::optional<std::uint32_t> cell = spawn_point(state, character_id, faction_id);
+    if (!cell) {
+        return std::unexpected(::game::v1::ERROR_CODE_INVALID_FACTION);  // nowhere to spawn
+    }
     character.faction_id = faction_id;  // locked for the season (a no-op after the first spawn)
 
-    const std::uint32_t col = cell % config.map_width;
-    const std::uint32_t row = cell / config.map_width;
+    const std::uint32_t col = *cell % config.map_width;
+    const std::uint32_t row = *cell / config.map_width;
     Unit body;
     body.id = character_id;
     body.faction_id = faction_id;

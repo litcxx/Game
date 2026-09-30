@@ -2,7 +2,8 @@
 #   client — protobuf codegen, typecheck, pure checks (npm run check)
 #   server — against protobuf 36 (server/scripts/install-protobuf.sh, cached):
 #            Debug + ASan/UBSan build, unit tests, then the e2e smoke suite
-#            (npm run smoke) against that server, which must also shut down clean
+#            (npm run smoke) against that server on the smoke map
+#            (scripts/smoke-config.sh), which must also shut down clean
 #   server-release — the build that is deployed (deploy/deploy.sh): Release
 #            (-O3, which brings its own warnings under -Werror) and unit tests
 # A red run blocks the merge once "client" and "server" are required checks
@@ -79,8 +80,11 @@ jobs:
 
       - name: Start server
         run: |
+          # The shipped rules on the smoke map: one faction per script role, its
+          # players spawning at its capital (scripts/smoke-config.sh).
+          ./scripts/smoke-config.sh > build/smoke-config.json
           # The wrapper keeps the server's pid and, once it exits, its exit code.
-          nohup bash -c './build/bin/server config/config.json & echo $! > server.pid
+          nohup bash -c './build/bin/server build/smoke-config.json & echo $! > server.pid
                          wait $!; echo $? > server.exit' > server.log 2>&1 &
           timeout 30 bash -c 'until (: > /dev/tcp/127.0.0.1/27998) 2>/dev/null; do sleep 0.5; done'
       - uses: actions/setup-node@v5

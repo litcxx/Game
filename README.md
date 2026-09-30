@@ -82,8 +82,9 @@ release — the game at `https://<domain>/`, Caddy in front (HTTPS, the client,
 **Controls:** WASD move · hold **E** capture the cell under you · hold **left
 mouse** to use the active ability (**1** melee area attack, **2** ranged shot
 toward the cursor, **3** block) · keys **1–5** pick the ability · click a faction
-card (once: it is yours until the season changes), then a cell to spawn; later a
-cell to respawn · **M** toggle the full-map view. Keys work
+card (once: it is yours until the season changes), then **«В бой»** — you come
+into the world at your faction's capital; after a death **«Возродиться»** brings
+you back there · **M** toggle the full-map view. Keys work
 by their place on the keyboard, in any layout.
 
 ## Checks & CI
@@ -91,7 +92,7 @@ by their place on the keyboard, in any layout.
 ```bash
 (cd server && ctest --preset debug-asan)   # server unit tests
 (cd client && npm run check)               # client pure-logic checks
-(cd client && npm run smoke)               # end-to-end, against a freshly started server
+(cd client && npm run smoke)               # end-to-end, against a fresh server on the smoke map
 ```
 
 [GitHub Actions](.github/workflows/ci.yml) runs all three on every pull request

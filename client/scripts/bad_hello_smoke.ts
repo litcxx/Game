@@ -5,7 +5,7 @@
 //   a blank name             -> INVALID_NAME       (4007), no Welcome
 //   a second Hello           -> UNEXPECTED_MESSAGE (4003)
 //   Input before Hello       -> UNEXPECTED_MESSAGE (4003)
-//   a spawn off the map      -> SPAWN_INVALID_CELL, not fatal, request_id echoed
+//   a spawn in no faction    -> INVALID_FACTION, not fatal, request_id echoed
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
@@ -24,8 +24,8 @@ const hello = (name: string, protocolVersion: number = ProtocolVersion.CURRENT):
   create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion, name } } });
 const input = (): ClientMessage =>
   create(ClientMessageSchema, { payload: { case: "input", value: { frames: [{ seq: 1 }] } } });
-const spawnOffMap = (requestId: number): ClientMessage =>
-  create(ClientMessageSchema, { requestId, payload: { case: "spawn", value: { cell: 1_000_000, factionId: 1 } } });
+const spawnNowhere = (requestId: number): ClientMessage =>
+  create(ClientMessageSchema, { requestId, payload: { case: "spawn", value: { factionId: 999 } } }); // no such faction
 
 interface Outcome {
   welcome: boolean;
@@ -83,15 +83,15 @@ check("a second Hello: UNEXPECTED_MESSAGE, closed 4003", fatal(twice, ErrorCode.
 const early = await run([input()]);
 check("Input before Hello: UNEXPECTED_MESSAGE, closed 4003", fatal(early, ErrorCode.UNEXPECTED_MESSAGE), early);
 
-const offMap = await run([hello(uniqueName("walker")), spawnOffMap(42)], 1000);
+const nowhere = await run([hello(uniqueName("walker")), spawnNowhere(42)], 1000);
 check(
-  "a spawn off the map: SPAWN_INVALID_CELL, not fatal, request_id echoed, still open",
-  offMap.errors.length === 1 &&
-    offMap.errors[0]!.code === ErrorCode.SPAWN_INVALID_CELL &&
-    !offMap.errors[0]!.fatal &&
-    offMap.errors[0]!.requestId === 42 &&
-    offMap.closeCode === undefined,
-  offMap,
+  "a spawn in no faction: INVALID_FACTION, not fatal, request_id echoed, still open",
+  nowhere.errors.length === 1 &&
+    nowhere.errors[0]!.code === ErrorCode.INVALID_FACTION &&
+    !nowhere.errors[0]!.fatal &&
+    nowhere.errors[0]!.requestId === 42 &&
+    nowhere.closeCode === undefined,
+  nowhere,
 );
 
 console.log(failures === 0 ? "VERDICT: PASS" : `VERDICT: FAIL (${failures})`);

@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 
 import { FACTION_ONCE } from "../hint.js";
+import { Button } from "./button.js";
 import { CARD_H, CARD_W, cardAt, cardRow, choiceLayout, type CardRow } from "./cardRow.js";
 
 const SELECTED = 0xe0b060; // gold rim, as the active ability slot
@@ -15,9 +16,10 @@ interface Card {
 
 // Faction choice before the first spawn, one block in the middle of the screen:
 // one sentence — the choice is once a season — above a row of cards (the
-// faction's diamond badge and name), the selected card gold-rimmed.
+// faction's diamond badge and name), the selected card gold-rimmed, and «В бой»
+// under them: into the world, at the chosen faction's capital.
 // Shown only while the faction is still to be chosen (GameState.choosingFaction),
-// never after a death. main routes canvas clicks through pick() first, so a click
+// never after a death. main routes canvas clicks through hit() first, so a click
 // on a card selects instead of spawning.
 export class FactionPicker {
   private readonly root = new Container();
@@ -25,6 +27,7 @@ export class FactionPicker {
     text: "ФРАКЦИЯ",
     style: { fill: "#9a9a88", fontFamily: "monospace", fontSize: 12, letterSpacing: 2 },
   });
+  private readonly start = new Button("В бой");
   private readonly noteBack = new Graphics();
   private readonly note = new Text({
     text: FACTION_ONCE,
@@ -37,7 +40,7 @@ export class FactionPicker {
   constructor(private readonly app: Application) {
     this.title.anchor.set(0.5, 1);
     this.note.anchor.set(0.5);
-    this.root.addChild(this.title, this.noteBack, this.note);
+    this.root.addChild(this.title, this.noteBack, this.note, this.start.root);
     app.stage.addChild(this.root);
     app.renderer.on("resize", () => this.layout());
   }
@@ -77,11 +80,13 @@ export class FactionPicker {
     this.root.visible = visible;
   }
 
-  // Faction id of the card under a canvas point; undefined off the cards or while hidden.
-  pick(sx: number, sy: number): number | undefined {
+  // What a canvas point is on: a faction's card or «В бой»; undefined off them or
+  // while hidden.
+  hit(sx: number, sy: number): { kind: "faction"; id: number } | { kind: "start" } | undefined {
     if (!this.root.visible) return undefined;
-    const i = cardAt(this.row, sx, sy);
-    return i >= 0 ? this.cards[i]?.id : undefined;
+    if (this.start.hit(sx, sy)) return { kind: "start" };
+    const id = this.cards[cardAt(this.row, sx, sy)]?.id;
+    return id !== undefined ? { kind: "faction", id } : undefined;
   }
 
   private layout(): void {
@@ -89,8 +94,9 @@ export class FactionPicker {
     this.note.style.wordWrapWidth = Math.min(width - 64, 760); // wraps on a narrow screen
     const w = this.note.width + 32;
     const h = this.note.height + 20; // the note's box
-    const { noteY, row } = choiceLayout(width, height, this.cards.length, h);
+    const { noteY, row, button } = choiceLayout(width, height, this.cards.length, h);
     this.row = row;
+    this.start.place(button);
     this.note.position.set(Math.round(width / 2), Math.round(noteY));
     this.noteBack
       .clear()

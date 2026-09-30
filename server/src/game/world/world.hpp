@@ -13,6 +13,7 @@
 #include "net/i_client_gateway.hpp"
 #include "spatial/spatial_index.hpp"
 #include "state/world_state.hpp"
+#include "systems/spawn_system.hpp"
 #include "utils/ts_queue.hpp"
 #include "world/connection.hpp"
 #include "world/fixed_step.hpp"
@@ -24,8 +25,12 @@ namespace lit::game {
 // Every `metrics_interval` it logs what it did as one `metrics {json}` line.
 class World {
   public:
+    // Characters spawn at their faction's capital (capital_spawn_point).
     World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config,
           std::chrono::seconds metrics_interval = std::chrono::seconds{60});
+    // Characters spawn where `spawn_point` says (tests place bodies with it).
+    World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config,
+          SpawnPoint spawn_point, std::chrono::seconds metrics_interval = std::chrono::seconds{60});
     World(const World&) = delete;
     World& operator=(const World&) = delete;
     ~World() = default;
@@ -88,6 +93,7 @@ class World {
     TSQueue<ClientEvent> local_;  // tick-local double buffer
     IClientGateway& gateway_;
     const GameConfig config_;
+    const SpawnPoint spawn_point_;  // where characters come into the world
 
     std::uint32_t snapshot_interval_{1};    // ticks between snapshots (tick_rate / snapshot_rate)
     std::uint32_t resync_window_ticks_{1};  // config.limits.resync_window_ms in ticks

@@ -1,26 +1,35 @@
-// Verifies the data behind the takeover gradient: A (faction 1) captures a
-// neutral cell, then B (faction 2) captures that OWNED cell. Mid-takeover the
+// Verifies the data behind the takeover gradient: A captures the neutral cell
+// between its capital and B's on the smoke map (it steps right onto it), then B
+// (another faction, stepping left onto it) captures that OWNED cell. Mid-takeover the
 // server should keep owner = A while B's capture_progress rises (0<..<100),
 // then flip owner = B. (The client cross-fades those two.)
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
   ClientMessageSchema,
+  ProtocolVersion,
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
-const CELL = 30 * 100 + 30; // its own cell (col 30, row 30) — avoids other smokes' cells
+const A_HOME = spot("takeover-a"); // (30, 30)
+const B_HOME = spot("takeover-b"); // (32, 30)
+const CELL = A_HOME.cell + 1; // (31, 30), between them: neutral
 
 const a = new WebSocket(URL);
 const b = new WebSocket(URL);
 a.binaryType = "arraybuffer";
 b.binaryType = "arraybuffer";
 
-let fA = 0;
-let fB = 0;
+const fA = A_HOME.factionId;
+const fB = B_HOME.factionId;
+let aId = 0;
+let bId = 0;
+let aHolding = false;
+let bHolding = false;
 let aOwned = false;
 let bReady = false;
 let bStarted = false;
@@ -33,9 +42,10 @@ function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
 }
 const hello = (name: string) =>
-  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName(name) } } });
-const spawn = (factionId: number) =>
-  create(ClientMessageSchema, { payload: { case: "spawn", value: { cell: CELL, factionId } } });
+  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
+const spawn = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
+const walk = (seq: number, moveX: number) =>
+  create(ClientMessageSchema, { payload: { case: "input", value: { frames: [{ seq, moveX, moveY: 0 }] } } });
 const capture = (seq: number, on: boolean) =>
   create(ClientMessageSchema, {
     payload: { case: "input", value: { frames: [{ seq, moveX: 0, moveY: 0, capturing: on, attack: false }] } },
@@ -45,7 +55,7 @@ function startB(): void {
   if (!aOwned || !bReady || bStarted) return;
   bStarted = true;
   send(b, spawn(fB));
-  send(b, capture(++bSeq, true));
+  send(b, walk(++bSeq, -1)); // left, onto CELL
 }
 
 a.onopen = () => send(a, hello("A"));
@@ -54,10 +64,15 @@ b.onopen = () => send(b, hello("B"));
 a.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case === "welcome") {
-    fA = m.payload.value.factions[0]?.id ?? 1;
+    aId = m.payload.value.playerId;
     send(a, spawn(fA));
-    send(a, capture(++aSeq, true));
+    send(a, walk(++aSeq, 1)); // right, onto CELL
   } else if (m.payload.case === "snapshot") {
+    const me = m.payload.value.players.find((p) => p.id === aId);
+    if (me && !aHolding && me.x >= A_HOME.x + 70) {
+      aHolding = true; // on CELL: stop and hold E
+      send(a, capture(++aSeq, true));
+    }
     for (const c of m.payload.value.cells) {
       if (c.index !== CELL) continue;
       if (!aOwned && c.owner === fA) {
@@ -72,10 +87,15 @@ a.onmessage = (ev: MessageEvent) => {
 b.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case === "welcome") {
-    fB = m.payload.value.factions[1]?.id ?? 2;
+    bId = m.payload.value.playerId;
     bReady = true;
     startB();
   } else if (m.payload.case === "snapshot") {
+    const me = m.payload.value.players.find((p) => p.id === bId);
+    if (me && bStarted && !bHolding && me.x <= B_HOME.x - 70) {
+      bHolding = true; // on CELL: stop and hold E
+      send(b, capture(++bSeq, true));
+    }
     for (const c of m.payload.value.cells) {
       if (c.index !== CELL) continue;
       finalOwner = c.owner;
@@ -96,4 +116,4 @@ setTimeout(() => {
   a.close();
   b.close();
   process.exit(pass ? 0 : 1);
-}, 5000);
+}, 6000);

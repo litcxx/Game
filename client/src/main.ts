@@ -14,6 +14,7 @@ import { FactionPicker } from "./render/factionPicker.js";
 import { Hud } from "./render/hud.js";
 import type { ProjectileSprite } from "./render/projectiles.js";
 import { Scene } from "./render/scene.js";
+import { SpawnButton } from "./render/spawnButton.js";
 import { showFailure, showStatus, showWelcome, type StatusViews } from "./render/status.js";
 import { FIXED_DT, GameState } from "./state/gameState.js";
 import { ConnectionDialogs } from "./ui/connectionDialogs.js";
@@ -42,7 +43,12 @@ async function main(): Promise<void> {
 
   const state = new GameState();
   const scene = new Scene(app, state);
-  const views: StatusViews = { hud: new Hud(app), bar: new AbilityBar(app), picker: new FactionPicker(app) };
+  const views: StatusViews = {
+    hud: new Hud(app),
+    bar: new AbilityBar(app),
+    picker: new FactionPicker(app),
+    respawn: new SpawnButton(app),
+  };
   const nickname = new NicknameScreen(overlay, (name) => session.join(name));
   const dialogs = new ConnectionDialogs(new Modal(overlay), window);
   let connected = false; // between a Welcome and the connection's loss
@@ -126,26 +132,25 @@ async function main(): Promise<void> {
   // Attack: hold the left mouse button while alive; aim follows the cursor.
   const mouse = installMouse(app.canvas, () => state.alive);
 
-  // Click a faction card to pick it (before the first spawn only); click a cell to
-  // spawn / respawn — only when not alive (alive clicks attack).
+  // Before the first spawn: click a faction card to pick it, «В бой» to spawn at its
+  // capital; later «Возродиться» (or «В бой») in the middle — only when not alive
+  // (alive clicks attack). A click on the map spawns nowhere.
   app.canvas.addEventListener("click", (e) => {
     const rect = app.canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
-    const picked = views.picker.pick(sx, sy);
-    if (picked !== undefined) {
-      state.selectedFaction = picked;
-      views.picker.setSelected(picked);
-      const faction = state.factions.find((f) => f.id === picked);
+    const hit = views.picker.hit(sx, sy);
+    if (hit?.kind === "faction") {
+      state.selectedFaction = hit.id;
+      views.picker.setSelected(hit.id);
+      const faction = state.factions.find((f) => f.id === hit.id);
       if (faction) views.hud.setFaction(faction.name, faction.color);
-      return; // a card click never spawns
+      return;
     }
-    if (state.alive || state.respawnTick > state.serverTick) return;
-    const [col, row] = scene.screenToCell(sx, sy);
-    if (col < 0 || row < 0 || col >= state.mapWidth || row >= state.mapHeight) return;
-    const faction = state.spawnFaction(); // the first spawn locks the one picked
-    state.predictor?.reset({ x: col * 100 + 50, y: row * 100 + 50 });
-    client.sendSpawn(row * state.mapWidth + col, faction);
+    if (hit?.kind !== "start" && !views.respawn.hit(sx, sy)) return;
+    // The first spawn locks the faction picked; the server puts the body at its
+    // capital, and the snapshot brings it (the prediction snaps there).
+    if (state.maySpawn) client.sendSpawn(state.spawnFaction());
   });
 
   // Fixed-step input + prediction; interpolate remotes; render every frame.

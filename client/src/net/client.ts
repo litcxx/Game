@@ -116,9 +116,9 @@ export class GameClient {
     );
   }
 
-  sendSpawn(cell: number, factionId: number): void {
+  sendSpawn(factionId: number): void {
     this.dispatch(
-      create(ClientMessageSchema, { payload: { case: "spawn", value: { cell, factionId } } }),
+      create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } }),
     );
   }
 

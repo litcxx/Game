@@ -161,6 +161,12 @@ export class GameState {
     return this.life === LifeState.ALIVE;
   }
 
+  // A spawn request would be taken: not alive, and dead no longer than the
+  // respawn delay. The body comes into the world at its faction's capital.
+  get maySpawn(): boolean {
+    return !this.alive && (this.life !== LifeState.DEAD || this.serverTick >= this.respawnTick);
+  }
+
   // The faction is still to be chosen: not alive and never spawned. The choice
   // shows only then — once, not after a death.
   get choosingFaction(): boolean {

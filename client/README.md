@@ -80,7 +80,8 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   for 6 s — counted from `connect()`, so one that never opens too — is closed and
   reported as lost (`STALE_CLOSE_CODE`, 4900, sent with the reason «no word from
   the server» for the server's log): a dropped network often closes nothing. `sendInputFrames` ships a batch of per-tick input
-  frames (each with its `seq`); `sendSpawn` requests spawn/respawn. A `Ping`
+  frames (each with its `seq`); `sendSpawn(faction)` requests spawn/respawn — the
+  server puts the body at the faction's capital. A `Ping`
   goes out right after `Hello` and then every 2 s while the socket is open: its
   `Pong` gives the round trip (`roundTripMs`, shown as the HUD's ping), and it
   keeps the connection alive — a hidden tab sends no input, and the server
@@ -168,11 +169,17 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   the hint line (`ABOVE_HINT_LINE`).
 - **`src/render/factionPicker.ts`** — `FactionPicker`: one block in the middle
   of the screen — a sentence (the choice is once a season) above the faction
-  cards (badge + name) — so the bottom of the map stays clear in the full-map
-  view. Shown only before the first spawn
-  (`GameState.choosingFaction`), never after a death: the first spawn locks the
-  faction (`GameState.spawnFaction()`), and the server refuses another
-  (`INVALID_FACTION`). Click routing via the pure layout in `src/render/cardRow.ts`.
+  cards (badge + name) and **«В бой»** under them — so the bottom of the map
+  stays clear in the full-map view. Shown only before the first spawn
+  (`GameState.choosingFaction`), never after a death: «В бой» sends the spawn —
+  the body comes into the world at the faction's capital — and locks the faction
+  (`GameState.spawnFaction()`); the server refuses another (`INVALID_FACTION`).
+  **`src/render/spawnButton.ts`** (`SpawnButton`): once the faction is chosen,
+  the lone button in the middle when a spawn is allowed (`GameState.maySpawn`) —
+  «Возродиться» after a death, «В бой» when back without a body. Both are a
+  `Button` (`src/render/button.ts`); click routing via the pure layout in
+  `src/render/cardRow.ts`. A click on the map spawns nowhere: the server alone
+  places the body (the prediction snaps there with the snapshot).
 - **`src/render/hud.ts`** — `Hud`: faction badge + territory stats (top-left),
   "В СЕТИ n · ПИНГ m" (players online, round trip in ms — as in the concept;
   no ping until the first `Pong`) + FPS (top-right), an HP gauge (bottom-left),
@@ -216,7 +223,7 @@ is redrawn from predicted (self) and interpolated (remote) positions.
 | Hold **left mouse** | Use the active ability, repeating each cooldown: slot 1 hits every enemy around you, slot 2 fires a projectile toward the cursor, slot 3 blocks |
 | Keys **1–5** | Pick the ability bar slot (1 melee, 2 ranged, 3 block; 4–5 empty for now) |
 | **Click** a faction card | Pick your faction — once, before the first spawn: it stays until the season changes |
-| **Click** a cell | Spawn / respawn there (while not alive) |
+| **Click** «В бой» / «Возродиться» | Come into the world at your faction's capital (while not alive; after a death once the countdown ends) |
 | **M** | Toggle the full-map overview |
 
 Keys work by their place on the keyboard, in any layout (in the Russian one too).
@@ -274,17 +281,29 @@ npm run smoke        # scripts/smoke.ts, then every scripts/*_smoke.ts
 ```
 
 Both run every script, print a pass/fail summary and exit 1 if any failed. The
-smoke suite expects a **freshly started** server: the territory persists for the
-server's lifetime, so e.g. `capture_smoke` (captures the centre cell for Red)
-fails on a server where that cell is already Red — restart the server between
-runs. It also reads the server's log (`close_reason_smoke`): start the server
-with it at `../server/server.log`, as CI does —
-`cd ../server && ./build/bin/server config/config.json > server.log 2>&1 &` — or
-point `SERVER_LOG` at it. A new script is picked up by its name, no list to edit. Two things the
-server keeps matter to a new script: a name stays taken until the server
-restarts, so players join as `uniqueName("base")` (`scripts/uniqueName.ts`);
-and a player stays in the world for the reconnect grace (30 s) after its socket
-closes, so a script that fights or shoots spawns on cells of its own.
+smoke suite runs against a server on the **smoke map**: the shipped rules with
+`../server/config/smoke-map.json`'s factions and capitals — one faction per
+script role (`combat-attacker`, `fog-scout`, …), its capital where that role's
+players come into the world, since a body spawns only at its faction's capital.
+A script finds its spot with `spot("role")` (`scripts/smokeMap.ts`) and spawns in
+that faction; a script that captures steps off its capital onto a neutral
+neighbour first. Start the server as CI does, freshly (the territory persists
+for its lifetime, so e.g. `capture_smoke` fails where its cell is already
+taken), with its log at `../server/server.log` (`close_reason_smoke` reads it;
+or point `SERVER_LOG` at it):
+
+```bash
+cd ../server && ./scripts/smoke-config.sh > build/smoke-config.json
+./build/bin/server build/smoke-config.json > server.log 2>&1 &
+```
+
+A new script is picked up by its name, no list to edit; a new role is a faction
+and a capital in `smoke-map.json` (the server's unit tests check the map makes a
+valid config). Two things the server keeps matter to a new script: a name stays
+taken until the server restarts, so players join as `uniqueName("base")`
+(`scripts/uniqueName.ts`); and a player stays in the world for the reconnect
+grace (30 s) after its socket closes, so a script that fights or shoots has a
+spot of its own.
 
 **Pure logic (no server):**
 
@@ -296,7 +315,7 @@ npx tsx scripts/interpolation_check.ts  # snapshot interpolation; SnapshotClock 
 npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
 npx tsx scripts/input_check.ts          # keys by place (any layout), release on blur, no right-click menu (happy-dom)
-npx tsx scripts/picker_check.ts         # the choice centred (note over the cards) + click hit-testing
+npx tsx scripts/picker_check.ts         # the spawn controls centred (note, cards, «В бой»; the respawn button) + hit-testing
 npx tsx scripts/nameplate_check.ts      # name pill grows with the name, the hp bar is one width
 npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked/your-hit effects, a hit taken from your hp, timing
 npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs
@@ -304,7 +323,7 @@ npx tsx scripts/errors_check.ts         # error texts, close codes, fatal / refu
 npx tsx scripts/router_check.ts         # each ServerMessage -> GameState (territory, roster, fog, you, effects, a new session)
 npx tsx scripts/session_check.ts        # join with the saved name/token, reconnect backoff, when not to reconnect
 npx tsx scripts/ui_check.ts             # overlay: modal, toasts, nickname screen, connection dialogs (happy-dom)
-npx tsx scripts/status_check.ts         # what the HUD, bar and picker get from GameState (network line, hp, fatal)
+npx tsx scripts/status_check.ts         # what the HUD, bar, picker and respawn button get from GameState (network line, hp, fatal)
 npx tsx scripts/onboarding_check.ts     # the capture hint goes after your own first capture, and stays gone
 npx tsx scripts/server_url_check.ts     # the server address: VITE_SERVER_URL, else the page's origin at /ws
 ```
@@ -349,8 +368,8 @@ src/net/       GameClient (transport), Session (join, token, reconnect),
                router (ServerMessage -> GameState), Predictor (prediction),
                InterpolationBuffer
 src/render/    PixiJS views of GameState: Camera, Scene (world + minimap), Hud,
-               AbilityBar, FactionPicker, ProjectileView, EffectsView, FogView,
-               CapitalsView;
+               AbilityBar, FactionPicker, SpawnButton, ProjectileView, EffectsView,
+               FogView, CapitalsView;
                status (HUD / bar / picker from the state)
 src/ui/        DOM overlay over the canvas: Overlay, Modal, Toasts,
                NicknameScreen, ConnectionDialogs

@@ -8,9 +8,11 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import {
   AbilityKind,
   ClientMessageSchema,
+  ProtocolVersion,
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
@@ -35,16 +37,16 @@ let targetHp = -1;
 
 // Its own row: a player stays in the world for the reconnect grace (30 s) after
 // its socket closes — fog_smoke's bodies on row 20 would stop the shot.
-const shooterCell = 45 * 100 + 20; // (col 20, row 45) -> centre (2050, 4550)
-const targetCell = 45 * 100 + 23; // (col 23, row 45) -> centre (2350, 4550), 300 units right
+// Their capitals on the smoke map: (20, 45) and (23, 45), 300 units apart on one row.
+const SHOOTER = spot("ranged-shooter");
+const TARGET = spot("ranged-target");
 
 function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
 }
 const helloMsg = (name: string) =>
-  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName(name) } } });
-const spawnMsg = (cell: number, factionId: number) =>
-  create(ClientMessageSchema, { payload: { case: "spawn", value: { cell, factionId } } });
+  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
+const spawnMsg = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
 const fireMsg = (seq: number, attack: boolean) =>
   create(ClientMessageSchema, {
     payload: {
@@ -76,8 +78,8 @@ shooter.onmessage = (ev: MessageEvent) => {
     const shot = w.abilities.find((a) => a.kind === AbilityKind.PROJECTILE);
     shotAbility = shot?.id ?? 0;
     shotDamage = shot?.damage ?? 0;
-    shooterFaction = w.factions[0]?.id ?? 1;
-    send(shooter, spawnMsg(shooterCell, shooterFaction));
+    shooterFaction = SHOOTER.factionId;
+    send(shooter, spawnMsg(shooterFaction));
     shooterSpawned = true;
     maybeFire();
   } else if (m.payload.case === "snapshot") {
@@ -98,8 +100,7 @@ target.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case === "welcome") {
     targetId = m.payload.value.playerId;
-    const factions = m.payload.value.factions;
-    send(target, spawnMsg(targetCell, factions[1]?.id ?? 2)); // not the shooter's faction
+    send(target, spawnMsg(TARGET.factionId)); // not the shooter's faction
     targetSpawned = true;
     maybeFire();
   }
