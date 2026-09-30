@@ -11,7 +11,8 @@ import {
   type Snapshot,
   type Welcome,
 } from "../gen/game/v1/protocol_pb.js";
-import { FIXED_DT, INTERP_DELAY_MS, type GameState } from "../state/gameState.js";
+import { FADE_MS, FIXED_DT, INTERP_DELAY_MS, type GameState } from "../state/gameState.js";
+import { UNITS_PER_CELL } from "../state/territory.js";
 import { roundTripMs } from "./client.js";
 import type { RemoteState } from "./interpolation.js";
 import { Predictor } from "./prediction.js";
@@ -124,24 +125,61 @@ function onSnapshot(state: GameState, s: Snapshot, nowMs: number): void {
   const cellsChanged = state.territory.applyCellUpdates(s.cells);
   if (sightChanged || cellsChanged) state.worldRevision++;
 
+  // Remote players and their projectiles go on the snapshots' clock: the server's
+  // time, not the arrival's, so network jitter doesn't make their motion uneven.
+  const stamp = state.clock.stamp((s.tick * 1000) / state.tickRate, nowMs);
   const remotes = new Map<number, RemoteState>();
   for (const p of s.players) if (p.id !== state.myId) remotes.set(p.id, { x: p.x, y: p.y });
-  state.interp.push(nowMs, remotes);
+  state.interp.push(stamp, remotes);
 
   // Projectiles: yours run on from this snapshot (GameState.shotsAt), others'
   // are interpolated.
+  const lastOwn = state.ownShots;
+  const lastOthers = state.lastOtherShots;
+  const lastStamp = state.lastShotsStamp;
   const shots = new Map<number, RemoteState>();
   state.ownShots = new Map();
+  state.lastOtherShots = new Map();
+  state.lastShotsStamp = stamp;
   for (const p of s.projectiles) {
+    const shot = { x: p.x, y: p.y, vx: p.vx, vy: p.vy, factionId: p.factionId };
     if (p.mine) {
-      state.ownShots.set(p.id, { x: p.x, y: p.y, vx: p.vx, vy: p.vy, factionId: p.factionId, seenMs: nowMs });
+      state.ownShots.set(p.id, { ...shot, seenMs: nowMs });
       continue;
     }
     shots.set(p.id, { x: p.x, y: p.y });
+    state.lastOtherShots.set(p.id, shot);
     state.shotMeta.set(p.id, { vx: p.vx, vy: p.vy, factionId: p.factionId, seenMs: nowMs });
   }
-  state.shots.push(nowMs, shots);
+  state.shots.push(stamp, shots);
   for (const [id, m] of state.shotMeta) if (nowMs - m.seenMs > SHOT_MEMORY_MS) state.shotMeta.delete(id);
+
+  // Gone since the last snapshot: one that would now be out of sight flew out of
+  // it (the server sends only what is in sight), so it fades on; one in sight hit
+  // or ran its range, and is simply gone.
+  for (const [id, p] of lastOwn) {
+    if (!state.ownShots.has(id) && outOfSight(state, p, nowMs - p.seenMs)) {
+      state.fadingShots.set(id, { ...p, atMs: p.seenMs, own: true });
+    }
+  }
+  for (const [id, p] of lastOthers) {
+    if (!state.lastOtherShots.has(id) && outOfSight(state, p, stamp - lastStamp)) {
+      state.fadingShots.set(id, { ...p, atMs: lastStamp, own: false });
+    }
+  }
+  for (const [id, f] of state.fadingShots) {
+    if ((f.own ? nowMs : stamp) - f.atMs > FADE_MS + INTERP_DELAY_MS) state.fadingShots.delete(id);
+  }
+}
+
+// Whether a projectile, `dtMs` on from where it was, is out of the faction's sight
+// (or off the map).
+function outOfSight(state: GameState, p: { x: number; y: number; vx: number; vy: number }, dtMs: number): boolean {
+  const col = Math.floor((p.x + (p.vx * dtMs) / 1000) / UNITS_PER_CELL);
+  const row = Math.floor((p.y + (p.vy * dtMs) / 1000) / UNITS_PER_CELL);
+  const { cols, rows } = state.territory;
+  if (col < 0 || row < 0 || col >= cols || row >= rows) return true;
+  return state.fog.sightAt(row * cols + col) !== "visible";
 }
 
 // The round trip of the Ping it answers (shown in the HUD).

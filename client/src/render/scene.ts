@@ -7,6 +7,7 @@ import { UNITS_PER_CELL } from "../state/territory.js";
 import { Camera } from "./camera.js";
 import { EffectsView } from "./effects.js";
 import { FogView } from "./fog.js";
+import { nameplate } from "./nameplate.js";
 import { ProjectileView, type ProjectileSprite } from "./projectiles.js";
 
 interface PlayerSprite {
@@ -353,23 +354,23 @@ export class Scene {
         }
         const hasName = name.length > 0;
         label.visible = hasName;
-        const pillW = hasName ? Math.max(label.width + 10, 20) : 16;
-        const pillY = -24;
-        if (hasName) {
-          gfx.roundRect(-pillW / 2, pillY, pillW, 15, 3).fill({ color: 0x0a0a0f, alpha: 0.6 });
-          label.position.set(0, pillY + 2);
+        const frac = mp.hp / Math.max(1, this.state.maxHp);
+        const plate = nameplate(hasName ? label.width : undefined, frac);
+        if (plate.pill) {
+          const { x, y, w, h } = plate.pill;
+          gfx.roundRect(x, y, w, h, 3).fill({ color: 0x0a0a0f, alpha: 0.6 });
+          label.position.set(0, y + 2);
         }
-        const barY = hasName ? pillY + 15 : -13;
-        const frac = Math.max(0, Math.min(1, mp.hp / Math.max(1, this.state.maxHp)));
-        gfx.rect(-pillW / 2, barY, pillW, 2).fill({ color: 0x000000, alpha: 0.5 });
-        if (frac > 0) {
+        const { x: bx, y: by, w: bw, h: bh } = plate.bar;
+        gfx.rect(bx, by, bw, bh).fill({ color: 0x000000, alpha: 0.5 });
+        if (plate.fillW > 0) {
           const hc = frac > 0.5 ? 0x37c837 : frac > 0.25 ? 0xd8a038 : 0xd83838;
-          gfx.rect(-pillW / 2, barY, pillW * frac, 2).fill(hc);
+          gfx.rect(bx, by, plate.fillW, bh).fill(hc);
         }
       }
 
       const [sx, sy] = cam.worldToScreen(pos.x, pos.y);
-      root.position.set(sx, sy);
+      root.position.set(Math.round(sx), Math.round(sy)); // whole pixels: the name stays crisp in motion
     }
     for (const [id, s] of this.sprites) {
       if (!seen.has(id)) {

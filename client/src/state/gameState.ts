@@ -5,6 +5,7 @@ import { FogOfWar } from "../fog.js";
 import { LifeState } from "../gen/game/v1/protocol_pb.js";
 import { InterpolationBuffer } from "../net/interpolation.js";
 import type { Predictor } from "../net/prediction.js";
+import { SnapshotClock } from "../net/snapshotClock.js";
 import { Roster } from "./roster.js";
 import { Territory, UNITS_PER_CELL, type CellState } from "./territory.js";
 
@@ -14,6 +15,9 @@ export const INTERP_DELAY_MS = 100;
 // Your own shots run on from the latest snapshot by their velocity, at most this
 // far (late snapshots don't send them off ahead).
 export const OWN_SHOT_LEAD_MS = 100;
+// A projectile that flew out of sight (the server stops sending it) flies on,
+// fading out over this long, instead of stopping at the fog as at a wall.
+export const FADE_MS = 200;
 
 export interface Faction {
   id: number;
@@ -55,6 +59,20 @@ export interface ShotView {
   vx: number;
   vy: number;
   factionId: number;
+  alpha: number; // 1 in flight; less while fading out of sight
+}
+
+// A projectile last seen where it was about to leave sight: from there it flies on
+// and fades out. `atMs`: when it was there — yours on the local clock (arrival),
+// others' on the snapshots' clock (SnapshotClock), drawn INTERP_DELAY_MS behind.
+export interface FadingShot {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  factionId: number;
+  atMs: number;
+  own: boolean;
 }
 
 // Everything the client knows, as data: what the server said (net/router.ts
@@ -100,6 +118,10 @@ export class GameState {
   readonly shots = new InterpolationBuffer(INTERP_DELAY_MS); // others' projectiles
   readonly shotMeta = new Map<number, ShotMeta>();
   ownShots = new Map<number, OwnShot>(); // yours, from the latest snapshot
+  readonly fadingShots = new Map<number, FadingShot>(); // gone out of sight, fading
+  lastOtherShots = new Map<number, Omit<FadingShot, "atMs" | "own">>(); // others', in the last snapshot
+  lastShotsStamp = 0; // that snapshot's place on the snapshots' clock
+  readonly clock = new SnapshotClock(); // where snapshots go on the interpolation's clock
   readonly notices = new Notices(); // server errors for the hint line
   private effects: Effect[] = []; // new ones, for the view to take
   private readonly colors = new Map<number, number>(); // faction id -> colour
@@ -119,6 +141,9 @@ export class GameState {
     this.shots.clear();
     this.shotMeta.clear();
     this.ownShots.clear();
+    this.fadingShots.clear();
+    this.lastOtherShots.clear();
+    this.clock.reset();
     this.effects = [];
     this.notices.clear();
   }
@@ -152,17 +177,28 @@ export class GameState {
   // in the past, in step with the players who fired them. Yours run on from the
   // latest snapshot by their velocity (at most OWN_SHOT_LEAD_MS), so a shot
   // leaves your token — drawn at the predicted position — along the aim line
-  // rather than behind it; one gone from the latest snapshot is gone at once.
+  // rather than behind it. A shot gone from the snapshots in sight (a hit, the
+  // end of its range) is gone; one that flew out of sight flies on from where it
+  // was last seen, fading out over FADE_MS (router.ts tells which is which).
   shotsAt(nowMs: number): ShotView[] {
     const out: ShotView[] = [];
+    const renderMs = nowMs - INTERP_DELAY_MS; // others' shots are drawn this far behind
     for (const id of this.shots.ids(nowMs)) {
+      const fading = this.fadingShots.get(id);
+      if (fading && renderMs >= fading.atMs) continue; // it fades on from here
       const pos = this.shots.sample(id, nowMs);
       const meta = this.shotMeta.get(id);
-      if (pos && meta) out.push({ ...pos, vx: meta.vx, vy: meta.vy, factionId: meta.factionId });
+      if (pos && meta) out.push({ ...pos, vx: meta.vx, vy: meta.vy, factionId: meta.factionId, alpha: 1 });
     }
     for (const s of this.ownShots.values()) {
       const lead = Math.min(Math.max(0, nowMs - s.seenMs), OWN_SHOT_LEAD_MS) / 1000;
-      out.push({ x: s.x + s.vx * lead, y: s.y + s.vy * lead, vx: s.vx, vy: s.vy, factionId: s.factionId });
+      out.push({ x: s.x + s.vx * lead, y: s.y + s.vy * lead, vx: s.vx, vy: s.vy, factionId: s.factionId, alpha: 1 });
+    }
+    for (const f of this.fadingShots.values()) {
+      const age = (f.own ? nowMs : renderMs) - f.atMs;
+      if (age < 0 || age >= FADE_MS) continue;
+      const t = age / 1000;
+      out.push({ x: f.x + f.vx * t, y: f.y + f.vy * t, vx: f.vx, vy: f.vy, factionId: f.factionId, alpha: 1 - age / FADE_MS });
     }
     return out;
   }
