@@ -26,7 +26,7 @@ sequenceDiagram
     main->>ses: start()
     alt ника нет в localStorage (первый визит)
         ses-->>main: status needName → экран ника
-        main->>ses: join(ник) — Enter / «Играть»; новый персонаж, без токена
+        main->>ses: join(ник) — Enter / «Играть», новый персонаж(без токена)
     else ник и токен сохранены
         Note over ses: сразу входит с ними
     end
@@ -41,7 +41,7 @@ sequenceDiagram
     srv->>ws: WS binary frames
     ws-->>net: onmessage
     net->>ses: onMessage(Welcome / MapState / Roster)
-    ses->>ses: Welcome: сохранить ник и session_token в localStorage; status playing → экран ника скрыт
+    ses->>ses: Welcome: сохранить ник и session_token в localStorage, status playing → экран ника скрыт
     ses->>main: onMessage
     main->>main: routeMessage → GameState: новая сессия (старое состояние сброшено), конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта, ростер
     main->>main: showWelcome: карточки фракций, панель способностей
@@ -70,7 +70,7 @@ sequenceDiagram
     end
     Note over srv: персонаж остаётся в мире 30 с (grace)
     ses-->>main: status reconnecting{попытка n, через 1, 2, 4, 8, затем 15 с}
-    main->>main: «Переподключение…» с обратным отсчётом, без кнопок; ввод не идёт в игру
+    main->>main: «Переподключение…» с обратным отсчётом, без кнопок, ввод не идёт в игру
     opt браузер: событие online
         main->>ses: retryNow() — не ждать конца задержки
     end
@@ -79,8 +79,8 @@ sequenceDiagram
     net->>srv: Hello{name, session_token}
     srv-->>net: Welcome{resumed = true, тот же player_id}, MapState, Roster{full}
     net-->>ses: onMessage(Welcome)
-    ses-->>main: status playing: диалог закрыт; задержки заново с 1 с
-    main->>main: router: новая сессия; фракция воскрешённого тела — из полного ростера
+    ses-->>main: status playing: диалог закрыт, задержки заново с 1 с
+    main->>main: router: новая сессия, фракция воскрешённого тела — из полного ростера
 
     Note over ses,srv: SESSION_REPLACED (игру открыли в другой вкладке, закрытие 4009) и прочие фатальные ошибки
     ses-->>main: status failed{причина} — без переподключения
@@ -124,12 +124,12 @@ sequenceDiagram
     router->>state: you: жизнь, hp, возрождение, кулдауны атаки и блока, тик сервера
     router->>pred: reconcile(you.pos, you.last_input_seq)
     Note over pred: выкинуть подтверждённые кадры, снап к авторитету, реплей остатка
-    router->>state: игроки снапшота; interp.push(позиции чужих), shots.push(позиции снарядов)
-    router->>state: fog.apply(revealed, hidden, resync) — туман войны; territory.applyCellUpdates
+    router->>state: игроки снапшота, interp.push(позиции чужих), shots.push(позиции снарядов)
+    router->>state: fog.apply(revealed, hidden, resync) — туман войны, territory.applyCellUpdates
     Note over state: resync (сервер потерял кадр к нам): видимые → исследованные, затем revealed
-    router->>state: эффекты (effectsFromEvents: удар, блок, блок сработал); ревизия мира++ при смене клеток или видимости
+    router->>state: эффекты (effectsFromEvents: удар, блок, блок сработал), ревизия мира++ при смене клеток или видимости
     state-->>scene: showStatus: HUD (фракция, клетки/%, В СЕТИ, HP, текущая клетка), панель, выбор фракции
-    state-->>scene: каждый кадр: Scene читает GameState; мир перерисовывается, только если сменилась ревизия
+    state-->>scene: каждый кадр: Scene читает GameState, мир перерисовывается, только если сменилась ревизия
 ```
 
 Роутер пишет только в `GameState` (данные, без PixiJS); виды в `src/render/`
