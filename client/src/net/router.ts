@@ -1,5 +1,5 @@
 import { abilitiesFromWelcome } from "../abilities.js";
-import { effectsFromEvents } from "../effects.js";
+import { effectsFromEvents, hitTakenEffect } from "../effects.js";
 import { errorText } from "../errors.js";
 import {
   LifeState,
@@ -97,8 +97,11 @@ function onSnapshot(state: GameState, s: Snapshot, nowMs: number): void {
   state.blockReadyTick = s.you?.blockReadyTick ?? 0;
   state.blockCooldownTicks = s.you?.blockCooldownTicks ?? 0;
 
-  // The local player: the server's word corrects the prediction.
+  // The local player: the server's word corrects the prediction; a drop of your
+  // hp flashes your token with the damage.
   const self = s.players.find((p) => p.id === state.myId);
+  const taken = self && hitTakenEffect(state.hp, self.hp, state.myId, nowMs, INTERP_DELAY_MS);
+  if (taken) state.addEffects([taken]);
   state.hp = self?.hp ?? 0;
   if (state.predictor && self) {
     if (state.alive && wasAlive) state.predictor.reconcile({ x: self.x, y: self.y }, s.you?.lastInputSeq ?? 0);

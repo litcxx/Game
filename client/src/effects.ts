@@ -5,7 +5,8 @@ import type { GameEvent } from "./gen/game/v1/protocol_pb.js";
 // pressed: a melee "swing", a block's "shield", and a hit stopped by a block
 // ("blocked"). Projectile launches need none — the projectile itself is drawn.
 // A hit that landed ("hit": a flash and the damage on the target) shows only to
-// whoever dealt it; everyone else sees the hp bar drop, and a miss shows nothing.
+// whoever dealt it and whoever took it (hitTakenEffect); everyone else sees the hp
+// bar drop, and a miss shows nothing.
 export type EffectKind = "swing" | "shield" | "blocked" | "hit";
 
 export interface Effect {
@@ -55,6 +56,23 @@ export function effectsFromEvents(
     }
   }
   return out;
+}
+
+// A hit you took: the same flash and damage on your token as its dealer sees, when
+// your hp dropped since the last snapshot. From your hp rather than HitEvent: it
+// comes in every snapshot, a shot from the fog too (the server sends no event
+// naming an attacker you can't see). Only damage lowers hp. It starts `delayMs`
+// after arrival, like the dealer's: the attacker and its shot are drawn that far
+// in the past, so the flash comes as the blow reaches your token on screen.
+export function hitTakenEffect(
+  prevHp: number,
+  hp: number,
+  selfId: number,
+  arrivalMs: number,
+  delayMs: number,
+): Effect | undefined {
+  if (hp >= prevHp) return undefined;
+  return { kind: "hit", playerId: selfId, startMs: arrivalMs + delayMs, durationMs: HIT_MS, radius: 0, damage: prevHp - hp };
 }
 
 // Progress 0..1 of an effect at `nowMs`; undefined before it starts and once over.

@@ -1,10 +1,10 @@
 // Pure checks for effect timing: which snapshot events become effects (melee
-// swing, block shield, blocked hit, your own hit landing), on whose token, when
-// they start and how long they last. Run: npx tsx scripts/effects_check.ts
+// swing, block shield, blocked hit, your own hit landing) and a hit you took (your
+// hp drop), on whose token, when they start and how long they last. Run: npx tsx scripts/effects_check.ts
 import { create } from "@bufbuild/protobuf";
 
 import type { AbilityInfo } from "../src/abilities.js";
-import { effectProgress, effectsFromEvents, type Effect } from "../src/effects.js";
+import { effectProgress, effectsFromEvents, hitTakenEffect, type Effect } from "../src/effects.js";
 import { GameEventSchema, type GameEvent } from "../src/gen/game/v1/protocol_pb.js";
 
 let failures = 0;
@@ -53,8 +53,19 @@ check(
   "your hit: a flash with the damage on the target, when the target is drawn",
   same(fx([hit(SELF, 5, 20, false)]), [{ kind: "hit", playerId: 5, startMs: 1100, durationMs: 600, radius: 0, damage: 20 }]),
 );
-check("a hit on you: no effect (your hp bar drops)", fx([hit(5, SELF, 20, false)]).length === 0);
+check("a hit on you: no effect from its event (your hp drop makes it, below)", fx([hit(5, SELF, 20, false)]).length === 0);
 check("a hit between others: no effect", fx([hit(5, 9, 20, false)]).length === 0);
+
+// A hit on you: the same flash and damage on your token, from your own hp — it
+// comes in every snapshot, a shot from the fog too (the server sends no HitEvent
+// naming an attacker you can't see). It starts after the interpolation delay, as
+// the shot or swing that dealt it reaches your token on screen.
+check(
+  "your hp dropped: a flash with the damage on your token, when the blow is drawn reaching it",
+  same(hitTakenEffect(100, 80, SELF, ARRIVAL, DELAY), { kind: "hit", playerId: SELF, startMs: 1100, durationMs: 600, radius: 0, damage: 20 }),
+);
+check("... your hp the same (a blocked hit): nothing", hitTakenEffect(80, 80, SELF, ARRIVAL, DELAY) === undefined);
+check("... your hp up (a respawn): nothing", hitTakenEffect(0, 100, SELF, ARRIVAL, DELAY) === undefined);
 check(
   "a death: no effect",
   fx([create(GameEventSchema, { tick: 1, kind: { case: "death", value: { victimId: 5, killerId: 7 } } })]).length === 0,
