@@ -1,8 +1,7 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 
 import { FACTION_ONCE } from "../hint.js";
-import { CARD_H, CARD_W, cardAt, cardRow, type CardRow } from "./cardRow.js";
-import { ABOVE_HINT_LINE } from "./hud.js";
+import { CARD_H, CARD_W, cardAt, cardRow, choiceLayout, type CardRow } from "./cardRow.js";
 
 const SELECTED = 0xe0b060; // gold rim, as the active ability slot
 const BORDER = 0x3a3a46;
@@ -14,9 +13,9 @@ interface Card {
   name: Text;
 }
 
-// Faction choice before the first spawn: a centred row of cards — the faction's
-// diamond badge and name — above the hint line, the selected card gold-rimmed,
-// and in the middle of the screen one sentence: the choice is once a season.
+// Faction choice before the first spawn, one block in the middle of the screen:
+// one sentence — the choice is once a season — above a row of cards (the
+// faction's diamond badge and name), the selected card gold-rimmed.
 // Shown only while the faction is still to be chosen (GameState.choosingFaction),
 // never after a death. main routes canvas clicks through pick() first, so a click
 // on a card selects instead of spawning.
@@ -33,7 +32,7 @@ export class FactionPicker {
   });
   private cards: Card[] = [];
   private selected = 0;
-  private row: CardRow = cardRow(0, 0, 0, ABOVE_HINT_LINE);
+  private row: CardRow = cardRow(0, 0, 0);
 
   constructor(private readonly app: Application) {
     this.title.anchor.set(0.5, 1);
@@ -86,20 +85,20 @@ export class FactionPicker {
   }
 
   private layout(): void {
-    this.row = cardRow(this.app.screen.width, this.app.screen.height, this.cards.length, ABOVE_HINT_LINE);
-    this.cards.forEach((c, i) => c.root.position.set(this.row.x0 + i * (this.row.w + this.row.gap), this.row.y));
-    this.title.position.set(Math.round(this.app.screen.width / 2), this.row.y - 8);
-
     const { width, height } = this.app.screen;
     this.note.style.wordWrapWidth = Math.min(width - 64, 760); // wraps on a narrow screen
-    this.note.position.set(Math.round(width / 2), Math.round(height / 2));
     const w = this.note.width + 32;
-    const h = this.note.height + 20;
+    const h = this.note.height + 20; // the note's box
+    const { noteY, row } = choiceLayout(width, height, this.cards.length, h);
+    this.row = row;
+    this.note.position.set(Math.round(width / 2), Math.round(noteY));
     this.noteBack
       .clear()
-      .roundRect(Math.round((width - w) / 2), Math.round((height - h) / 2), w, h, 6)
+      .roundRect(Math.round((width - w) / 2), Math.round(noteY - h / 2), w, h, 6)
       .fill({ color: 0x0a0a0f, alpha: 0.75 })
       .stroke({ width: 1, color: BORDER });
+    this.cards.forEach((c, i) => c.root.position.set(row.x0 + i * (row.w + row.gap), row.y));
+    this.title.position.set(Math.round(width / 2), row.y - 8);
   }
 
   private redraw(): void {

@@ -94,6 +94,22 @@ message Welcome {
   GameConfig config = 5;
   repeated Faction factions = 6;
   repeated Ability abilities = 7;  // панель способностей по порядку: abilities[0] — клавиша 1
+  MapDefinition map = 8;           // статическое знание о карте
+}
+
+// Статическое знание о карте: видно всегда, сквозь туман (ГДД 7.4.3, F-4). Кому
+// сейчас принадлежат клетки — только под зрением (MapState, Snapshot.cells).
+// Позже здесь будут рудники и рельеф.
+message MapDefinition {
+  repeated Capital capitals = 1;  // по одной на фракцию
+}
+
+// Столица фракции. Клетки её зоны — круг: центры в пределах protected_radius
+// клеток от центра клетки столицы — принадлежат фракции с начала сезона.
+message Capital {
+  uint32 faction_id = 1;
+  uint32 cell = 2;              // индекс клетки: row * map_width + col
+  uint32 protected_radius = 3;  // радиус зоны в клетках: 4
 }
 
 // Правила и темп игры. Клиент не хардкодит ни одно из этих чисел.

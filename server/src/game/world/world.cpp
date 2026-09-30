@@ -15,6 +15,7 @@
 #include "sync/delivery.hpp"
 #include "sync/messages.hpp"
 #include "sync/snapshot_builder.hpp"
+#include "systems/capital_system.hpp"
 #include "systems/capture_system.hpp"
 #include "systems/combat_system.hpp"
 #include "systems/input_system.hpp"
@@ -45,6 +46,7 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
           static_cast<std::uint32_t>(std::max<std::int64_t>(metrics_interval.count(), 1))},
       metrics_interval_ticks_{std::max<std::uint32_t>(metrics_interval_s_ * config.tick_rate, 1)} {
     state_.territory.reset(config_.map_width, config_.map_height);
+    seed_capitals(state_.territory, config_.capitals);  // every start is a season's, until saves
 
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
     snapshot_interval_ = config_.tick_rate / rate;

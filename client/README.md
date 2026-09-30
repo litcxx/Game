@@ -139,6 +139,10 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   **`src/render/fog.ts`** (`FogView`) covers the on-screen cells: unexplored
   under dense fog (only the grid shows through), explored dimmed over the last
   known state, visible untouched; one rect per run, the map border on top.
+  **`src/render/capitals.ts`** (`CapitalsView`) draws over it the capitals'
+  markers (`GameState.capitals`, from `Welcome.map`): where they are is known from
+  the start, fog or not; who owns their zones only under sight. The minimap's
+  markers come with GAME-021.
 - **`src/errors.ts`** — server errors as the player sees them: a text per
   `ErrorCode` (`ServerError.detail` is only for logs), the error a close code
   4000 + code carries, and `Notices`: the hint line shows a fatal error until
@@ -161,10 +165,11 @@ is redrawn from predicted (self) and interpolated (remote) positions.
 - **`src/render/abilityBar.ts`** — `AbilityBar`: the bottom-centre 1–5 bar (◆ melee,
   ● ranged, a shield for block, empty slots), the active slot gold-rimmed, each
   slot darkened from the top while its cooldown runs; shown while alive, above
-  the hint line (`ABOVE_HINT_LINE`, as the faction cards).
-- **`src/render/factionPicker.ts`** — `FactionPicker`: faction cards (badge +
-  name) above the hint line and, in the middle of the screen, one sentence: the
-  choice is once a season. Shown only before the first spawn
+  the hint line (`ABOVE_HINT_LINE`).
+- **`src/render/factionPicker.ts`** — `FactionPicker`: one block in the middle
+  of the screen — a sentence (the choice is once a season) above the faction
+  cards (badge + name) — so the bottom of the map stays clear in the full-map
+  view. Shown only before the first spawn
   (`GameState.choosingFaction`), never after a death: the first spawn locks the
   faction (`GameState.spawnFaction()`), and the server refuses another
   (`INVALID_FACTION`). Click routing via the pure layout in `src/render/cardRow.ts`.
@@ -291,7 +296,7 @@ npx tsx scripts/interpolation_check.ts  # snapshot interpolation; SnapshotClock 
 npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
 npx tsx scripts/input_check.ts          # keys by place (any layout), release on blur, no right-click menu (happy-dom)
-npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
+npx tsx scripts/picker_check.ts         # the choice centred (note over the cards) + click hit-testing
 npx tsx scripts/nameplate_check.ts      # name pill grows with the name, the hp bar is one width
 npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked/your-hit effects, a hit taken from your hp, timing
 npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs
@@ -344,7 +349,8 @@ src/net/       GameClient (transport), Session (join, token, reconnect),
                router (ServerMessage -> GameState), Predictor (prediction),
                InterpolationBuffer
 src/render/    PixiJS views of GameState: Camera, Scene (world + minimap), Hud,
-               AbilityBar, FactionPicker, ProjectileView, EffectsView, FogView;
+               AbilityBar, FactionPicker, ProjectileView, EffectsView, FogView,
+               CapitalsView;
                status (HUD / bar / picker from the state)
 src/ui/        DOM overlay over the canvas: Overlay, Modal, Toasts,
                NicknameScreen, ConnectionDialogs

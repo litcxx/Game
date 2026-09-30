@@ -2689,3 +2689,56 @@ TEST(WorldFaction, ACharacterBackWithoutABodyKeepsItsFactionInTheRoster) {
     EXPECT_EQ(faction_in(3, /*full=*/true), 2u);
     EXPECT_EQ(faction_in(2, /*full=*/false), 2u);
 }
+
+// --- Capitals: each faction's zone from the start of the season --------------
+// Where the capitals are is static knowledge (Welcome.map, seen through the fog);
+// who owns their zones is territory, seen under sight like any cell.
+
+namespace {
+
+// test_config()'s 4x4 map with Red's capital in cell 5 (col 1, row 1), radius 1:
+// cells 1, 4, 5, 6 and 9.
+lit::GameConfig capital_config() {
+    auto c = test_config();
+    c.capitals = {{1, 5, 1}};
+    return c;
+}
+
+}  // namespace
+
+TEST(WorldCapitals, TheWelcomeCarriesTheCapitals) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, capital_config());
+
+    incoming.push(hello_event(1, "ann"));
+    world.tick(kTick);
+
+    const auto welcome = welcome_to(gw, 1);
+    ASSERT_TRUE(welcome.has_value());
+    ASSERT_EQ(welcome->map().capitals_size(), 1);
+    EXPECT_EQ(welcome->map().capitals(0).faction_id(), 1u);
+    EXPECT_EQ(welcome->map().capitals(0).cell(), 5u);
+    EXPECT_EQ(welcome->map().capitals(0).protected_radius(), 1u);
+}
+
+TEST(WorldCapitals, ACapitalsZoneIsItsFactionsFromTheStart) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, capital_config());
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(spawn_event(1, /*cell=*/15, /*faction=*/2));  // sees the whole 4x4 map
+    run_ticks(world, 3, kTick);
+
+    for (std::uint32_t index : {1U, 4U, 5U, 6U, 9U}) {
+        const auto seen = last_cell_update(gw, 1, index);
+        ASSERT_TRUE(seen.has_value()) << "cell " << index;
+        EXPECT_EQ(seen->owner(), 1u) << "cell " << index;
+    }
+    for (std::uint32_t index : {0U, 10U, 15U}) {
+        const auto seen = last_cell_update(gw, 1, index);
+        ASSERT_TRUE(seen.has_value()) << "cell " << index;
+        EXPECT_EQ(seen->owner(), 0u) << "cell " << index;
+    }
+}

@@ -17,10 +17,15 @@ const std::string kLimits = R"({ "max_input_frames": 8, "input_queue": 32,
     "messages_per_second": 120, "handshake_timeout_ms": 5000, "idle_timeout_ms": 20000,
     "resync_window_ms": 5000 })";
 
-// A complete config document with `abilities`, the vision radius and the limits
-// spliced into the game section.
+// One faction and its capital, in the corner (10, 10) of the 100x100 map.
+const std::string kRed = R"([ { "id": 1, "name": "Red", "color": 16711680 } ])";
+const std::string kRedCapital = R"([ { "faction_id": 1, "cell": 1010, "protected_radius": 4 } ])";
+
+// A complete config document with `abilities`, the vision radius, the limits, the
+// factions and their capitals spliced into the game section.
 std::string config_json(const std::string& abilities, const std::string& vision_radius = "400",
-                        const std::string& limits = kLimits) {
+                        const std::string& limits = kLimits, const std::string& factions = kRed,
+                        const std::string& capitals = kRedCapital) {
     return R"({
       "server": { "ip": "0.0.0.0", "port": 27998, "io_threads": 1 },
       "game": {
@@ -29,7 +34,10 @@ std::string config_json(const std::string& abilities, const std::string& vision_
         "reconnect_grace_ms": 30000, "capture_ticks": 60, "player_radius": 16,
         "vision_radius": )" +
            vision_radius + R"(, "limits": )" + limits + R"(,
-        "factions": [ { "id": 1, "name": "Red", "color": 16711680 } ],
+        "factions": )" +
+           factions + R"(,
+        "capitals": )" +
+           capitals + R"(,
         "abilities": )" +
            abilities + R"(
       }
@@ -38,6 +46,14 @@ std::string config_json(const std::string& abilities, const std::string& vision_
 
 const std::string kMelee =
     R"({ "id": 1, "kind": "melee", "name": "Удар", "cooldown_ticks": 45, "damage": 20, "range": 120 })";
+
+// Red and Blue with the given capitals.
+std::string two_factions(const std::string& capitals) {
+    return config_json("[" + kMelee + "]", "400", kLimits,
+                       R"([ { "id": 1, "name": "Red", "color": 16711680 },
+                            { "id": 2, "name": "Blue", "color": 255 } ])",
+                       capitals);
+}
 
 }  // namespace
 
@@ -117,6 +133,56 @@ TEST(GameConfigParse, ReadsVisionRadius) {
     const auto c = lit::parse_game_config(config_json("[" + kMelee + "]", "400"));
 
     EXPECT_EQ(c.vision_radius, 400u);
+}
+
+TEST(GameConfigParse, ReadsTheCapitals) {
+    const auto c = lit::parse_game_config(two_factions(R"([
+        { "faction_id": 1, "cell": 1010, "protected_radius": 4 },
+        { "faction_id": 2, "cell": 8989, "protected_radius": 3 } ])"));
+
+    ASSERT_EQ(c.capitals.size(), 2u);
+    EXPECT_EQ(c.capitals[0].faction_id, 1u);
+    EXPECT_EQ(c.capitals[0].cell, 1010u);
+    EXPECT_EQ(c.capitals[0].protected_radius, 4u);
+    EXPECT_EQ(c.capitals[1].faction_id, 2u);
+    EXPECT_EQ(c.capitals[1].cell, 8989u);
+    EXPECT_EQ(c.capitals[1].protected_radius, 3u);
+}
+
+TEST(GameConfigParse, RequiresOneCapitalPerFaction) {
+    // Every faction grows from its capital (and will spawn there): none is a broken config.
+    EXPECT_THROW(lit::parse_game_config(two_factions(
+                     R"([ { "faction_id": 1, "cell": 1010, "protected_radius": 4 } ])")),
+                 std::exception);
+    EXPECT_THROW(lit::parse_game_config(two_factions(R"([
+                     { "faction_id": 1, "cell": 1010, "protected_radius": 4 },
+                     { "faction_id": 1, "cell": 8989, "protected_radius": 4 },
+                     { "faction_id": 2, "cell": 1089, "protected_radius": 4 } ])")),
+                 std::exception);  // two for Red
+    EXPECT_THROW(lit::parse_game_config(two_factions(R"([
+                     { "faction_id": 1, "cell": 1010, "protected_radius": 4 },
+                     { "faction_id": 2, "cell": 8989, "protected_radius": 4 },
+                     { "faction_id": 3, "cell": 1089, "protected_radius": 4 } ])")),
+                 std::exception);  // no faction 3
+}
+
+TEST(GameConfigParse, RejectsACapitalOffTheMap) {
+    EXPECT_THROW(lit::parse_game_config(config_json(
+                     "[" + kMelee + "]", "400", kLimits, kRed,
+                     R"([ { "faction_id": 1, "cell": 10000, "protected_radius": 4 } ])")),
+                 std::exception);
+}
+
+TEST(GameConfigParse, RejectsCapitalZonesThatMayOverlap) {
+    // Five cells apart with radius 4 each: a cell could belong to both.
+    EXPECT_THROW(lit::parse_game_config(two_factions(R"([
+                     { "faction_id": 1, "cell": 1010, "protected_radius": 4 },
+                     { "faction_id": 2, "cell": 1015, "protected_radius": 4 } ])")),
+                 std::exception);
+    // Nine apart: disjoint.
+    EXPECT_NO_THROW(lit::parse_game_config(two_factions(R"([
+                     { "faction_id": 1, "cell": 1010, "protected_radius": 4 },
+                     { "faction_id": 2, "cell": 1019, "protected_radius": 4 } ])")));
 }
 
 TEST(GameConfigParse, RejectsZeroVisionRadius) {
@@ -260,6 +326,21 @@ TEST(ShippedConfig, AShotIsInSightForHalfASecond) {
     EXPECT_GE(
         static_cast<double>(config.vision_radius) / static_cast<double>(shot.projectile_speed),
         0.5);
+}
+
+// Every faction starts with as much land: no capital's zone is cut off by the map edge.
+TEST(ShippedConfig, EveryCapitalZoneIsWholeOnTheMap) {
+    const auto config = shipped_config();
+    ASSERT_FALSE(config.capitals.empty());
+    for (const auto& capital : config.capitals) {
+        const std::uint32_t col = capital.cell % config.map_width;
+        const std::uint32_t row = capital.cell / config.map_width;
+        const std::uint32_t r = capital.protected_radius;
+        EXPECT_GE(col, r) << "capital of faction " << capital.faction_id;
+        EXPECT_GE(row, r) << "capital of faction " << capital.faction_id;
+        EXPECT_LT(col + r, config.map_width) << "capital of faction " << capital.faction_id;
+        EXPECT_LT(row + r, config.map_height) << "capital of faction " << capital.faction_id;
+    }
 }
 
 // Ranged alone isn't the whole fight: at least five hits to kill.

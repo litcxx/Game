@@ -4,6 +4,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <iterator>
 #include <nlohmann/json.hpp>
@@ -86,6 +88,50 @@ LimitsConfig parse_limits(const nlohmann::json& l) {
 }
 }  // namespace
 
+namespace {
+// One capital per faction, on the map, the zones apart: centres more than the two
+// radii apart, so no cell can belong to two zones.
+void validate_capitals(const GameConfig& config) {
+    const auto has_faction = [&config](std::uint32_t id) {
+        return std::ranges::any_of(config.factions, [id](const auto& f) { return f.id == id; });
+    };
+    for (const auto& capital : config.capitals) {
+        const std::string which =
+            "config: the capital of faction " + std::to_string(capital.faction_id);
+        if (!has_faction(capital.faction_id)) {
+            throw std::runtime_error(which + ": no such faction");
+        }
+        if (capital.cell >= config.map_width * config.map_height) {
+            throw std::runtime_error(which + " is off the map");
+        }
+    }
+    for (const auto& faction : config.factions) {
+        const auto count =
+            std::ranges::count(config.capitals, faction.id, &CapitalConfig::faction_id);
+        if (count != 1) {
+            throw std::runtime_error("config: faction " + std::to_string(faction.id) +
+                                     " needs exactly one capital");
+        }
+    }
+    for (std::size_t i = 0; i < config.capitals.size(); ++i) {
+        for (std::size_t j = i + 1; j < config.capitals.size(); ++j) {
+            const auto& a = config.capitals[i];
+            const auto& b = config.capitals[j];
+            const std::int64_t dx =
+                std::int64_t{a.cell % config.map_width} - b.cell % config.map_width;
+            const std::int64_t dy =
+                std::int64_t{a.cell / config.map_width} - b.cell / config.map_width;
+            const std::int64_t reach = std::int64_t{a.protected_radius} + b.protected_radius;
+            if (dx * dx + dy * dy <= reach * reach) {
+                throw std::runtime_error("config: the zones of the capitals of factions " +
+                                         std::to_string(a.faction_id) + " and " +
+                                         std::to_string(b.faction_id) + " may overlap");
+            }
+        }
+    }
+}
+}  // namespace
+
 GameConfig parse_game_config(const std::string& config_json) {
     const nlohmann::json doc = nlohmann::json::parse(config_json);
 
@@ -112,6 +158,11 @@ GameConfig parse_game_config(const std::string& config_json) {
     for (const auto& f : game.at("factions")) {
         config.factions.push_back(FactionConfig{f.at("id"), f.at("name"), f.at("color")});
     }
+    for (const auto& c : game.at("capitals")) {
+        config.capitals.push_back(
+            CapitalConfig{c.at("faction_id"), c.at("cell"), c.at("protected_radius")});
+    }
+    validate_capitals(config);
     for (const auto& a : game.at("abilities")) {
         AbilityConfig ability = parse_ability(a);
         for (const auto& other : config.abilities) {
@@ -138,9 +189,9 @@ void Config::init_game_config(const std::string& filename) {
     spdlog::info("Game move_speed={} max_hp={} player_radius={} vision_radius={} abilities={}",
                  game_config_.move_speed, game_config_.max_hp, game_config_.player_radius,
                  game_config_.vision_radius, game_config_.abilities.size());
-    spdlog::info("Game respawn_delay_ticks={} reconnect_grace_ms={} factions={}",
+    spdlog::info("Game respawn_delay_ticks={} reconnect_grace_ms={} factions={} capitals={}",
                  game_config_.respawn_delay_ticks, game_config_.reconnect_grace_ms,
-                 game_config_.factions.size());
+                 game_config_.factions.size(), game_config_.capitals.size());
     const LimitsConfig& l = game_config_.limits;
     spdlog::info(
         "Limits max_input_frames={} input_queue={} messages_per_second={} handshake_timeout_ms={} "

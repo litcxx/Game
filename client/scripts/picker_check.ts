@@ -1,7 +1,7 @@
-// Pure checks for the faction picker's card row: layout and click hit-testing
-// (a click on a card selects the faction instead of spawning).
-// Run: npx tsx scripts/picker_check.ts
-import { cardAt, cardRow } from "../src/render/cardRow.js";
+// Pure checks for the faction picker's layout — the note and the card row in the
+// middle of the screen — and click hit-testing (a click on a card selects the
+// faction instead of spawning). Run: npx tsx scripts/picker_check.ts
+import { CARD_H, cardAt, cardRow, choiceLayout, NOTE_GAP } from "../src/render/cardRow.js";
 
 let failures = 0;
 const check = (name: string, cond: boolean) => {
@@ -9,9 +9,9 @@ const check = (name: string, cond: boolean) => {
   if (!cond) failures++;
 };
 
-// 1000x800 screen, 4 cards of 150x44 with 12 px gaps, 56 px above the bottom:
-// row width 636 -> x0 = 182, y = 800 - 56 - 44 = 700.
-const row = cardRow(1000, 800, 4, 56);
+// 1000 px wide screen, 4 cards of 150x44 with 12 px gaps, the row's top at 700:
+// row width 636 -> x0 = 182.
+const row = cardRow(1000, 4, 700);
 check("row is centred", row.x0 === 182 && row.y === 700);
 check("top-left corner hits card 0", cardAt(row, 182, 700) === 0);
 check("right edge of card 0 still hits it", cardAt(row, 332, 722) === 0);
@@ -23,7 +23,17 @@ check("far right", cardAt(row, 990, 722) === -1);
 check("just left of the row", cardAt(row, 181, 722) === -1);
 check("above the row", cardAt(row, 400, 699) === -1);
 check("below the row", cardAt(row, 400, 745) === -1);
-check("an empty row hits nothing", cardAt(cardRow(1000, 800, 0, 56), 500, 722) === -1);
+check("an empty row hits nothing", cardAt(cardRow(1000, 0, 700), 500, 722) === -1);
+
+// The choice in the middle: a 40 px note, the gap, then the cards — one block
+// centred on the 1000x800 screen (the bottom of the map stays clear).
+const choice = choiceLayout(1000, 800, 4, 40);
+const top = choice.noteY - 20;
+const bottom = choice.row.y + CARD_H;
+check("choice: the note above the cards, the gap between", choice.row.y === choice.noteY + 20 + NOTE_GAP);
+check("choice: the block centred vertically", Math.abs(top - (800 - bottom)) <= 1);
+check("choice: the row centred horizontally", choice.row.x0 === 182);
+check("choice: clear of the bottom (the hint line and the map's edge)", bottom < 800 - 200);
 
 console.log(failures === 0 ? "VERDICT: PASS" : `VERDICT: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);
