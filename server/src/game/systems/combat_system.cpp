@@ -17,12 +17,14 @@ const AbilityConfig* find_ability(const GameConfig& config, std::uint32_t id) {
     return nullptr;
 }
 
-// Area hit: every enemy within the ability's range of the attacker is struck
-// (apply_damage skips anyone already killed earlier this tick).
+// Area hit: every enemy whose body the ability's range touches is struck — its
+// edge, not its centre, as a projectile hits on touching the body (apply_damage
+// skips anyone already killed earlier this tick).
 void melee_strike(WorldState& state, const GameConfig& config, const SpatialIndex& index,
                   const Unit& self, const AbilityConfig& ability) {
-    const double range = static_cast<double>(ability.range);
-    index.for_each_in_radius(self.x, self.y, range, [&](std::uint32_t target_id) {
+    const double reach =
+        static_cast<double>(ability.range) + static_cast<double>(config.player_radius);
+    index.for_each_in_radius(self.x, self.y, reach, [&](std::uint32_t target_id) {
         if (target_id == self.id) return;
         Unit* target = find_unit(state, target_id);
         if (target == nullptr) return;

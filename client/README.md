@@ -9,7 +9,8 @@ PixiJS + protobuf-es** over a WebSocket.
 > spawn, movement, territory capture, combat — a melee area attack and a ranged
 > attack (a dodgeable projectile aimed with the mouse) on a shared cooldown, and
 > a block on its own cooldown, on a 1–5 ability bar — and death/respawn.
-> Everyone sees what others press: swings, blocks and blocked hits are drawn. Play is smooth via client-side
+> Everyone sees what others press: swings, blocks and blocked hits are drawn; your own hit that
+> lands flashes on the target with its damage. Play is smooth via client-side
 > prediction + reconciliation (local player) and interpolation (remotes and
 > projectiles). Fog of war: the server sends only what your faction sees; cells
 > seen before stay dimmed with their last known state, unexplored ones are
@@ -98,10 +99,12 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   order), slot selection for keys 1–5, the aim vector sent in each input frame
   (unit vector × 1000 toward the cursor) and the cooldown-arc progress.
 - **`src/effects.ts`** — turns snapshot events into timed effects: a melee
-  swing, a block's shield (exactly its duration) and a blocked hit; remote
-  players' effects start after the interpolation delay so they match what is
-  drawn. **`src/render/effects.ts`** (`EffectsView`) draws them: a swing ring out
-  to the melee reach, a pale-gold shield ring, a burst with a rising "БЛОК".
+  swing, a block's shield (exactly its duration), a blocked hit, and your own
+  hit that landed (only you see it; others see the hp bar drop, a miss shows
+  nothing); remote players' effects start after the interpolation delay so
+  they match what is drawn. **`src/render/effects.ts`** (`EffectsView`) draws
+  them: a swing ring out to the melee reach, a pale-gold shield ring, a burst
+  with a rising "БЛОК", a white-and-red flash with the damage ("−20") rising.
 - **`src/fog.ts`** — `FogOfWar`: each cell's sight — unexplored / explored /
   visible — from `Snapshot.revealed` / `hidden` (the server decides what is
   visible; the client only remembers what it has ever seen, through deaths and
@@ -256,7 +259,7 @@ npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
 npx tsx scripts/input_check.ts          # keys by place (any layout), release on blur, no right-click menu (happy-dom)
 npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
-npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked effects, timing
+npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked/your-hit effects, timing
 npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs
 npx tsx scripts/errors_check.ts         # error texts, close codes, fatal / refusal hints
 npx tsx scripts/router_check.ts         # each ServerMessage -> GameState (territory, roster, fog, you, effects, a new session)

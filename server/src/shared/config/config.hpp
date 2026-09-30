@@ -28,7 +28,7 @@ struct FactionConfig {
 
 // Mirrors game.v1.AbilityKind: what using the ability does.
 enum class AbilityKind : std::uint8_t {
-    Melee = 1,       // hit every enemy within `range` around the player
+    Melee = 1,       // hit every enemy whose body is within `range` around the player
     Projectile = 2,  // launch a projectile toward the aim; it flies `range` units
     Block = 3,       // no damage from any attack for `duration_ticks`; its own cooldown
 };

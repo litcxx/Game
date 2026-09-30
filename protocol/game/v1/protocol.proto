@@ -108,7 +108,7 @@ message GameConfig {
   reserved "attack_range", "attack_cooldown_ticks";
   uint32 respawn_delay_ticks = 9;    // 300 = 5 с
   uint32 reconnect_grace_ms = 10;    // сколько персонаж остаётся в мире после разрыва: 30000
-  uint32 player_radius = 11;         // радиус тела игрока для попаданий снарядами, единиц: 16
+  uint32 player_radius = 11;         // радиус тела игрока для попаданий ударом и снарядами, единиц: 16
 }
 
 // Способность на панели 1–5. Набор, порядок и числа задаёт сервер.
@@ -126,7 +126,7 @@ message Ability {
 
 enum AbilityKind {
   ABILITY_KIND_UNSPECIFIED = 0;
-  ABILITY_KIND_MELEE = 1;       // удар по всем врагам в радиусе range вокруг игрока
+  ABILITY_KIND_MELEE = 1;       // удар по всем врагам, чьё тело в радиусе range вокруг игрока
   ABILITY_KIND_PROJECTILE = 2;  // снаряд в сторону прицела; летит range единиц, от него можно увернуться
   ABILITY_KIND_BLOCK = 3;       // duration_ticks тиков игрок не получает урона ни от удара, ни от
                                 //   снаряда; своя перезарядка, не общая с атаками

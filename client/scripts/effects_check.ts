@@ -1,6 +1,6 @@
 // Pure checks for effect timing: which snapshot events become effects (melee
-// swing, block shield, blocked hit), on whose token, when they start and how
-// long they last. Run: npx tsx scripts/effects_check.ts
+// swing, block shield, blocked hit, your own hit landing), on whose token, when
+// they start and how long they last. Run: npx tsx scripts/effects_check.ts
 import { create } from "@bufbuild/protobuf";
 
 import type { AbilityInfo } from "../src/abilities.js";
@@ -31,28 +31,37 @@ const fx = (events: GameEvent[]): Effect[] => effectsFromEvents(events, bar, SEL
 
 check(
   "remote melee swing: a swing to the melee range, after the interpolation delay",
-  same(fx([used(5, 1)]), [{ kind: "swing", playerId: 5, startMs: 1100, durationMs: 220, radius: 120 }]),
+  same(fx([used(5, 1)]), [{ kind: "swing", playerId: 5, startMs: 1100, durationMs: 220, radius: 120, damage: 0 }]),
 );
 check("own swing starts on arrival", fx([used(SELF, 1)])[0]?.startMs === 1000);
 check(
   "block: a shield for exactly the block's duration",
-  same(fx([used(5, 3)]), [{ kind: "shield", playerId: 5, startMs: 1100, durationMs: 150, radius: 0 }]),
+  same(fx([used(5, 3)]), [{ kind: "shield", playerId: 5, startMs: 1100, durationMs: 150, radius: 0, damage: 0 }]),
 );
 check("projectile launch: no effect (the shot itself is drawn)", fx([used(5, 2)]).length === 0);
 check("unknown ability: no effect", fx([used(5, 99)]).length === 0);
 check(
   "blocked hit: a burst on the defender",
-  same(fx([hit(5, SELF, 0, true)]), [{ kind: "blocked", playerId: SELF, startMs: 1000, durationMs: 700, radius: 0 }]),
+  same(fx([hit(5, SELF, 0, true)]), [{ kind: "blocked", playerId: SELF, startMs: 1000, durationMs: 700, radius: 0, damage: 0 }]),
 );
 check("blocked hit on a remote defender starts after the delay", fx([hit(SELF, 5, 0, true)])[0]?.startMs === 1100);
-check("a hit that landed: no block effect", fx([hit(5, SELF, 20, false)]).length === 0);
+check("your hit that was blocked: only the block burst", same(fx([hit(SELF, 5, 0, true)]).map((x) => x.kind), ["blocked"]));
+
+// A hit that landed shows only to whoever dealt it: a flash and the damage on the
+// target. Everyone else sees just the hp bar drop; a miss shows nothing.
+check(
+  "your hit: a flash with the damage on the target, when the target is drawn",
+  same(fx([hit(SELF, 5, 20, false)]), [{ kind: "hit", playerId: 5, startMs: 1100, durationMs: 600, radius: 0, damage: 20 }]),
+);
+check("a hit on you: no effect (your hp bar drops)", fx([hit(5, SELF, 20, false)]).length === 0);
+check("a hit between others: no effect", fx([hit(5, 9, 20, false)]).length === 0);
 check(
   "a death: no effect",
   fx([create(GameEventSchema, { tick: 1, kind: { case: "death", value: { victimId: 5, killerId: 7 } } })]).length === 0,
 );
 
 // effectProgress: undefined before the start and from the end on; linear between.
-const e: Effect = { kind: "swing", playerId: 5, startMs: 1000, durationMs: 200, radius: 120 };
+const e: Effect = { kind: "swing", playerId: 5, startMs: 1000, durationMs: 200, radius: 120, damage: 0 };
 check("not started yet", effectProgress(e, 999) === undefined);
 check("starts at 0", effectProgress(e, 1000) === 0);
 check("halfway", effectProgress(e, 1100) === 0.5);
