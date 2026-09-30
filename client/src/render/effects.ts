@@ -3,7 +3,7 @@ import { Container, Graphics, Text } from "pixi.js";
 import { effectProgress, type Effect } from "../effects.js";
 
 const SHIELD = 0xffe9a8; // pale gold: a block reads the same for every faction
-const HIT = 0xff5a4a; // red: your hit landed
+const HIT = 0xff5a4a; // red: a hit landed (yours, or on you)
 const BLOCK_TEXT = "#fff4d0";
 const DAMAGE_TEXT = "#ff9a8a";
 
@@ -11,8 +11,8 @@ const DAMAGE_TEXT = "#ff9a8a";
 //   swing   — a ring expanding to the melee reach in the swinger's colour;
 //   shield  — a bright ring around the token while the block holds;
 //   blocked — a white burst plus a rising "БЛОК" on the defender;
-//   hit     — your hit landed: a white-and-red flash on the target and the
-//             damage ("−20") rising above it.
+//   hit     — your hit landed, or a hit on you: a white-and-red flash on the
+//             target and the damage ("−20") rising above it.
 export class EffectsView {
   readonly root = new Container();
   private readonly gfx = new Graphics();

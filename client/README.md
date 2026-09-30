@@ -9,8 +9,8 @@ PixiJS + protobuf-es** over a WebSocket.
 > spawn, movement, territory capture, combat — a melee area attack and a ranged
 > attack (a dodgeable projectile aimed with the mouse) on a shared cooldown, and
 > a block on its own cooldown, on a 1–5 ability bar — and death/respawn.
-> Everyone sees what others press: swings, blocks and blocked hits are drawn; your own hit that
-> lands flashes on the target with its damage. Play is smooth via client-side
+> Everyone sees what others press: swings, blocks and blocked hits are drawn; a hit that
+> lands flashes on the target with its damage — for its dealer and for you when you take it. Play is smooth via client-side
 > prediction + reconciliation (local player) and interpolation (remotes and
 > their projectiles; your own shot runs on from the latest snapshot, so it leaves
 > your token along the aim line). Fog of war: the server sends only what your faction sees; cells
@@ -123,7 +123,10 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   swing, a block's shield (exactly its duration), a blocked hit, and your own
   hit that landed (only you see it; others see the hp bar drop, a miss shows
   nothing); remote players' effects start after the interpolation delay so
-  they match what is drawn. **`src/render/effects.ts`** (`EffectsView`) draws
+  they match what is drawn. A hit you take flashes the same on your token,
+  from the drop of your own hp (`hitTakenEffect`), so a shot from the fog —
+  whose HitEvent the server keeps from you — shows too; it also starts after
+  the delay, as the shot or swing drawn behind reaches your token. **`src/render/effects.ts`** (`EffectsView`) draws
   them: a swing ring out to the melee reach, a pale-gold shield ring, a burst
   with a rising "БЛОК", a white-and-red flash with the damage ("−20") rising.
 - **`src/fog.ts`** — `FogOfWar`: each cell's sight — unexplored / explored /
@@ -287,7 +290,7 @@ npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, coo
 npx tsx scripts/input_check.ts          # keys by place (any layout), release on blur, no right-click menu (happy-dom)
 npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
 npx tsx scripts/nameplate_check.ts      # name pill grows with the name, the hp bar is one width
-npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked/your-hit effects, timing
+npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked/your-hit effects, a hit taken from your hp, timing
 npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs
 npx tsx scripts/errors_check.ts         # error texts, close codes, fatal / refusal hints
 npx tsx scripts/router_check.ts         # each ServerMessage -> GameState (territory, roster, fog, you, effects, a new session)

@@ -154,6 +154,37 @@ const joined = (nowMs = 1000): GameState => {
   check("events: effects are taken once", state.takeEffects().length === 0);
 }
 
+// --- Snapshot: a hit on you -------------------------------------------------------
+// Your hp dropping between snapshots flashes your token with the damage — the hit
+// its dealer sees — with or without a HitEvent (a shot from the fog brings none),
+// once the blow is drawn reaching you (the attacker and its shot are drawn
+// INTERP_DELAY_MS behind).
+{
+  const state = joined();
+  const you = { life: LifeState.ALIVE };
+  const me = (hp: number) => [{ id: 7, x: 150, y: 150, hp }];
+  const onMe = { tick: 4, kind: { case: "hit", value: { attackerId: 9, targetId: 7, damage: 30 } } };
+  const taken = () => state.takeEffects().map((e) => ({ kind: e.kind, playerId: e.playerId, startMs: e.startMs, damage: e.damage }));
+  routeMessage(state, snapshot({ tick: 1, you, players: me(120) }), 1000);
+  check("a hit on you: nothing at your first snapshot", taken().length === 0);
+  routeMessage(state, snapshot({ tick: 4, you, players: me(90) }), 1050);
+  check("a hit on you: your hp drop flashes your token with the damage, after the delay", same(taken(), [{ kind: "hit", playerId: 7, startMs: 1050 + INTERP_DELAY_MS, damage: 30 }]));
+  routeMessage(state, snapshot({ tick: 7, you, players: me(60), events: [onMe] }), 1100);
+  check("... one flash with its HitEvent too, not two", taken().length === 1);
+  routeMessage(state, snapshot({ tick: 10, you, players: me(60) }), 1150);
+  check("... nothing while your hp holds", taken().length === 0);
+  routeMessage(state, snapshot({ tick: 13, you: { life: LifeState.DEAD, respawnTick: 400 }, players: me(0) }), 1200);
+  check("... the killing blow too", same(taken(), [{ kind: "hit", playerId: 7, startMs: 1200 + INTERP_DELAY_MS, damage: 60 }]));
+  routeMessage(state, snapshot({ tick: 400, you, players: me(120) }), 1250);
+  check("... nothing at a respawn (hp up)", taken().length === 0);
+  routeMessage(state, snapshot({ tick: 401, you: { life: LifeState.NOT_SPAWNED } }), 1300);
+  check("... nothing when your body is gone from the snapshot", taken().length === 0);
+  routeMessage(state, snapshot({ tick: 402, you, players: me(120) }), 1350);
+  routeMessage(state, welcome(), 2000);
+  routeMessage(state, snapshot({ tick: 1, you, players: me(70) }), 2050); // a resumed, hurt body
+  check("... nothing at a new session's first snapshot", taken().length === 0);
+}
+
 // --- Snapshot: your own projectiles -----------------------------------------------
 // Your shot is drawn from the latest snapshot on by its velocity, not the
 // interpolation delay behind: it leaves your token along the aim line. Others'
