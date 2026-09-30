@@ -5,7 +5,7 @@
 #include <utility>
 
 namespace lit::game {
-void update_captures(WorldState& state, const GameConfig& config) {
+std::uint32_t update_captures(WorldState& state, const GameConfig& config) {
     Territory& t = state.territory;
 
     // One faction per cell; mixed factions -> contested (0) -> no progress.
@@ -21,6 +21,7 @@ void update_captures(WorldState& state, const GameConfig& config) {
 
     const double step = config.capture_ticks == 0 ? 100.0 : 100.0 / config.capture_ticks;
     std::unordered_set<std::uint32_t> still_active;
+    std::uint32_t captured = 0;
 
     for (const auto& [index, faction] : claim) {
         if (faction == 0 || t.owners[index] == faction) {
@@ -36,6 +37,7 @@ void update_captures(WorldState& state, const GameConfig& config) {
             t.owners[index] = static_cast<std::uint8_t>(faction);
             t.capture_faction[index] = 0;
             t.capture_progress[index] = 0.0;
+            ++captured;
         } else {
             still_active.insert(index);
         }
@@ -51,5 +53,6 @@ void update_captures(WorldState& state, const GameConfig& config) {
         }
     }
     t.active = std::move(still_active);
+    return captured;
 }
 }  // namespace lit::game

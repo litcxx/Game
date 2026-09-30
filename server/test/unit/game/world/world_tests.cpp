@@ -2527,3 +2527,70 @@ TEST(WorldMetrics, CountsResumesJoinsAndLeaves) {
     EXPECT_EQ(m.at("resumes"), 1);
     EXPECT_EQ(m.at("leaves"), 1);
 }
+
+// --- Playtest telemetry: what the players' clients report, what happens in the game ---
+
+namespace {
+
+// A Ping carrying the client's report: its last round trip and the prediction
+// corrections since its previous Ping.
+lit::ClientEvent report_ping(std::uint64_t session_id, std::uint32_t rtt_ms,
+                             std::uint32_t corrections, std::uint32_t max_correction) {
+    auto ev = ping_event(session_id);
+    auto* ping = ev.msg.mutable_ping();
+    ping->set_rtt_ms(rtt_ms);
+    ping->set_corrections(corrections);
+    ping->set_max_correction(max_correction);
+    return ev;
+}
+
+}  // namespace
+
+TEST(WorldMetrics, CountsThePlayersRoundTripsAndCorrections) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    const LogCapture log;
+    lit::game::World world(incoming, gw, test_config(), std::chrono::seconds{1});
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    incoming.push(report_ping(1, /*rtt_ms=*/40, /*corrections=*/2, /*max_correction=*/7));
+    incoming.push(report_ping(2, /*rtt_ms=*/80, /*corrections=*/0, /*max_correction=*/0));
+    incoming.push(report_ping(2, /*rtt_ms=*/0, /*corrections=*/1, /*max_correction=*/5));
+    run_ticks(world, 60, kTick);
+
+    const auto lines = log.metrics();
+    ASSERT_EQ(lines.size(), 1u);
+    const auto& m = lines[0];
+    EXPECT_EQ(m.at("rtt_ms").at("p50"), 40);
+    EXPECT_EQ(m.at("rtt_ms").at("p95"), 80);
+    EXPECT_EQ(m.at("rtt_ms").at("max"), 80);
+    EXPECT_EQ(m.at("corrections").at("count"), 3);
+    EXPECT_EQ(m.at("corrections").at("max"), 7);
+}
+
+TEST(WorldMetrics, CountsSpawnsDeathsAndCaptures) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    const LogCapture log;
+    auto config = test_config();       // capture_ticks = 5
+    melee(config).cooldown_ticks = 1;  // swing every tick -> 3 swings kill 100 hp
+    lit::game::World world(incoming, gw, config, std::chrono::seconds{1});
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // refused: already alive
+    // a holds both: kills b next door and takes its own cell (once: then it is a's).
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true, /*attack=*/true));
+    run_ticks(world, 60, kTick);
+
+    const auto lines = log.metrics();
+    ASSERT_EQ(lines.size(), 1u);
+    const auto& m = lines[0];
+    EXPECT_EQ(m.at("spawns"), 2);
+    EXPECT_EQ(m.at("deaths"), 1);
+    EXPECT_EQ(m.at("captures"), 1);
+    EXPECT_EQ(m.at("errors").at("ALREADY_SPAWNED"), 1);
+}

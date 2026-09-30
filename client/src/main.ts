@@ -3,7 +3,7 @@ import { Application } from "pixi.js";
 import { aimVector, selectSlot } from "./abilities.js";
 import { installInput, isTyping } from "./input/keyboard.js";
 import { installMouse } from "./input/mouse.js";
-import { GameClient } from "./net/client.js";
+import { GameClient, type PingReport } from "./net/client.js";
 import type { PendingInput } from "./net/prediction.js";
 import { routeMessage } from "./net/router.js";
 import { serverUrl } from "./net/serverUrl.js";
@@ -46,8 +46,14 @@ async function main(): Promise<void> {
   const dialogs = new ConnectionDialogs(new Modal(overlay), window);
   let connected = false; // between a Welcome and the connection's loss
   const url = serverUrl(import.meta.env.VITE_SERVER_URL, window.location);
+  // Each Ping tells the server the round trip and the prediction corrections
+  // since the previous one: its metrics for the playtests.
+  const pingReport = (): PingReport => {
+    const corrections = state.predictor?.takeCorrections() ?? { count: 0, max: 0 };
+    return { rttMs: state.rttMs ?? 0, corrections: corrections.count, maxCorrection: corrections.max };
+  };
   const session = new Session({
-    createClient: (onMessage, onClose) => new GameClient(url, onMessage, onClose),
+    createClient: (onMessage, onClose) => new GameClient(url, onMessage, onClose, pingReport),
     store: browserStore(),
     timers: window,
     onMessage: (msg) => {

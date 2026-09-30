@@ -12,14 +12,26 @@
 
 namespace lit::game {
 namespace {
+// The `pct`-th percentile of sorted, non-empty `values`, by nearest rank.
+std::uint32_t nearest_rank(const std::vector<std::uint32_t>& values, std::uint64_t pct) {
+    const std::uint64_t n = values.size();
+    const std::uint64_t rank = (pct * n + 99) / 100;  // ceil(pct / 100 * n), >= 1
+    return values[rank - 1];
+}
+
 // Sorts `us` in place.
 TimingStats timing_of(std::vector<std::uint32_t>& us) {
     if (us.empty()) return {};
     std::ranges::sort(us);
-    const std::uint64_t n = us.size();
     const std::uint64_t sum = std::accumulate(us.begin(), us.end(), std::uint64_t{0});
-    const std::uint64_t rank = (99 * n + 99) / 100;  // ceil(0.99 * n), >= 1
-    return {static_cast<std::uint32_t>(sum / n), us[rank - 1], us.back()};
+    return {static_cast<std::uint32_t>(sum / us.size()), nearest_rank(us, 99), us.back()};
+}
+
+// Sorts `ms` in place.
+RoundTripStats round_trips_of(std::vector<std::uint32_t>& ms) {
+    if (ms.empty()) return {};
+    std::ranges::sort(ms);
+    return {nearest_rank(ms, 50), nearest_rank(ms, 95), ms.back()};
 }
 }  // namespace
 
@@ -31,6 +43,13 @@ void Metrics::record_tick(std::uint32_t duration_us, bool snapshot_tick) {
 void Metrics::record_snapshot(std::size_t bytes) {
     ++current_.snapshots;
     snapshot_bytes_ += bytes;
+}
+
+void Metrics::record_client_report(std::uint32_t rtt_ms, std::uint32_t corrections,
+                                   std::uint32_t max_correction) {
+    if (rtt_ms != 0) rtt_ms_.push_back(rtt_ms);
+    current_.corrections += corrections;
+    current_.max_correction = std::max(current_.max_correction, max_correction);
 }
 
 void Metrics::record_error(::game::v1::ErrorCode code) {
@@ -50,10 +69,12 @@ MetricsReport Metrics::report(std::uint32_t period_s, std::uint32_t ccu) {
     r.snapshot_tick = timing_of(snapshot_us_);
     r.snapshot_bytes_avg =
         r.snapshots == 0 ? 0 : static_cast<std::uint32_t>(snapshot_bytes_ / r.snapshots);
+    r.rtt = round_trips_of(rtt_ms_);
 
     tick_us_.clear();  // keeps the capacity: no allocations next period
     snapshot_us_.clear();
     snapshot_bytes_ = 0;
+    rtt_ms_.clear();
     return r;
 }
 
@@ -77,6 +98,12 @@ std::string to_json(const MetricsReport& report) {
         {"joins", report.joins},
         {"leaves", report.leaves},
         {"resumes", report.resumes},
+        {"rtt_ms",
+         {{"p50", report.rtt.p50_ms}, {"p95", report.rtt.p95_ms}, {"max", report.rtt.max_ms}}},
+        {"corrections", {{"count", report.corrections}, {"max", report.max_correction}}},
+        {"spawns", report.spawns},
+        {"deaths", report.deaths},
+        {"captures", report.captures},
         {"errors", nlohmann::ordered_json(report.errors)},
     };
     return j.dump();

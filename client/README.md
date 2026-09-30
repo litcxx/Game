@@ -76,7 +76,9 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   goes out right after `Hello` and then every 2 s while the socket is open: its
   `Pong` gives the round trip (`roundTripMs`, shown as the HUD's ping), and it
   keeps the connection alive — a hidden tab sends no input, and the server
-  closes a connection silent for 20 s (`IDLE_TIMEOUT`).
+  closes a connection silent for 20 s (`IDLE_TIMEOUT`). Each `Ping` also reports
+  to the server's metrics (`PingReport`, from `main.ts`): the last round trip
+  and the prediction corrections since the previous `Ping`.
 - **`src/net/serverUrl.ts`** — where to connect: `VITE_SERVER_URL` when the
   build sets it, else the page's own origin at `/ws` (`wss` for an https page),
   where the reverse proxy in front of the server takes it (see
@@ -85,7 +87,9 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   mirrored exactly) + `Predictor`: applies each fixed-step input locally, and on
   each snapshot **reconciles** — drop acked inputs (`SelfState.last_input_seq`),
   snap to the authoritative position, replay the rest — easing any correction so
-  it never pops.
+  it never pops. A prediction off by more than 4 units (`CORRECTION_UNITS`)
+  counts as a correction; `takeCorrections()` hands the count and the largest to
+  the next `Ping`.
 - **`src/net/interpolation.ts`** — `InterpolationBuffer`: buffers snapshots and
   returns positions ~100 ms in the past (smooth motion between 20 Hz
   snapshots) — for remote players and, in a second buffer, for projectiles;
@@ -233,7 +237,8 @@ closes, so a script that fights or shoots spawns on cells of its own.
 **Pure logic (no server):**
 
 ```bash
-npx tsx scripts/prediction_check.ts     # integrate / predict / reconcile
+npx tsx scripts/prediction_check.ts     # integrate / predict / reconcile, corrections counted
+npx tsx scripts/client_check.ts         # GameClient over a fake WebSocket: the Ping's report
 npx tsx scripts/interpolation_check.ts  # snapshot interpolation
 npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc

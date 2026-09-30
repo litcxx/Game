@@ -1,4 +1,4 @@
-import { integrate, Predictor, type Bounds } from "../src/net/prediction.js";
+import { CORRECTION_UNITS, integrate, Predictor, type Bounds } from "../src/net/prediction.js";
 
 let failures = 0;
 const check = (name: string, cond: boolean) => {
@@ -6,6 +6,7 @@ const check = (name: string, cond: boolean) => {
   if (!cond) failures++;
 };
 const approx = (a: number, b: number, eps = 1e-6) => Math.abs(a - b) <= eps;
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 const bounds: Bounds = { maxX: 9999, maxY: 9999 }; // 100-cell map: 100*100 - 1
 const speed = 300;
@@ -44,6 +45,28 @@ check("renderPosition eases (no pop)", approx(pred.renderPosition.x, displayedBe
 check("position is authoritative", approx(pred.position.x, 400));
 for (let i = 0; i < 40; i++) pred.decayError(1 / 60);
 check("error decays toward predicted", approx(pred.renderPosition.x, 400, 1.0));
+
+// Corrections: how often, and how far, the server's word moved the prediction
+// (reported to the server for the playtest metrics).
+{
+  const pr = new Predictor(speed, dt, bounds);
+  pr.reset({ x: 1000, y: 1000 });
+  check("no corrections yet", same(pr.takeCorrections(), { count: 0, max: 0 }));
+  pr.reconcile({ x: 1000, y: 1000 }, 0); // the server agrees
+  pr.reconcile({ x: 1000 + CORRECTION_UNITS, y: 1000 }, 0); // off by the threshold exactly
+  check("agreement, or a drift up to the threshold, is no correction", same(pr.takeCorrections(), { count: 0, max: 0 }));
+  pr.reconcile({ x: 1004 - 30, y: 1000 + 40 }, 0); // 50 units off
+  pr.reconcile({ x: 974 + 10, y: 1040 }, 0); // 10 units off
+  check("two corrections, the largest 50 units", same(pr.takeCorrections(), { count: 2, max: 50 }));
+  check("taking them starts the count over", same(pr.takeCorrections(), { count: 0, max: 0 }));
+
+  pr.reset({ x: 2000, y: 2000 });
+  pr.step({ moveX: 1, moveY: 0, capturing: false, attack: false, ability: 0, aimX: 0, aimY: 0 });
+  pr.reconcile({ x: 2000, y: 2000 }, 0); // the server has not seen the step yet: replayed
+  check("an input the server has not applied yet is no correction", same(pr.takeCorrections(), { count: 0, max: 0 }));
+  pr.reset({ x: 5000, y: 5000 });
+  check("a reset (spawn, respawn) is no correction", same(pr.takeCorrections(), { count: 0, max: 0 }));
+}
 
 console.log("VERDICT:", failures === 0 ? "PASS" : "FAIL");
 process.exit(failures === 0 ? 0 : 1);

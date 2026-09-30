@@ -164,8 +164,10 @@ lives on the server; the browser client predicts, interpolates, and renders.
   `UNSUPPORTED_MESSAGE`) and the connection lives on.
 - **Metrics.** `World` times every tick and counts in `Metrics` what a playtest
   needs to see (CCU, tick time, snapshot size, delivery trouble, joins, leaves and
-  resumes, errors); every `log.metrics_interval_s` it logs them as one `metrics {json}`
-  line and starts over — see [Logs & metrics](#logs--metrics).
+  resumes, the players' round trips and prediction corrections as their Pings
+  report them, spawns, deaths and captures, errors); every
+  `log.metrics_interval_s` it logs them as one `metrics {json}` line and starts
+  over — see [Logs & metrics](#logs--metrics).
 - **Seam.** `World` depends only on the abstract `IClientGateway`
   (`src/shared/net`: `send_to`, `broadcast`, `disconnect` with a reason), not on
   the network layer — so the game code stays testable (a mock gateway can refuse
@@ -269,7 +271,7 @@ Every `metrics_interval_s` the game thread logs one line at `info` (so none at
 `warn` and above): `metrics ` and a JSON object.
 
 ```
-[2026-09-29 15:30:14.974] [info] metrics {"period_s":60,"ccu":2,"ticks":3600,"tick_us":{"avg":113,"p99":1269,"max":2070},"snapshot_ticks":1200,"snapshot_tick_us":{"avg":183,"p99":2024,"max":2070},"snapshots":2400,"snapshot_bytes_avg":35,"drops":0,"resyncs":0,"closed_behind":0,"joins":3,"leaves":1,"resumes":2,"errors":{"RATE_LIMITED":1}}
+[2026-09-29 15:30:14.974] [info] metrics {"period_s":60,"ccu":2,"ticks":3600,"tick_us":{"avg":113,"p99":1269,"max":2070},"snapshot_ticks":1200,"snapshot_tick_us":{"avg":183,"p99":2024,"max":2070},"snapshots":2400,"snapshot_bytes_avg":35,"drops":0,"resyncs":0,"closed_behind":0,"joins":3,"leaves":1,"resumes":2,"rtt_ms":{"p50":48,"p95":95,"max":131},"corrections":{"count":14,"max":22},"spawns":5,"deaths":3,"captures":7,"errors":{"RATE_LIMITED":1}}
 ```
 
 | Field | Over the period |
@@ -285,6 +287,9 @@ Every `metrics_interval_s` the game thread logs one line at `info` (so none at
 | `joins` | characters entering the world: new ones, and those back after their reconnect grace |
 | `leaves` | characters leaving it: their reconnect grace is over |
 | `resumes` | reconnects within the grace, and takeovers from another tab (the character never left) |
+| `rtt_ms` | the round trips the players' clients measured, ms, as each Ping (every 2 s) reports its last one: `p50`, `p95` (nearest rank), `max`; 0 without reports |
+| `corrections` | prediction corrections the clients reported — reconciliations that moved the local player by more than 4 units: `count`, and the largest, `max` (units) |
+| `spawns`, `deaths`, `captures` | spawns and respawns, characters killed, cells that changed owner |
 | `errors` | `ServerError`s sent, by code: `RATE_LIMITED`, `IDLE_TIMEOUT`, … |
 
 **Export.** The lines turn into JSON Lines with the log's timestamp as `time`:
@@ -297,9 +302,11 @@ sed -nE 's/^\[([^]]+)\] \[info\] metrics \{/{"time":"\1",/p' server.log > metric
 and from there, with `jq`, into a CSV for a spreadsheet, or answers directly:
 
 ```bash
-{ echo time,ccu,tick_avg_us,tick_p99_us,tick_max_us,snapshot_tick_p99_us,snapshot_bytes_avg,drops,resyncs,closed_behind,joins,leaves,resumes
+{ echo time,ccu,tick_avg_us,tick_p99_us,tick_max_us,snapshot_tick_p99_us,snapshot_bytes_avg,drops,resyncs,closed_behind,joins,leaves,resumes,rtt_p50_ms,rtt_p95_ms,corrections,correction_max,spawns,deaths,captures
   jq -r '[.time, .ccu, .tick_us.avg, .tick_us.p99, .tick_us.max, .snapshot_tick_us.p99,
-          .snapshot_bytes_avg, .drops, .resyncs, .closed_behind, .joins, .leaves, .resumes] | @csv' metrics.jsonl
+          .snapshot_bytes_avg, .drops, .resyncs, .closed_behind, .joins, .leaves, .resumes,
+          .rtt_ms.p50, .rtt_ms.p95, .corrections.count, .corrections.max,
+          .spawns, .deaths, .captures] | @csv' metrics.jsonl
 } > metrics.csv
 
 jq -s 'map(.tick_us.p99) | max' metrics.jsonl    # the worst p99 of the playtest
