@@ -91,6 +91,9 @@ async function main(): Promise<void> {
       case "reconnecting":
         dialogs.reconnecting(status.attempt, status.retryInMs);
         break;
+      case "away":
+        break; // the tab is hidden: nobody to show it to; shown again, it reconnects
+
       case "failed":
         dialogs.failed(status.text, () => window.location.reload());
         state.notices.fail(status.text);
@@ -100,6 +103,9 @@ async function main(): Promise<void> {
   }
   // The network is back: no need to wait out the backoff.
   window.addEventListener("online", () => session.retryNow());
+  // A hidden tab doesn't reconnect until it is shown again (see Session.setHidden).
+  session.setHidden(document.hidden);
+  document.addEventListener("visibilitychange", () => session.setHidden(document.hidden));
 
   const readKeys = installInput();
   window.addEventListener("keydown", (e) => {

@@ -3,6 +3,8 @@
 #include <spdlog/spdlog.h>
 
 #include <cstddef>
+#include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "game/v1/protocol.pb.h"
@@ -39,7 +41,14 @@ asio::awaitable<void> Session::do_read() {
         if (ec) {
             // Client closed the connection or a read error occurred: stop reading.
             // The supervisor (Server::run_session) then tears the session down.
-            if (ec != websocket::error::closed) {
+            if (ec == websocket::error::closed) {
+                // The close frame's code and reason: why the client left (4900: it
+                // heard nothing from the server), or its echo of the server's own.
+                const auto& why = socket_.reason();
+                spdlog::info("Session::do_read id={} closed: {} {}", id_,
+                             static_cast<std::uint16_t>(why.code),
+                             std::string_view(why.reason.data(), why.reason.size()));
+            } else {
                 spdlog::warn("Session::do_read error id={}: {}", id_, ec.message());
             }
             break;

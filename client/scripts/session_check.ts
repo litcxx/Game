@@ -1,7 +1,8 @@
 // Pure checks for the connection's life (src/net/session.ts) with a fake client,
 // fake timers and an in-memory store — no socket: joining with the saved name and
 // token, keeping the token from Welcome, reconnecting with backoff after a lost
-// connection, and when not to (a fatal error, a name to change). Run:
+// connection, and when not to (a fatal error, a name to change, a hidden tab —
+// until the player is back). Run:
 //   npx tsx scripts/session_check.ts
 import { create } from "@bufbuild/protobuf";
 
@@ -173,6 +174,66 @@ check(
   client.welcome(7, "t1");
   client.welcome(7, "t2");
   check("each Welcome's token is kept", store.getItem(TOKEN_KEY) === "t2");
+}
+
+// --- A hidden tab: the player is away -------------------------------------------------
+// A hidden tab sends no input and pings rarely, so the server closes it as idle.
+// Reconnecting then would only loop (connect, idle, close) with the character
+// standing unplayed; so it waits until the tab is shown again.
+{
+  const { session, client, timers, last } = setUp();
+  session.join("Ann");
+  client.welcome(7, "t1");
+  session.setHidden(true);
+  check("hiding the tab while playing keeps the connection", client.connects.length === 1 && last()?.kind === "playing");
+  client.close(4000 + ErrorCode.IDLE_TIMEOUT);
+  check("closed while hidden: away, no reconnect scheduled", same(last(), { kind: "away" }));
+  timers.advance(10 * 60_000);
+  check("... not even minutes later", client.connects.length === 1);
+  session.setHidden(false);
+  check("shown again: reconnects at once, with the token", client.connects.length === 2 && same(client.connects.at(-1), { name: "Ann", token: "t1" }));
+  check("... saying so (attempt 1, now)", same(last(), { kind: "reconnecting", attempt: 1, retryInMs: 0 }));
+  client.welcome(7, "t1", true);
+  check("... and plays again", last()?.kind === "playing");
+}
+{
+  const { session, client, timers, last } = setUp();
+  session.join("Ann");
+  client.welcome(7, "t1");
+  client.close(1006);
+  session.setHidden(true);
+  check("hidden while waiting to reconnect: away", same(last(), { kind: "away" }));
+  timers.advance(60_000);
+  check("... the pending retry is off", client.connects.length === 1);
+  session.setHidden(false);
+  check("... shown again: reconnects at once", client.connects.length === 2);
+  timers.advance(60_000);
+  check("... and only once", client.connects.length === 2);
+}
+{
+  const { session, client, last } = setUp();
+  session.join("Ann");
+  client.welcome(7, "t1");
+  session.setHidden(true);
+  session.setHidden(false);
+  check("hidden and shown while playing: nothing happens", client.connects.length === 1 && last()?.kind === "playing");
+}
+{
+  const { session, client, last } = setUp();
+  session.join("Ann");
+  client.welcome(7, "t1");
+  session.setHidden(true);
+  client.close(4000 + ErrorCode.SESSION_REPLACED);
+  check("a fatal error while hidden: failed, as ever", last()?.kind === "failed");
+  session.setHidden(false);
+  check("... shown again: still no reconnect", client.connects.length === 1);
+}
+{
+  const { session, client, last } = setUp();
+  session.setHidden(true);
+  session.join("Ann");
+  client.close(4000 + ErrorCode.INVALID_NAME);
+  check("a refused name while hidden: ask for another, as ever", last()?.kind === "needName");
 }
 
 // --- When not to reconnect ---------------------------------------------------------------

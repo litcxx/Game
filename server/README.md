@@ -314,6 +314,19 @@ jq -s 'map(.errors | to_entries[]) | group_by(.key)
        | map({(.[0].key): (map(.value) | add)}) | add' metrics.jsonl    # errors, summed
 ```
 
+**Why a connection closed.** When a client closes its connection, the server logs
+the close frame's code and reason — `Session::do_read id=12 closed: 4900 no word
+from the server`:
+
+| Code | Means |
+|---|---|
+| 4900 | the client heard nothing from the server for 6 s and gave the connection up (its network, or the server's) |
+| 1001 | the tab was closed or reloaded ("going away") |
+| 1000, 0 | a plain close, or none given |
+
+A close the server starts (its `closing with` line says why) or a connection
+that just drops (no close frame) logs a `do_read error` instead.
+
 ## Tests
 
 ```bash

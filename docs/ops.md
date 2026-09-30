@@ -199,3 +199,4 @@ deploy/rehearse.sh        # 20–30 минут, в конце REHEARSAL: PASS
 | Выкладка остановилась на сборке | Сообщение компилятора или тестов выше в выводе; при нехватке памяти — swap (`swapon --show`) |
 | «the server did not come up» после выкладки | `journalctl -u territory -n 50`, затем `deploy/deploy.sh rollback` |
 | Игроки жалуются на задержку | Пинг в правом верхнем углу HUD; метрики `tick_us.p99` (см. раздел 6); регион VPS |
+| Игроки часто переподключаются | Почему закрывались соединения: `journalctl -u territory -o cat \| grep "closed:"`. Код 4900 — клиент 6 с не слышал сервер (сеть игрока или VPS), 1001 — вкладку закрыли или перезагрузили; остальные коды — в [server/README.md](../server/README.md#logs--metrics) |
