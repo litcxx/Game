@@ -154,6 +154,30 @@ const joined = (nowMs = 1000): GameState => {
   check("events: effects are taken once", state.takeEffects().length === 0);
 }
 
+// --- Snapshot: your own projectiles -----------------------------------------------
+// Your shot is drawn from the latest snapshot on by its velocity, not the
+// interpolation delay behind: it leaves your token along the aim line. Others'
+// shots stay interpolated, in step with the players who fired them.
+{
+  const state = joined();
+  const yours = { id: 3, x: 100, y: 100, factionId: 1, vx: 600, vy: 0, mine: true };
+  const theirs = { id: 4, x: 300, y: 100, factionId: 2, vx: -600, vy: 0 };
+  routeMessage(state, snapshot({ tick: 1, projectiles: [yours, theirs] }), 1000);
+  const drawn = (nowMs: number) => state.shotsAt(nowMs);
+  check("your shot is not interpolated", !state.shots.ids(1100).has(3) && state.shots.ids(1100).has(4));
+  check(
+    "your shot: from the latest snapshot on by its velocity, no delay",
+    same(drawn(1030).find((d) => d.factionId === 1), { x: 118, y: 100, vx: 600, vy: 0, factionId: 1 }),
+  );
+  check("... at most 100 ms ahead (snapshots late)", drawn(1500).find((d) => d.factionId === 1)?.x === 160);
+  check(
+    "others' shots: interpolated, the delay behind",
+    same(drawn(1000 + INTERP_DELAY_MS).find((d) => d.factionId === 2), { x: 300, y: 100, vx: -600, vy: 0, factionId: 2 }),
+  );
+  routeMessage(state, snapshot({ tick: 4, projectiles: [{ ...theirs, x: 270 }] }), 1050);
+  check("your shot gone from the latest snapshot (a hit, its range): gone at once", drawn(1050).every((d) => d.factionId !== 1));
+}
+
 // --- Errors and closes ---------------------------------------------------------------
 {
   const state = joined();
@@ -169,7 +193,7 @@ const joined = (nowMs = 1000): GameState => {
   const state = joined();
   const you = { life: LifeState.ALIVE, attackReadyTick: 130, attackCooldownTicks: 45 };
   routeMessage(state, snapshot({ tick: 100, you, players: [{ id: 7, x: 150, y: 150, hp: 90 }, { id: 9, x: 250, y: 150, hp: 50 }], projectiles: [{ id: 3, x: 1, y: 1, factionId: 2 }] }), 2000);
-  routeMessage(state, snapshot({ tick: 101, you, players: [{ id: 7, x: 150, y: 150, hp: 90 }], events: [{ tick: 101, kind: { case: "ability", value: { playerId: 9, abilityId: 1 } } }] }), 2050);
+  routeMessage(state, snapshot({ tick: 101, you, players: [{ id: 7, x: 150, y: 150, hp: 90 }], projectiles: [{ id: 5, x: 2, y: 2, factionId: 1, mine: true }], events: [{ tick: 101, kind: { case: "ability", value: { playerId: 9, abilityId: 1 } } }] }), 2050);
   check("(alive before it)", state.alive && state.hp === 90);
   routeMessage(state, msg({ case: "pong", value: { clientTimeMs: 1000 } } as never), 1040);
   routeMessage(state, msg({ case: "error", value: { code: ErrorCode.IDLE_TIMEOUT, fatal: true } } as never), 2100);
@@ -177,7 +201,7 @@ const joined = (nowMs = 1000): GameState => {
 
   routeMessage(state, welcome(), 5000);
   check("a new Welcome: nothing of the old session is alive", state.life === LifeState.NOT_SPAWNED && state.hp === 0 && !state.alive);
-  check("... no players, no remote positions, no projectiles", state.players.size === 0 && state.interp.ids(5000).size === 0 && state.shotMeta.size === 0 && state.shots.ids(5000).size === 0);
+  check("... no players, no remote positions, no projectiles", state.players.size === 0 && state.interp.ids(5000).size === 0 && state.shotMeta.size === 0 && state.shots.ids(5000).size === 0 && state.shotsAt(5000).length === 0);
   check("... no pending effects, no cooldowns", state.takeEffects().length === 0 && state.cooldownProgress(5000).attack === 1);
   check("... the error that ended it is gone", !state.notices.failed && state.notices.hint("usual", 5000) === "usual");
   check("... the round trip is measured anew", state.rttMs === undefined);

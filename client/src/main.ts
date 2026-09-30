@@ -193,12 +193,7 @@ async function main(): Promise<void> {
       if (r) remotes.set(id, r);
     }
     scene.setRemotePositions(remotes);
-    const shots: ProjectileSprite[] = [];
-    for (const id of state.shots.ids(now)) {
-      const pos = state.shots.sample(id, now);
-      const meta = state.shotMeta.get(id);
-      if (pos && meta) shots.push({ ...pos, vx: meta.vx, vy: meta.vy, factionId: meta.factionId, radius: state.projectileRadius });
-    }
+    const shots: ProjectileSprite[] = state.shotsAt(now).map((s) => ({ ...s, radius: state.projectileRadius }));
     scene.setProjectiles(shots);
     scene.addEffects(state.takeEffects());
     const cd = state.cooldownProgress(now);
