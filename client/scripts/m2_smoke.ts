@@ -1,9 +1,13 @@
-// M2 end-to-end: Hello -> Spawn -> Input, then verify the server moves us
-// (own PlayerState.x grows across snapshots). Uses the generated protobuf-es code.
+// M2 end-to-end: Hello -> Spawn (at the "m2" capital of the smoke map) -> Input,
+// then verify the server moves us (own PlayerState.x grows across snapshots).
+// Uses the generated protobuf-es code.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
-import { ClientMessageSchema, ServerMessageSchema } from "../src/gen/game/v1/protocol_pb.js";
+import { ClientMessageSchema, ProtocolVersion, ServerMessageSchema } from "../src/gen/game/v1/protocol_pb.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
+
+const HOME = spot("m2");
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const ws = new WebSocket(URL);
@@ -17,14 +21,13 @@ function send(payload: Parameters<typeof create<typeof ClientMessageSchema>>[1][
   ws.send(toBinary(ClientMessageSchema, create(ClientMessageSchema, { payload })));
 }
 
-ws.onopen = () => send({ case: "hello", value: { protocolVersion: 1, name: uniqueName("m2") } });
+ws.onopen = () => send({ case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName("m2") } });
 
 ws.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case === "welcome") {
     myId = m.payload.value.playerId;
-    const faction = m.payload.value.factions[0]?.id ?? 1;
-    send({ case: "spawn", value: { cell: 5050, factionId: faction } }); // 100x100 -> center-ish
+    send({ case: "spawn", value: { factionId: HOME.factionId } });
   } else if (m.payload.case === "snapshot") {
     const me = m.payload.value.players.find((p) => p.id === myId);
     if (me) {

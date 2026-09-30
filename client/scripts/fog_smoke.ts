@@ -1,6 +1,6 @@
-// Fog of war e2e: a scout (faction 1) spawns at (20,20); an enemy (faction 2)
-// spawns far off at (80,80); another (faction 3) spawns up to 2 cells from the
-// scout 1.5 s later. Verify the joiner's MapState reveals nothing, spawning
+// Fog of war e2e: a scout spawns at its capital (20,20) on the smoke map; an enemy
+// spawns far off at its own (80,80); another, of a third faction, spawns at its
+// capital 2 cells from the scout 1.5 s later. Verify the joiner's MapState reveals nothing, spawning
 // reveals the disc of cells within the vision radius, the far enemy is never sent
 // (both ways), and the near one is.
 //   VISION_CELLS — the server's vision_radius in cells (config: 300 units = 3).
@@ -8,9 +8,11 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
   ClientMessageSchema,
+  ProtocolVersion,
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
@@ -21,31 +23,28 @@ if (!Number.isInteger(R) || R < 1) {
 }
 const MAP = 100; // cells per row
 const cell = (col: number, row: number) => row * MAP + col;
-const SCOUT_CELL = cell(20, 20);
-const FAR_CELL = cell(80, 80);
-const NEAR_CELL = cell(20 + Math.min(2, R), 20); // in sight
+const SCOUT = spot("fog-scout");
+const NEAR = spot("fog-near");
+if (Math.hypot(NEAR.col - SCOUT.col, NEAR.row - SCOUT.row) > R) {
+  console.error(`[fog] the smoke map's fog-near is out of sight at R=${R}`);
+  process.exit(1);
+}
 
 function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
 }
 const helloMsg = (name: string) =>
-  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName(name) } } });
-const spawnMsg = (cellIndex: number, factionId: number) =>
-  create(ClientMessageSchema, { payload: { case: "spawn", value: { cell: cellIndex, factionId } } });
+  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
+const spawnMsg = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
 
 interface Client {
   ws: WebSocket;
   id: number;
 }
 
-// Opens a client that says Hello, spawns at `cellIndex` in the bar's faction
-// `factionSlot` on Welcome, and hands every message to `onMessage`.
-function open(
-  name: string,
-  cellIndex: number,
-  factionSlot: number,
-  onMessage: (m: ReturnType<typeof decode>) => void,
-): Client {
+// Opens a client that says Hello, spawns in the faction of the smoke map's `role`
+// (at its capital) on Welcome, and hands every message to `onMessage`.
+function open(name: string, role: string, onMessage: (m: ReturnType<typeof decode>) => void): Client {
   const client: Client = { ws: new WebSocket(URL), id: 0 };
   client.ws.binaryType = "arraybuffer";
   client.ws.onopen = () => send(client.ws, helloMsg(name));
@@ -54,8 +53,7 @@ function open(
     const m = decode(ev);
     if (m.payload.case === "welcome") {
       client.id = m.payload.value.playerId;
-      const factions = m.payload.value.factions;
-      send(client.ws, spawnMsg(cellIndex, factions[factionSlot]?.id ?? factionSlot + 1));
+      send(client.ws, spawnMsg(spot(role).factionId));
     }
     onMessage(m);
   };
@@ -69,7 +67,7 @@ let scoutSawFar = false;
 let scoutSawNear = false;
 let farSawScout = false;
 
-const scout = open("scout", SCOUT_CELL, 0, (m) => {
+const scout = open("scout", "fog-scout", (m) => {
   if (m.payload.case === "mapState") {
     mapStateBlank = m.payload.value.owners.every((b) => b === 0);
   } else if (m.payload.case === "snapshot") {
@@ -79,14 +77,14 @@ const scout = open("scout", SCOUT_CELL, 0, (m) => {
     if (s.players.some((p) => p.id === near?.id && near.id !== 0)) scoutSawNear = true;
   }
 });
-const far = open("far", FAR_CELL, 1, (m) => {
+const far = open("far", "fog-far", (m) => {
   if (m.payload.case === "snapshot" && m.payload.value.players.some((p) => p.id === scout.id)) {
     farSawScout = true;
   }
 });
 let near: Client | undefined;
 setTimeout(() => {
-  near = open("near", NEAR_CELL, 2, () => {}); // a third faction: far must not share its sight
+  near = open("near", "fog-near", () => {}); // a third faction: far must not share its sight
 }, 1500);
 
 setTimeout(() => {
@@ -94,10 +92,11 @@ setTimeout(() => {
   // and sqrt(R^2 + 1) cells away — are not. (Not an exact count: territory the
   // faction owns from earlier runs sees too.)
   const revealed = new Set(revealedOnSpawn);
-  let discOk = !revealed.has(cell(20 + R + 1, 20)) && !revealed.has(cell(20 + R, 21));
+  const { col, row } = SCOUT;
+  let discOk = !revealed.has(cell(col + R + 1, row)) && !revealed.has(cell(col + R, row + 1));
   for (let dy = -R; dy <= R; dy++) {
     for (let dx = -R; dx <= R; dx++) {
-      if (dx * dx + dy * dy <= R * R && !revealed.has(cell(20 + dx, 20 + dy))) discOk = false;
+      if (dx * dx + dy * dy <= R * R && !revealed.has(cell(col + dx, row + dy))) discOk = false;
     }
   }
   console.log(

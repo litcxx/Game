@@ -5,7 +5,7 @@
 // Run against a live server:  npx tsx scripts/smoke.ts
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
-import { ClientMessageSchema, ServerMessageSchema } from "../src/gen/game/v1/protocol_pb.js";
+import { ClientMessageSchema, ProtocolVersion, ServerMessageSchema } from "../src/gen/game/v1/protocol_pb.js";
 import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
@@ -25,7 +25,7 @@ const finish = () => {
 
 ws.onopen = () => {
   const hello = create(ClientMessageSchema, {
-    payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName("smoke") } },
+    payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName("smoke") } },
   });
   ws.send(toBinary(ClientMessageSchema, hello));
 };

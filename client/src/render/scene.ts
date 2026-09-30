@@ -132,12 +132,6 @@ export class Scene {
     return this.camera.screenToWorld(sx, sy);
   }
 
-  // Canvas pixel -> cell (col, row). Caller validates bounds.
-  screenToCell(sx: number, sy: number): [number, number] {
-    const [wx, wy] = this.camera.screenToWorld(sx, sy);
-    return [Math.floor(wx / UNITS_PER_CELL), Math.floor(wy / UNITS_PER_CELL)];
-  }
-
   // The territory or the sight changed since the last frame: redraw the world,
   // resizing the camera's map first if a Welcome brought a new one.
   private syncWorld(): void {

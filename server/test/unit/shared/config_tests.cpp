@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <exception>
 #include <fstream>
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -348,4 +349,24 @@ TEST(ShippedConfig, RangedTakesFiveHitsToKill) {
     const auto config = shipped_config();
     const auto& shot = ability_of(config, lit::AbilityKind::Projectile);
     EXPECT_GE((config.max_hp + shot.damage - 1) / shot.damage, 5u);
+}
+
+// The smoke suite runs the shipped rules on its own map (scripts/smoke-config.sh):
+// the two must make a config the server takes.
+TEST(SmokeMap, WithTheShippedRulesIsAValidConfig) {
+    const auto read = [](const char* path) {
+        const std::ifstream file(path);
+        if (!file) throw std::runtime_error(std::string{"cannot read "} + path);
+        std::stringstream text;
+        text << file.rdbuf();
+        return nlohmann::json::parse(text.str());
+    };
+    auto config = read(LIT_SHIPPED_CONFIG);
+    const auto map = read(LIT_SMOKE_MAP);
+    config["game"]["factions"] = map.at("factions");
+    config["game"]["capitals"] = map.at("capitals");
+
+    const auto parsed = lit::parse_game_config(config.dump());
+
+    EXPECT_EQ(parsed.capitals.size(), parsed.factions.size());
 }

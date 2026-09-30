@@ -5,20 +5,22 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
   ClientMessageSchema,
+  ProtocolVersion,
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const ws = new WebSocket(URL);
 ws.binaryType = "arraybuffer";
 
-const spawnCell = 50 * 100 + 50; // center (5050, 5050)
+const HOME = spot("prediction"); // where it spawns: its capital on the smoke map
 let myId = 0;
 let moveSpeed = 300;
 let tickRate = 60;
-const startX = 5050;
+const startX = HOME.x;
 let lastX = -1;
 let lastSeq = 0;
 
@@ -27,7 +29,7 @@ function send(msg: ClientMessage): void {
 }
 
 ws.onopen = () =>
-  send(create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName("pred") } } }));
+  send(create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName("pred") } } }));
 
 ws.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
@@ -35,8 +37,7 @@ ws.onmessage = (ev: MessageEvent) => {
     myId = m.payload.value.playerId;
     moveSpeed = m.payload.value.config?.moveSpeed ?? 300;
     tickRate = m.payload.value.config?.tickRate ?? 60;
-    const faction = m.payload.value.factions[0]?.id ?? 1;
-    send(create(ClientMessageSchema, { payload: { case: "spawn", value: { cell: spawnCell, factionId: faction } } }));
+    send(create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId: HOME.factionId } } }));
     // one Input message, 7 frames (<=8): 6 move-right then stop
     const frames = [];
     for (let i = 1; i <= 6; i++) frames.push({ seq: i, moveX: 1, moveY: 0, capturing: false, attack: false });

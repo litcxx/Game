@@ -20,8 +20,6 @@ const TEXTS: Partial<Record<ErrorCode, string>> = {
   [ErrorCode.KICKED]: "Вы отключены от сервера",
   [ErrorCode.INTERNAL]: "Внутренняя ошибка сервера",
   [ErrorCode.UNSUPPORTED_MESSAGE]: "Сервер не поддерживает этот запрос",
-  [ErrorCode.SPAWN_INVALID_CELL]: "Эта клетка вне карты",
-  [ErrorCode.SPAWN_FORBIDDEN]: "Здесь появиться нельзя",
   [ErrorCode.SPAWN_TOO_EARLY]: "Возрождение ещё не готово",
   [ErrorCode.ALREADY_SPAWNED]: "Вы уже в игре",
   [ErrorCode.INVALID_FACTION]: "Фракция закреплена за персонажем до смены сезона",

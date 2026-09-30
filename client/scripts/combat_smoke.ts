@@ -5,9 +5,11 @@ import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
   ClientMessageSchema,
+  ProtocolVersion,
   ServerMessageSchema,
   type ClientMessage,
 } from "../src/gen/game/v1/protocol_pb.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
@@ -28,16 +30,16 @@ let victimHp = -1;
 
 // Its own cells: a player stays in the world for the reconnect grace (30 s)
 // after its socket closes, so other smokes' bodies may still stand elsewhere.
-const atkCell = 60 * 100 + 60; // (col 60, row 60) -> center (6050, 6050)
-const vicCell = 60 * 100 + 61; // (col 61, row 60) -> center (6150, 6050), 100 units away
+// Their capitals on the smoke map: (60, 60) and (61, 60), 100 units apart.
+const ATK = spot("combat-attacker");
+const VIC = spot("combat-victim");
 
 function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
 }
 const helloMsg = (name: string) =>
-  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName(name) } } });
-const spawnMsg = (cell: number, factionId: number) =>
-  create(ClientMessageSchema, { payload: { case: "spawn", value: { cell, factionId } } });
+  create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
+const spawnMsg = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
 const attackMsg = () =>
   create(ClientMessageSchema, {
     payload: {
@@ -60,8 +62,7 @@ attacker.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case === "welcome") {
     atkId = m.payload.value.playerId;
-    const faction = m.payload.value.factions[0]?.id ?? 1;
-    send(attacker, spawnMsg(atkCell, faction));
+    send(attacker, spawnMsg(ATK.factionId));
     atkSpawned = true;
     maybeAttack();
   } else if (m.payload.case === "snapshot") {
@@ -81,9 +82,7 @@ victim.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case === "welcome") {
     vicId = m.payload.value.playerId;
-    const factions = m.payload.value.factions;
-    const faction = factions[1]?.id ?? factions[0]?.id ?? 2; // different faction from attacker
-    send(victim, spawnMsg(vicCell, faction));
+    send(victim, spawnMsg(VIC.factionId)); // another faction than the attacker's
     vicSpawned = true;
     maybeAttack();
   }

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "config/config.hpp"
+#include "game/spawn_at.hpp"
 #include "game/v1/protocol.pb.h"
 #include "state/world_state.hpp"
 #include "sync/snapshot_builder.hpp"
@@ -64,7 +65,7 @@ struct Lobby {
     std::uint32_t join_and_spawn(const char* name, std::uint8_t token_n, std::uint64_t session_id) {
         const std::uint32_t id = lit::game::create_character(state, name, token(token_n)).id;
         lit::game::attach_session(state, session_id, id);
-        EXPECT_TRUE(lit::game::try_spawn(state, config, id, 5, 1));
+        EXPECT_TRUE(lit::game::try_spawn(state, config, id, 1, lit::test::spawn_at(5)));
         return id;
     }
 };
@@ -205,7 +206,8 @@ TEST(Presence, TwoSessionsInARowDriveOneCharacter) {
     // The first connection spawns the character, walks it right for three ticks
     // (its seqs 1..3), is told what it sees — and drops.
     lit::game::attach_session(l.state, 1, ann);
-    ASSERT_TRUE(lit::game::try_spawn(l.state, l.config, ann, 5, 1));  // cell (1, 1): x = 150
+    ASSERT_TRUE(
+        lit::game::try_spawn(l.state, l.config, ann, 1, lit::test::spawn_at(5)));  // x = 150
     for (std::uint32_t seq = 1; seq <= 3; ++seq) l.walk_right(1, seq);
     l.state.sessions.at(1).sync.vision = lit::game::compute_vision(l.state, l.config, 1);
     l.state.units.at(ann).hp = 60;  // hurt on the way

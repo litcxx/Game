@@ -34,7 +34,8 @@ TEST(HelloRules, AcceptsTheCurrentVersionWithAName) {
 }
 
 TEST(HelloRules, RejectsAnotherProtocolVersion) {
-    for (std::uint32_t version : {0U, 2U}) {
+    const auto current = static_cast<std::uint32_t>(kCurrent);
+    for (std::uint32_t version : {0U, current - 1, current + 1}) {  // unset, an old tab, a newer
         const auto joined = lit::game::check_hello(hello(version, "tag"));
         ASSERT_FALSE(joined.has_value()) << version;
         EXPECT_EQ(joined.error(), ::game::v1::ERROR_CODE_PROTOCOL_VERSION);

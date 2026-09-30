@@ -80,7 +80,7 @@ message Hello {
 // вкладка со старым клиентом тогда получает PROTOCOL_VERSION (fatal).
 enum ProtocolVersion {
   PROTOCOL_VERSION_UNSPECIFIED = 0;
-  PROTOCOL_VERSION_CURRENT = 1;
+  PROTOCOL_VERSION_CURRENT = 2;  // 2: появление в столице, SpawnRequest без клетки
 }
 
 message Welcome {
@@ -197,10 +197,13 @@ message Roster {
 // ============================================================================
 
 // Первое появление и респавн. Разрешено в NOT_SPAWNED и в DEAD после
-// SelfState.respawn_tick. Фракция выбирается при первом появлении и закрепляется
-// за персонажем на сезон; другая в следующих запросах → INVALID_FACTION.
+// SelfState.respawn_tick. Игрок появляется в центре клетки столицы своей фракции
+// (Welcome.map); выбрать другую точку нельзя (до крепостей). Фракция выбирается
+// при первом появлении и закрепляется за персонажем на сезон; другая в следующих
+// запросах → INVALID_FACTION.
 message SpawnRequest {
-  uint32 cell = 1;        // индекс клетки; игрок появится в её центре
+  reserved 1;             // была cell: место выбирал клиент
+  reserved "cell";
   uint32 faction_id = 2;  // первое появление — выбор; дальше — только закреплённая
 }
 
@@ -368,9 +371,10 @@ enum ErrorCode {
 
   // 20+: отказ в конкретном запросе — никогда не fatal.
   ERROR_CODE_UNSUPPORTED_MESSAGE = 20;  // пустой или неизвестный серверу payload
-  ERROR_CODE_SPAWN_INVALID_CELL = 21;   // клетка вне карты
-  ERROR_CODE_SPAWN_FORBIDDEN = 22;      // клетка запрещена правилами появления
+  reserved 21, 22;                      // были SPAWN_INVALID_CELL и SPAWN_FORBIDDEN: клетку
+  reserved "ERROR_CODE_SPAWN_INVALID_CELL", "ERROR_CODE_SPAWN_FORBIDDEN";  // выбирал клиент
   ERROR_CODE_SPAWN_TOO_EARLY = 23;      // respawn_tick ещё не наступил
   ERROR_CODE_ALREADY_SPAWNED = 24;      // игрок уже жив
-  ERROR_CODE_INVALID_FACTION = 25;      // нет такой фракции или персонаж закреплён за другой
+  ERROR_CODE_INVALID_FACTION = 25;      // нет такой фракции, у неё нет столицы или
+                                        //   персонаж закреплён за другой
 }

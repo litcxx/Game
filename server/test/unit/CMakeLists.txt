@@ -52,6 +52,7 @@ target_link_libraries(unit_tests PRIVATE
 # The ShippedConfig tests check the combat balance of the config the server ships.
 target_compile_definitions(unit_tests PRIVATE
   LIT_SHIPPED_CONFIG="${CMAKE_SOURCE_DIR}/config/config.json"
+  LIT_SMOKE_MAP="${CMAKE_SOURCE_DIR}/config/smoke-map.json"
 )
 
 # net/game/shared expose their headers via PUBLIC usage requirements, so only

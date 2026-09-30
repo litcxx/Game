@@ -9,6 +9,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "state/vision.hpp"
@@ -35,9 +36,14 @@ constexpr double kIndexBucketUnits = 2.0 * kUnitsPerCell;
 
 World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config,
              std::chrono::seconds metrics_interval)
+    : World(incoming, gateway, config, capital_spawn_point(config), metrics_interval) {}
+
+World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const GameConfig& config,
+             SpawnPoint spawn_point, std::chrono::seconds metrics_interval)
     : incoming_{incoming},
       gateway_{gateway},
       config_{config},
+      spawn_point_{std::move(spawn_point)},
       limits_{TickLimits::from(config.limits, config.tick_rate)},
       alive_index_{static_cast<double>(config.map_width * kUnitsPerCell),
                    static_cast<double>(config.map_height * kUnitsPerCell), kIndexBucketUnits},
@@ -266,7 +272,7 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
     }
     ClientSession& session = it->second;
     const std::uint32_t character_id = session.character_id;
-    if (auto spawned = try_spawn(state_, config_, character_id, spawn.cell(), spawn.faction_id());
+    if (auto spawned = try_spawn(state_, config_, character_id, spawn.faction_id(), spawn_point_);
         !spawned) {
         send_error(session_id, spawned.error(), request_id, "spawn refused");
         return;
@@ -277,8 +283,9 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
 
     // Faction (colour) chosen -> tell everyone else.
     broadcast_except(session_id, make_roster_upsert(state_, state_.characters.at(character_id)));
+    const Unit& body = state_.units.at(character_id);
     spdlog::info("World::on_spawn session={} player_id={} cell={} faction={}", session_id,
-                 character_id, spawn.cell(), spawn.faction_id());
+                 character_id, state_.territory.index_at(body.x, body.y), spawn.faction_id());
 }
 
 void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {

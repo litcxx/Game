@@ -338,15 +338,19 @@ const joined = (nowMs = 1000): GameState => {
 // --- The usual hint line ---------------------------------------------------------------
 {
   const state = joined();
-  check("hint: before spawning", usualHint(state, false) === "Выберите фракцию и кликните по клетке — старт · M — вся карта");
+  check("hint: before spawning", usualHint(state, false) === "Выберите фракцию и нажмите «В бой» · M — вся карта");
   check("hint: in the map view", usualHint(state, true).endsWith("M — к игроку"));
+  check("may spawn before the first spawn", state.maySpawn);
   state.myFaction = 2; // locked (a character back after leaving the world)
-  check("hint: back with a faction: no choice", usualHint(state, false) === "Кликните по клетке — старт · M — вся карта");
+  check("hint: back with a faction: no choice", usualHint(state, false) === "«В бой» — в столицу фракции · M — вся карта");
   routeMessage(state, snapshot({ tick: 200, you: { life: LifeState.DEAD, respawnTick: 260 } }), 1000);
   check("hint: dead, waiting", usualHint(state, false) === "Убит · возрождение через 1с · M — вся карта");
+  check("... may not respawn yet", !state.maySpawn);
   routeMessage(state, snapshot({ tick: 260, you: { life: LifeState.DEAD, respawnTick: 260 } }), 1000);
-  check("hint: dead, may respawn — in its faction, no choice", usualHint(state, false) === "Убит · кликните по клетке — возрождение · M — вся карта");
+  check("hint: dead, may respawn — at the capital, no choice", usualHint(state, false) === "Убит · «Возродиться» — снова в столице · M — вся карта");
+  check("... may respawn", state.maySpawn);
   routeMessage(state, snapshot({ tick: 300, you: { life: LifeState.ALIVE } }), 1000);
+  check("may not spawn while alive", !state.maySpawn);
   check("hint: alive, no cell captured yet -> how to capture", usualHint(state, false) === "Встаньте на чужую или ничью клетку и держите E — захват");
   state.captureLearned = true; // see onboarding_check.ts
   check("hint: none while alive once you have captured", usualHint(state, false) === "");

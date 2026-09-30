@@ -14,10 +14,11 @@ import { errorText } from "../src/errors.js";
 import { ErrorCode, LifeState } from "../src/gen/game/v1/protocol_pb.js";
 import { NAME_KEY, TOKEN_KEY } from "../src/net/session.js";
 import { SessionPlayer } from "./sessionPlayer.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
-const CELL = 15 * 100 + 85; // its own cell (col 85, row 15) — away from other smokes' cells
+const HOME = spot("reconnect"); // its own capital on the smoke map, away from other smokes' spots
 const NAME = uniqueName("back");
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -38,12 +39,12 @@ const id = welcome.playerId;
 const token = welcome.sessionToken;
 check("Welcome carries a 32-hex-digit session token, not resumed", /^[0-9a-f]{32}$/.test(token) && !welcome.resumed);
 check("the name and the token are saved", tab.store.getItem(NAME_KEY) === NAME && tab.store.getItem(TOKEN_KEY) === token);
-tab.client.sendSpawn(CELL, welcome.factions[0]?.id ?? 1);
+tab.client.sendSpawn(HOME.factionId);
 tab.client.sendInput(1, 0, false);
 await sleep(300);
 tab.client.sendInput(0, 0, false);
 const before = await tab.standing(id);
-check("the body walked and stands", before !== undefined && before.x > (CELL % 100) * 100 + 50, `x=${before?.x}`);
+check("the body walked and stands", before !== undefined && before.x > HOME.x, `x=${before?.x}`);
 
 // 2) The connection drops: the session comes back by itself.
 tab.client.close();

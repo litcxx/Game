@@ -117,6 +117,15 @@ lives on the server; the browser client predicts, interpolates, and renders.
   sent in `Welcome.map` and seen through the fog; who owns the zones is
   territory, seen under sight like any cell (the zones' cells keep watch for
   their faction). Their protection from capture comes with capture v2 (GAME-017).
+- **Spawning is at the capital.** A `SpawnRequest` names only the faction: the
+  body comes into the world at the centre of that faction's capital cell, the
+  first time and after every death (until fortresses, GAME-029). `try_spawn()`
+  checks the request (alive, too early, the faction and its lock) and only then
+  asks the World's `SpawnPoint` where — `capital_spawn_point()` in play; a
+  faction without a capital has nowhere to spawn (`INVALID_FACTION`). The World
+  is given its `SpawnPoint`, so the World tests place bodies where their case
+  needs them (`placed()` in `world_tests.cpp`) while `WorldSpawn` checks the rule
+  itself.
 - **Fog of war is a delivery filter.** The simulation ignores sight — attacks
   from the fog land as usual. On each snapshot `compute_vision()` marks, once
   per faction, the cells whose centre is within `vision_radius` (config; 300 = 3 cells)
@@ -174,7 +183,7 @@ lives on the server; the browser client predicts, interpolates, and renders.
   echoing the request's `request_id`; codes 1–19 are fatal — the session is
   released: its character is away (see Reconnect), its send queue writes the
   error and then closes the WebSocket with 4000 + code, and whatever it still
-  sends is ignored until its `Disconnected`. Codes 20+ refuse one request (a spawn: `SPAWN_INVALID_CELL`,
+  sends is ignored until its `Disconnected`. Codes 20+ refuse one request (a spawn:
   `SPAWN_TOO_EARLY`, `ALREADY_SPAWNED`, `INVALID_FACTION`; an empty payload:
   `UNSUPPORTED_MESSAGE`) and the connection lives on.
 - **Metrics.** `World` times every tick and counts in `Metrics` what a playtest
@@ -352,15 +361,19 @@ ctest --preset debug-asan      # or run the binary directly:
 
 CI ([`../.github/workflows/ci.yml`](../.github/workflows/ci.yml)) builds
 `debug-asan` on every PR and push to `main`, runs the unit tests, then starts the
-server and runs the client's end-to-end smoke suite against it
+server on the smoke map and runs the client's end-to-end smoke suite against it
 (`npm run smoke`, see [`../client`](../client)); the server must then shut down
-cleanly (exit 0 — no sanitizer report, no leak).
+cleanly (exit 0 — no sanitizer report, no leak). The smoke map
+(`config/smoke-map.json`) is the smoke scripts' factions and capitals — one per
+script role, where its players spawn — laid over the shipped rules by
+`scripts/smoke-config.sh`; `SmokeMap` checks the two make a valid config.
 
 The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`,
 `Combat`, `Ability`, `Ranged`, `Block`, `Capture`, `Fog`, `Resync`, `Errors`,
 `Limits`, `Metrics`, `Reconnect`, `Faction`) test the game end to end through a mock
 gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
-`Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits`, `SpawnFaction`,
+`Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits`,
+`CapitalSpawnPoint`, `SpawnAtCapital`, `SpawnFaction`, `SmokeMap`,
 `FixedStep`, `Metrics`, `GameConfigParse`, `LogConfigParse`, `SessionToken` and
 `TSQueueTest` test those units directly; `Presence` covers characters and
 sessions (away, the grace, takeover, two sessions in a row driving one

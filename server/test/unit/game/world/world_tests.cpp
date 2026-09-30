@@ -21,6 +21,8 @@
 #include "game/mock_client_gateway.hpp"
 #include "game/v1/protocol.pb.h"
 #include "net/client_event.hpp"
+#include "state/world_state.hpp"
+#include "systems/spawn_system.hpp"
 #include "utils/ts_queue.hpp"
 #include "world/world.hpp"
 
@@ -61,9 +63,30 @@ lit::ClientEvent hello_event(std::uint64_t session_id, std::string name) {
     ev.session_id = session_id;
     ev.kind = lit::ClientEvent::Kind::Message;
     auto* hello = ev.msg.mutable_hello();
-    hello->set_protocol_version(1);
+    hello->set_protocol_version(::game::v1::PROTOCOL_VERSION_CURRENT);
     hello->set_name(std::move(name));
     return ev;
+}
+
+// Where each player's body comes into the world, by name: the cells of its
+// spawns in turn, the last one repeating (the World asks only for a spawn that
+// happens). The World's own rule — the centre of the faction's capital — is what
+// the WorldSpawn tests check; the others place bodies where their case needs them.
+lit::game::SpawnPoint placed(std::map<std::string, std::vector<std::uint32_t>> cells) {
+    auto left =
+        std::make_shared<std::map<std::string, std::vector<std::uint32_t>>>(std::move(cells));
+    return [left](const lit::game::WorldState& state, std::uint32_t character_id,
+                  std::uint32_t /*faction_id*/) -> std::optional<std::uint32_t> {
+        const std::string& name = state.characters.at(character_id).name;
+        auto it = left->find(name);
+        if (it == left->end() || it->second.empty()) {
+            ADD_FAILURE() << "no cell placed for " << name;
+            return std::nullopt;
+        }
+        const std::uint32_t cell = it->second.front();
+        if (it->second.size() > 1) it->second.erase(it->second.begin());
+        return cell;
+    };
 }
 
 lit::ClientEvent disconnect_event(std::uint64_t session_id) {
@@ -84,6 +107,13 @@ std::vector<::game::v1::ServerMessage> messages_to(const lit::test::MockClientGa
             out.push_back(std::move(m));
     }
     return out;
+}
+
+// The player id a session's Welcome gave it; 0 before one.
+std::uint32_t welcome_id(const lit::test::MockClientGateway& gw, std::uint64_t session_id) {
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_welcome()) return m.welcome().player_id();
+    return 0;
 }
 
 }  // namespace
@@ -281,14 +311,11 @@ TEST(WorldRoster, ADisconnectedPlayerLeavesAfterTheGraceAndOthersAreTold) {
 
 namespace {
 
-[[maybe_unused]] lit::ClientEvent spawn_event(std::uint64_t session_id, std::uint32_t cell,
-                                              std::uint32_t faction_id) {
+[[maybe_unused]] lit::ClientEvent spawn_event(std::uint64_t session_id, std::uint32_t faction_id) {
     lit::ClientEvent ev;
     ev.session_id = session_id;
     ev.kind = lit::ClientEvent::Kind::Message;
-    auto* spawn = ev.msg.mutable_spawn();
-    spawn->set_cell(cell);
-    spawn->set_faction_id(faction_id);
+    ev.msg.mutable_spawn()->set_faction_id(faction_id);
     return ev;
 }
 
@@ -417,10 +444,10 @@ TEST(WorldSpawn, PlacesPlayerAliveAtCellCenterWithFullHp) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // 4-wide map: col 1, row 1
+    incoming.push(spawn_event(7, /*faction=*/1));  // 4-wide map: col 1, row 1
     run_ticks(world, 3, 0.05);
 
     auto snap = last_snapshot_to(gw, 7);
@@ -433,30 +460,65 @@ TEST(WorldSpawn, PlacesPlayerAliveAtCellCenterWithFullHp) {
     EXPECT_EQ(ps.hp(), config.max_hp);
 }
 
-TEST(WorldSpawn, RejectsOutOfBoundsCell) {
+// The World's own rule (GAME-016): a body comes into the world at the centre of
+// its faction's capital cell — the first time and after every death.
+TEST(WorldSpawn, AtTheCapitalOfItsFaction) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
+    config.capitals = {{1, 5, 0}, {2, 10, 0}};  // Blue's: col 2, row 2
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/9999, /*faction=*/1));
+    incoming.push(spawn_event(7, /*faction=*/2));
     run_ticks(world, 3, 0.05);
 
-    auto snap = last_snapshot_to(gw, 7);
-    ASSERT_TRUE(snap.has_value());
-    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_NOT_SPAWNED);
-    EXPECT_EQ(snap->players_size(), 0);
+    const auto self = player_state_in(gw, 7, welcome_id(gw, 7));
+    ASSERT_TRUE(self.has_value());
+    EXPECT_EQ(self->x(), 250u);
+    EXPECT_EQ(self->y(), 250u);
+}
+
+TEST(WorldSpawn, BackAtTheCapitalAfterADeathElsewhere) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.capitals = {{1, 5, 0}, {2, 7, 0}};  // Red at (150, 150), Blue at (350, 150)
+    melee(config).cooldown_ticks = 1;          // three swings kill
+    config.respawn_delay_ticks = 1;
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "walker"));
+    incoming.push(hello_event(2, "killer"));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
+    constexpr double dt = 1.0 / 60;
+    incoming.push(input_event(1, /*move_x=*/1, 0, /*seq=*/1));  // Red walks toward Blue
+    run_ticks(world, 20, dt);                                   // 100 units: x = 250
+    incoming.push(input_event(1, 0, 0, /*seq=*/2));
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    run_ticks(world, 6, dt);
+    ASSERT_EQ(last_snapshot_to(gw, 1)->you().life(), ::game::v1::LIFE_STATE_DEAD);
+    incoming.push(input_event(2, 0, 0, /*seq=*/2));  // the killer stops
+
+    incoming.push(spawn_event(1, /*faction=*/1));
+    run_ticks(world, 3, dt);
+
+    const auto self = player_state_in(gw, 1, welcome_id(gw, 1));
+    ASSERT_TRUE(self.has_value());
+    EXPECT_EQ(self->hp(), config.max_hp);
+    EXPECT_EQ(self->x(), 150u);  // home, not where it fell
+    EXPECT_EQ(self->y(), 150u);
 }
 
 TEST(WorldSpawn, RejectsUnknownFaction) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/99));  // not in config
+    incoming.push(spawn_event(7, /*faction=*/99));  // not in config
     run_ticks(world, 3, 0.05);
 
     auto snap = last_snapshot_to(gw, 7);
@@ -468,11 +530,11 @@ TEST(WorldSpawn, NotifiesOthersOfChosenFaction) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/2));
     world.tick(0.05);
 
     bool told = false;
@@ -487,10 +549,10 @@ TEST(WorldMovement, InputMovesAlivePlayer) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // center (150,150)
+    incoming.push(spawn_event(7, /*faction=*/1));  // center (150,150)
     incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));
     run_ticks(world, 3, 0.1);  // move_speed 300 * 0.1 = 30 units/tick
 
@@ -506,10 +568,10 @@ TEST(WorldMovement, StandsStillWithoutInput) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(7, /*faction=*/1));
     run_ticks(world, 3, 0.1);
 
     auto snap = last_snapshot_to(gw, 7);
@@ -539,10 +601,10 @@ TEST(WorldCapture, HoldingCaptureFlipsCellOwner) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();  // capture_ticks = 5
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // center (150,150) -> cell 5
+    incoming.push(spawn_event(7, /*faction=*/1));  // center (150,150) -> cell 5
     incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
     run_ticks(world, 6, 0.016);  // 5 ticks * 20% -> flips by tick 5
 
@@ -555,10 +617,10 @@ TEST(WorldCapture, ReleasingCaptureResetsProgress) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(7, /*faction=*/1));
     incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
     run_ticks(world, 3, 0.016);  // partial (~60%), not yet captured
     incoming.push(input_event(7, 0, 0, /*seq=*/2, /*capturing=*/false));  // release
@@ -574,10 +636,10 @@ TEST(WorldCapture, NoCaptureWithoutHoldingKey) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // spawned, but not capturing
+    incoming.push(spawn_event(7, /*faction=*/1));  // spawned, but not capturing
     run_ticks(world, 6, 0.016);
 
     // The cell's state arrives once, when spawning reveals it — still untouched.
@@ -598,12 +660,12 @@ TEST(WorldCombat, AttackHitsEnemyInRange) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();  // cooldown 10 -> a single swing in a short window
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
     run_ticks(world, 3, 0.016);
 
@@ -617,14 +679,14 @@ TEST(WorldCombat, AttackHitsAllEnemiesInArea) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}, {"c", {4}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
     incoming.push(hello_event(3, "c"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));  // attacker (150,150)
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // enemy at (250,150)
-    incoming.push(spawn_event(3, /*cell=*/4, /*faction=*/2));  // enemy at (50,150)
+    incoming.push(spawn_event(1, /*faction=*/1));  // attacker (150,150)
+    incoming.push(spawn_event(2, /*faction=*/2));  // enemy at (250,150)
+    incoming.push(spawn_event(3, /*faction=*/2));  // enemy at (50,150)
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
     run_ticks(world, 3, 0.016);
 
@@ -641,12 +703,12 @@ TEST(WorldCombat, NoAttackWithoutKey) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // enemy in range
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));  // enemy in range
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/false));
     run_ticks(world, 3, 0.016);
 
@@ -660,12 +722,12 @@ TEST(WorldCombat, NoFriendlyFire) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/1));  // same faction
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/1));  // same faction
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
     run_ticks(world, 3, 0.016);
 
@@ -679,12 +741,12 @@ TEST(WorldCombat, OutOfRangeNoDamage) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {15}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));   // (150,150)
-    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // (350,350) -> far
+    incoming.push(spawn_event(1, /*faction=*/1));  // (150,150)
+    incoming.push(spawn_event(2, /*faction=*/2));  // (350,350) -> far
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
     run_ticks(world, 3, 0.016);
 
@@ -698,12 +760,12 @@ TEST(WorldCombat, CooldownLimitsSwings) {
     lit::test::MockClientGateway gw;
     auto config = test_config();
     melee(config).cooldown_ticks = 3;  // only one swing fits in the 3-tick window
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
     run_ticks(world, 3, 0.016);
 
@@ -718,12 +780,12 @@ TEST(WorldCombat, KillsAndSetsDead) {
     lit::test::MockClientGateway gw;
     auto config = test_config();
     melee(config).cooldown_ticks = 1;  // swing every tick -> 3 swings kill 100 hp
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
     run_ticks(world, 6, 0.016);
 
@@ -743,18 +805,18 @@ TEST(WorldCombat, RespawnAfterDelay) {
     auto config = test_config();
     melee(config).cooldown_ticks = 1;
     config.respawn_delay_ticks = 5;
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6, 15}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
     run_ticks(world, 3, 0.016);  // b dies (~tick 3), respawn_tick = 3 + 5
     incoming.push(
         input_event(1, 0, 0, /*seq=*/2, /*capturing=*/false, /*attack=*/false));  // a stops
-    run_ticks(world, 6, 0.016);                                 // wait past respawn_tick
-    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // respawn far from a
+    run_ticks(world, 6, 0.016);                    // wait past respawn_tick
+    incoming.push(spawn_event(2, /*faction=*/2));  // respawn far from a
     run_ticks(world, 3, 0.016);
 
     auto snap = last_snapshot_to(gw, 2);
@@ -770,10 +832,10 @@ TEST(WorldInput, FixedStepMovementIsDeterministic) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));              // center (150,150)
+    incoming.push(spawn_event(7, /*faction=*/1));                          // center (150,150)
     incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));  // then repeat-last
     const double dt = 1.0 / config.tick_rate;
     run_ticks(world, 6, dt);  // tick1 consumes cmd, ticks 2..6 repeat it
@@ -791,10 +853,10 @@ TEST(WorldInput, ConsumesOneCommandPerTick) {
     lit::test::MockClientGateway gw;
     auto config = test_config();
     config.snapshot_rate = config.tick_rate;  // one snapshot per tick, to read per-tick acks
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(7, /*faction=*/1));
     incoming.push(input_event(7, 0, 0, /*seq=*/1));
     incoming.push(input_event(7, 0, 0, /*seq=*/2));
     const double dt = 1.0 / config.tick_rate;
@@ -812,11 +874,11 @@ TEST(WorldInput, EnqueuesAfterRespawnClear) {
     lit::test::MockClientGateway gw;
     auto config = test_config();
     config.snapshot_rate = config.tick_rate;
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*cell=*/5, /*faction=*/1));  // clears any queued input
-    incoming.push(input_event(7, 1, 0, /*seq=*/10));           // seq keeps climbing
+    incoming.push(spawn_event(7, /*faction=*/1));     // clears any queued input
+    incoming.push(input_event(7, 1, 0, /*seq=*/10));  // seq keeps climbing
     const double dt = 1.0 / config.tick_rate;
     run_ticks(world, 1, dt);
     EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 10u);  // still enqueued & consumed
@@ -852,12 +914,12 @@ TEST(WorldAbility, UsesTheSelectedAbility) {
     lit::test::MockClientGateway gw;
     auto config = test_config();
     config.abilities.push_back({4, lit::AbilityKind::Melee, "Heavy", 20, 70, 120, 0, 0, 0});
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/4));
     run_ticks(world, 3, 0.016);
 
@@ -870,10 +932,10 @@ TEST(WorldAbility, SelfStateReportsCooldownLength) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}}));
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));
     run_ticks(world, 3, 0.016);
 
@@ -887,12 +949,12 @@ TEST(WorldAbility, UnknownAbilityDoesNothing) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/99));
     run_ticks(world, 3, 0.016);
 
@@ -914,10 +976,10 @@ TEST(WorldRanged, FiresTowardTheAim) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {4}}}));
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
@@ -938,12 +1000,12 @@ TEST(WorldRanged, OnlyTheShooterSeesItsShotAsMine) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {4}}, {"b", {8}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));  // (50,150)
-    incoming.push(spawn_event(2, /*cell=*/8, /*faction=*/2));  // (50,250): off the shot's path
+    incoming.push(spawn_event(1, /*faction=*/1));  // (50,150)
+    incoming.push(spawn_event(2, /*faction=*/2));  // (50,250): off the shot's path
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
@@ -961,12 +1023,12 @@ TEST(WorldRanged, HitsAnEnemyForTheRangedDamage) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {4}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 30, 0.016);  // contact near tick 19; the next shot is due on tick 31
 
@@ -983,10 +1045,10 @@ TEST(WorldRanged, NoAimNoShot) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {4}}}));
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
@@ -1000,12 +1062,12 @@ TEST(WorldRanged, DodgedProjectileMisses) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {4}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     incoming.push(input_event(2, 0, 1, /*seq=*/1));  // the target runs out of the line
     run_ticks(world, 30, 0.016);
@@ -1020,12 +1082,12 @@ TEST(WorldRanged, SharedCooldownBlocksOtherAbilities) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // within melee range
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));  // within melee range
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/-1000));
     incoming.push(attack_event(1, /*seq=*/2, /*ability=*/1));  // then hold melee
     run_ticks(world, 12, 0.016);
@@ -1052,12 +1114,12 @@ TEST(WorldBlock, BlockPressedWithASwingStopsIt) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"atk", {5}}, {"def", {6}}}));
 
     incoming.push(hello_event(1, "atk"));
     incoming.push(hello_event(2, "def"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // within melee range
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));              // within melee range
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/3));  // block on tick 1...
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));  // ...the swing on tick 1 too
     run_ticks(world, 3, 0.016);
@@ -1072,12 +1134,12 @@ TEST(WorldBlock, BlockExpires) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"atk", {5}}, {"def", {6}}}));
 
     incoming.push(hello_event(1, "atk"));
     incoming.push(hello_event(2, "def"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/3));  // block once: ticks 1..9
     incoming.push(input_event(2, 0, 0, /*seq=*/2));            // then let go
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));  // swings on ticks 1 and 11
@@ -1093,12 +1155,12 @@ TEST(WorldBlock, BlockStopsAProjectile) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"shooter", {4}}, {"def", {6}}}));
 
     incoming.push(hello_event(1, "shooter"));
     incoming.push(hello_event(2, "def"));
-    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     // The shot arrives on tick 19; block on tick 15 (active 15..23), idle before.
     for (std::uint32_t seq = 1; seq <= 14; ++seq) incoming.push(input_event(2, 0, 0, seq));
@@ -1119,12 +1181,12 @@ TEST(WorldBlock, BlockHasItsOwnCooldown) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(1, /*seq=*/1, /*ability=*/3));  // block on tick 1
     incoming.push(attack_event(1, /*seq=*/2, /*ability=*/1));  // switch: swing on tick 2
     run_ticks(world, 3, 0.016);
@@ -1144,14 +1206,14 @@ TEST(WorldAbility, EveryUseIsAnnounced) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {15}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/1));  // far away, an ally
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));   // a swing that hits nobody
-    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/3));   // a block
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/1));              // far away, an ally
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));  // a swing that hits nobody
+    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/3));  // a block
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
@@ -1220,12 +1282,12 @@ TEST(WorldFog, AnEnemyOutOfSightIsNotSent) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}, {"b", {99}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/99, /*faction=*/2));  // the far corner
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));  // the far corner
     run_ticks(world, 3, 0.05);
 
     auto seen_by_a = last_snapshot_to(gw, 1);
@@ -1241,12 +1303,12 @@ TEST(WorldFog, AnEnemyInSightIsSent) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}, {"b", {2}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));  // (50,50)
-    incoming.push(spawn_event(2, /*cell=*/2, /*faction=*/2));  // (250,50): its cell is 200 away
+    incoming.push(spawn_event(1, /*faction=*/1));  // (50,50)
+    incoming.push(spawn_event(2, /*faction=*/2));  // (250,50): its cell is 200 away
     run_ticks(world, 3, 0.05);
 
     auto snap = last_snapshot_to(gw, 1);
@@ -1258,14 +1320,15 @@ TEST(WorldFog, AlliesShareTheirSight) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config,
+                           placed({{"a", {0}}, {"enemy", {19}}, {"ally", {9}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "enemy"));
     incoming.push(hello_event(3, "ally"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/19, /*faction=*/2));  // far from a, next to the ally
-    incoming.push(spawn_event(3, /*cell=*/9, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));  // far from a, next to the ally
+    incoming.push(spawn_event(3, /*faction=*/1));
     run_ticks(world, 3, 0.05);
 
     auto snap = last_snapshot_to(gw, 1);
@@ -1278,12 +1341,12 @@ TEST(WorldFog, AnEnemyLeavingSightDisappears) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}, {"b", {2}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/2, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(input_event(2, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));  // 15 units a tick
     run_ticks(world, 3, 0.05);                                             // b at x = 295
     auto before = last_snapshot_to(gw, 1);
@@ -1301,12 +1364,12 @@ TEST(WorldFog, ADeadPlayerGivesNoSightButSeesItsBody) {
     lit::test::MockClientGateway gw;
     auto config = fog_config();
     melee(config).cooldown_ticks = 1;  // three swings on ticks 1..3 kill
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"victim", {0}}, {"killer", {1}}}));
 
     incoming.push(hello_event(1, "victim"));
     incoming.push(hello_event(2, "killer"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/1, /*faction=*/2));  // right next to it
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));  // right next to it
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
     run_ticks(world, 6, 0.016);
 
@@ -1324,10 +1387,10 @@ TEST(WorldFog, SpawningRevealsTheCellsAroundWithTheirState) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {55}}}));
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/55, /*faction=*/1));  // centre of cell (5,5)
+    incoming.push(spawn_event(1, /*faction=*/1));  // centre of cell (5,5)
     run_ticks(world, 3, 0.05);
 
     auto first = last_snapshot_to(gw, 1);
@@ -1350,10 +1413,10 @@ TEST(WorldFog, MovingRevealsAheadAndHidesBehind) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}}));
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));  // (50,50)
+    incoming.push(spawn_event(1, /*faction=*/1));  // (50,50)
     incoming.push(input_event(1, 0, 0, /*seq=*/1));
     run_ticks(world, 3, 0.05);  // sees cell 20 = (0,2), 200 away
     ASSERT_TRUE(has(all_revealed(gw, 1), 20));
@@ -1370,19 +1433,20 @@ TEST(WorldFog, ChangesInTheFogArriveOnlyOnceSeen) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();  // capture_ticks = 5
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config,
+                           placed({{"a", {0}}, {"enemy", {9}}, {"ally", {7}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "enemy"));
     incoming.push(hello_event(3, "ally"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/9, /*faction=*/2));  // far away
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));  // far away
     incoming.push(input_event(2, 0, 0, /*seq=*/1, /*capturing=*/true));
     run_ticks(world, 6, 0.016);  // the enemy takes cell 9 unseen
 
     EXPECT_FALSE(last_cell_update(gw, 1, /*index=*/9).has_value());
 
-    incoming.push(spawn_event(3, /*cell=*/7, /*faction=*/1));  // an ally comes to look
+    incoming.push(spawn_event(3, /*faction=*/1));  // an ally comes to look
     run_ticks(world, 3, 0.016);
 
     auto cu = last_cell_update(gw, 1, /*index=*/9);
@@ -1394,16 +1458,16 @@ TEST(WorldFog, OwnedCellsKeepWatch) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}, {"b", {20}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
     run_ticks(world, 6, 0.05);  // cell 0 is faction 1's
     incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*seq=*/2));
-    run_ticks(world, 21, 0.05);                                 // a walks off to x = 365
-    incoming.push(spawn_event(2, /*cell=*/20, /*faction=*/2));  // 200 from cell 0's centre
+    run_ticks(world, 21, 0.05);                    // a walks off to x = 365
+    incoming.push(spawn_event(2, /*faction=*/2));  // 200 from cell 0's centre
     run_ticks(world, 3, 0.05);
 
     auto snap = last_snapshot_to(gw, 1);
@@ -1417,17 +1481,17 @@ TEST(WorldFog, RespawningRevealsTheNewSpot) {
     auto config = fog_config();
     melee(config).cooldown_ticks = 1;
     config.respawn_delay_ticks = 5;
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {0, 99}}, {"killer", {1}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "killer"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/1, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));  // a dies on tick 3
     run_ticks(world, 3, 0.016);
     incoming.push(input_event(2, 0, 0, /*seq=*/2));
     run_ticks(world, 6, 0.016);
-    incoming.push(spawn_event(1, /*cell=*/99, /*faction=*/1));  // the far corner
+    incoming.push(spawn_event(1, /*faction=*/1));  // the far corner
     run_ticks(world, 3, 0.016);
 
     auto snap = last_snapshot_to(gw, 1);
@@ -1443,12 +1507,12 @@ TEST(WorldFog, AShotFromTheFogLandsButTellsNothing) {
     lit::test::MockClientGateway gw;
     auto config = fog_config();
     config.abilities[1].range = 500;  // the Shot outranges sight
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"victim", {4}}, {"shooter", {0}}}));
 
     incoming.push(hello_event(1, "victim"));
     incoming.push(hello_event(2, "shooter"));
-    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));  // (450,50)
-    incoming.push(spawn_event(2, /*cell=*/0, /*faction=*/2));  // (50,50): 400 away
+    incoming.push(spawn_event(1, /*faction=*/1));  // (450,50)
+    incoming.push(spawn_event(2, /*faction=*/2));  // (50,50): 400 away
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 21, 0.05);  // lands on tick 13; the next shot is due on tick 31
 
@@ -1466,12 +1530,12 @@ TEST(WorldFog, ShotsAndAbilityUsesInTheFogAreNotSent) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}, {"b", {99}}}));
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/99, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/-1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.05);
 
@@ -1489,10 +1553,10 @@ TEST(WorldFog, AJoinerSeesNothing) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}}));
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
     run_ticks(world, 6, 0.016);  // cell 0 is faction 1's
     incoming.push(hello_event(2, "newcomer"));
@@ -1602,11 +1666,11 @@ TEST(WorldResync, ADroppedSnapshotIsFollowedByAResync) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {55}}}));
     gw.accept = drop_snapshots(1, 3, 3);  // the first snapshot, which reveals the spawn
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/55, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     run_ticks(world, 9, 0.05);
 
     const auto snaps = snapshots_to(gw, 1);
@@ -1624,7 +1688,9 @@ TEST(WorldResync, TheClientCatchesUpAfterDroppedSnapshots) {
     lit::test::MockClientGateway gw;
     auto config = fog_config();           // capture_ticks = 5
     config.limits.resync_window_ms = 50;  // one snapshot period: back-to-back drops only resync
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(
+        incoming, gw, config,
+        placed({{"watcher", {0}}, {"twin", {0}}, {"scout", {59}}, {"enemy", {57}}}));
     gw.accept = drop_snapshots(1, 6, 30);  // 9 snapshots in a row
 
     // A watcher and its twin share one spot and faction, so they see the same;
@@ -1633,13 +1699,13 @@ TEST(WorldResync, TheClientCatchesUpAfterDroppedSnapshots) {
     incoming.push(hello_event(1, "watcher"));
     incoming.push(hello_event(2, "twin"));
     incoming.push(hello_event(3, "scout"));
-    incoming.push(spawn_event(1, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/0, /*faction=*/1));
-    incoming.push(spawn_event(3, /*cell=*/59, /*faction=*/1));  // (950,550)
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/1));
+    incoming.push(spawn_event(3, /*faction=*/1));  // (950,550)
     incoming.push(input_event(3, /*move_x=*/-1, /*move_y=*/0, /*seq=*/1));
     run_ticks(world, 7, 0.05);
     incoming.push(hello_event(4, "enemy"));
-    incoming.push(spawn_event(4, /*cell=*/57, /*faction=*/2));  // in the scout's sight
+    incoming.push(spawn_event(4, /*faction=*/2));  // in the scout's sight
     incoming.push(input_event(4, 0, 0, /*seq=*/1, /*capturing=*/true));
     run_ticks(world, 38, 0.05);  // through tick 45: the drops end on tick 30
 
@@ -1685,7 +1751,7 @@ TEST(WorldResync, DropsFartherApartThanTheWindowOnlyResync) {
     lit::test::MockClientGateway gw;
     auto config = fog_config();
     config.limits.resync_window_ms = 100;  // 6 ticks
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {55}}}));
     gw.accept = [](std::uint64_t sid, const std::vector<std::byte>& bytes) {
         const auto m = parse(bytes);
         return !(sid == 1 && m.has_snapshot() &&
@@ -1693,7 +1759,7 @@ TEST(WorldResync, DropsFartherApartThanTheWindowOnlyResync) {
     };
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/55, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     run_ticks(world, 18, 0.05);
 
     EXPECT_TRUE(gw.disconnected.empty());
@@ -1819,7 +1885,7 @@ TEST(WorldErrors, AnotherProtocolVersionIsFatal) {
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(1, "other"));
-    incoming.push(with_request(hello_v(2, /*version=*/2, "future"), 7));
+    incoming.push(with_request(hello_v(2, ::game::v1::PROTOCOL_VERSION_CURRENT + 1, "future"), 7));
     world.tick(0.016);
 
     expect_fatal(gw, 2, ::game::v1::ERROR_CODE_PROTOCOL_VERSION, 7);
@@ -1892,7 +1958,7 @@ TEST(WorldErrors, AnythingBeforeHelloIsFatal) {
     world.tick(0.016);
     expect_fatal(gw, 1, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, 4);
 
-    for (auto ev : {spawn_event(2, 5, 1), ping_event(3), empty_event(4)}) {
+    for (auto ev : {spawn_event(2, 1), ping_event(3), empty_event(4)}) {
         lit::test::MockClientGateway other;
         lit::TSQueue<lit::ClientEvent> queue;
         lit::game::World fresh(queue, other, config);
@@ -1927,27 +1993,14 @@ TEST(WorldErrors, AReleasedSessionIsIgnoredUntilItCloses) {
     EXPECT_TRUE(got_welcome(gw, 1));
 }
 
-TEST(WorldErrors, AnInvalidSpawnCellIsRefused) {
-    lit::TSQueue<lit::ClientEvent> incoming;
-    lit::test::MockClientGateway gw;
-    auto config = test_config();
-    lit::game::World world(incoming, gw, config);
-
-    incoming.push(hello_event(1, "a"));
-    incoming.push(with_request(spawn_event(1, /*cell=*/9999, /*faction=*/1), 11));
-    world.tick(0.016);
-
-    expect_refusal(gw, 1, ::game::v1::ERROR_CODE_SPAWN_INVALID_CELL, 11);
-}
-
 TEST(WorldErrors, AnUnknownFactionIsRefused) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}}));
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(with_request(spawn_event(1, /*cell=*/5, /*faction=*/99), 12));
+    incoming.push(with_request(spawn_event(1, /*faction=*/99), 12));
     world.tick(0.016);
 
     expect_refusal(gw, 1, ::game::v1::ERROR_CODE_INVALID_FACTION, 12);
@@ -1957,11 +2010,11 @@ TEST(WorldErrors, SpawningWhileAliveIsRefused) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"a", {5, 6}}}));
 
     incoming.push(hello_event(1, "a"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(with_request(spawn_event(1, /*cell=*/6, /*faction=*/1), 13));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(with_request(spawn_event(1, /*faction=*/1), 13));
     world.tick(0.016);
 
     expect_refusal(gw, 1, ::game::v1::ERROR_CODE_ALREADY_SPAWNED, 13);
@@ -1973,15 +2026,15 @@ TEST(WorldErrors, RespawningTooEarlyIsRefused) {
     auto config = test_config();
     melee(config).cooldown_ticks = 1;  // three swings on ticks 1..3 kill
     config.respawn_delay_ticks = 60;
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"victim", {5, 15}}, {"killer", {6}}}));
 
     incoming.push(hello_event(1, "victim"));
     incoming.push(hello_event(2, "killer"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
     run_ticks(world, 4, 0.016);
-    incoming.push(with_request(spawn_event(1, /*cell=*/15, /*faction=*/1), 14));
+    incoming.push(with_request(spawn_event(1, /*faction=*/1), 14));
     world.tick(0.016);
 
     expect_refusal(gw, 1, ::game::v1::ERROR_CODE_SPAWN_TOO_EARLY, 14);
@@ -2127,10 +2180,10 @@ TEST(WorldLimits, InputBeyondTheLimitsIsDropped) {
     auto config = test_config();
     config.snapshot_rate = config.tick_rate;  // a snapshot (and ack) every tick
     config.limits.max_input_frames = 3;
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config, placed({{"burst", {5}}}));
 
     incoming.push(hello_event(1, "burst"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     auto burst = input_event(1, 1, 0, /*seq=*/1);
     for (std::uint32_t seq = 2; seq <= 5; ++seq) {
         auto* frame = burst.msg.mutable_input()->add_frames();
@@ -2185,7 +2238,7 @@ TEST(WorldMetrics, OneLineEveryInterval) {
     lit::game::World world(incoming, gw, test_config(), std::chrono::seconds{1});
 
     incoming.push(hello_event(1, "ann"));
-    incoming.push(hello_v(2, /*version=*/2, "future"));
+    incoming.push(hello_v(2, ::game::v1::PROTOCOL_VERSION_CURRENT + 1, "future"));
     run_ticks(world, 59, kTick);
     EXPECT_TRUE(log.metrics().empty());
 
@@ -2281,12 +2334,12 @@ TEST(WorldReconnect, TheWelcomeCarriesANewSessionToken) {
 TEST(WorldReconnect, ADroppedPlayerStaysInTheWorldStandingStill) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    lit::game::World world(incoming, gw, test_config());
+    lit::game::World world(incoming, gw, test_config(), placed({{"ann", {5}}, {"bob", {15}}}));
 
     incoming.push(hello_event(1, "ann"));
     incoming.push(hello_event(2, "bob"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));   // x = 150
-    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // to see it: the whole map
+    incoming.push(spawn_event(1, /*faction=*/1));               // x = 150
+    incoming.push(spawn_event(2, /*faction=*/2));               // to see it: the whole map
     incoming.push(input_event(1, /*move_x=*/1, 0, /*seq=*/1));  // walking right
     run_ticks(world, 3, kTick);
     const std::uint32_t ann = welcome_to(gw, 1)->player_id();
@@ -2307,12 +2360,12 @@ TEST(WorldReconnect, ADroppedPlayerStaysInTheWorldStandingStill) {
 TEST(WorldReconnect, AnAwayPlayerCanBeHurt) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    lit::game::World world(incoming, gw, test_config());
+    lit::game::World world(incoming, gw, test_config(), placed({{"ann", {5}}, {"bob", {6}}}));
 
     incoming.push(hello_event(1, "ann"));
     incoming.push(hello_event(2, "bob"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // 100 units away
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));  // 100 units away
     world.tick(kTick);
     const std::uint32_t ann = welcome_to(gw, 1)->player_id();
 
@@ -2328,12 +2381,12 @@ TEST(WorldReconnect, AnAwayPlayerCanBeHurt) {
 TEST(WorldReconnect, AResumeWithinTheGraceKeepsIdPositionAndHp) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    lit::game::World world(incoming, gw, test_config());
+    lit::game::World world(incoming, gw, test_config(), placed({{"ann", {5}}, {"bob", {6}}}));
 
     incoming.push(hello_event(1, "ann"));
     incoming.push(hello_event(2, "bob"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(input_event(1, /*move_x=*/0, /*move_y=*/1, /*seq=*/1));  // ann walks down
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));              // bob swings once
     world.tick(kTick);
@@ -2383,11 +2436,11 @@ TEST(WorldReconnect, AResumeWithinTheGraceKeepsIdPositionAndHp) {
 TEST(WorldReconnect, AfterTheGraceThePlayerLeavesAndReturnsNotSpawned) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    lit::game::World world(incoming, gw, short_grace_config());
+    lit::game::World world(incoming, gw, short_grace_config(), placed({{"ann", {5}}}));
 
     incoming.push(hello_event(1, "ann"));
     incoming.push(hello_event(2, "bob"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(1, /*faction=*/1));
     world.tick(kTick);
     const auto first = welcome_to(gw, 1);
     ASSERT_TRUE(first.has_value());
@@ -2418,12 +2471,12 @@ TEST(WorldReconnect, AfterTheGraceThePlayerLeavesAndReturnsNotSpawned) {
 TEST(WorldReconnect, ASecondConnectionWithTheTokenReplacesTheFirst) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    lit::game::World world(incoming, gw, test_config());
+    lit::game::World world(incoming, gw, test_config(), placed({{"ann", {5}}, {"bob", {15}}}));
 
     incoming.push(hello_event(1, "ann"));
     incoming.push(hello_event(2, "bob"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));   // x = 150
-    incoming.push(spawn_event(2, /*cell=*/15, /*faction=*/2));  // to see it: the whole map
+    incoming.push(spawn_event(1, /*faction=*/1));  // x = 150
+    incoming.push(spawn_event(2, /*faction=*/2));  // to see it: the whole map
     world.tick(kTick);
     const auto first = welcome_to(gw, 1);
     ASSERT_TRUE(first.has_value());
@@ -2600,13 +2653,14 @@ TEST(WorldMetrics, CountsSpawnsDeathsAndCaptures) {
     const LogCapture log;
     auto config = test_config();       // capture_ticks = 5
     melee(config).cooldown_ticks = 1;  // swing every tick -> 3 swings kill 100 hp
-    lit::game::World world(incoming, gw, config, std::chrono::seconds{1});
+    lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6, 6}}}),
+                           std::chrono::seconds{1});
 
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));  // refused: already alive
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
+    incoming.push(spawn_event(2, /*faction=*/2));  // refused: already alive
     // a holds both: kills b next door and takes its own cell (once: then it is a's).
     incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true, /*attack=*/true));
     run_ticks(world, 60, kTick);
@@ -2630,12 +2684,13 @@ TEST(WorldFaction, ChangingFactionAfterDeathIsRefused) {
     auto config = test_config();
     melee(config).cooldown_ticks = 1;  // three swings on ticks 1..3 kill
     config.respawn_delay_ticks = 1;
-    lit::game::World world(incoming, gw, config);
+    lit::game::World world(incoming, gw, config,
+                           placed({{"victim", {5, 15, 15}}, {"killer", {6}}}));
 
     incoming.push(hello_event(1, "victim"));
     incoming.push(hello_event(2, "killer"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
-    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
     run_ticks(world, 4, kTick);
     incoming.push(input_event(2, 0, 0, /*seq=*/2));  // the killer stops
@@ -2643,7 +2698,7 @@ TEST(WorldFaction, ChangingFactionAfterDeathIsRefused) {
     const std::uint32_t victim = welcome_to(gw, 1)->player_id();
     const int upserts = roster_news_about(gw, 2, victim).first;
 
-    incoming.push(with_request(spawn_event(1, /*cell=*/15, /*faction=*/2), 15));  // join the killer
+    incoming.push(with_request(spawn_event(1, /*faction=*/2), 15));  // join the killer
     run_ticks(world, 3, kTick);
 
     expect_refusal(gw, 1, ::game::v1::ERROR_CODE_INVALID_FACTION, 15);
@@ -2652,7 +2707,7 @@ TEST(WorldFaction, ChangingFactionAfterDeathIsRefused) {
     EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_DEAD);
     EXPECT_EQ(roster_news_about(gw, 2, victim).first, upserts);  // no one is told of a switch
 
-    incoming.push(spawn_event(1, /*cell=*/15, /*faction=*/1));  // its own faction
+    incoming.push(spawn_event(1, /*faction=*/1));  // its own faction
     run_ticks(world, 3, kTick);
     EXPECT_EQ(last_snapshot_to(gw, 1)->you().life(), ::game::v1::LIFE_STATE_ALIVE);
 }
@@ -2660,11 +2715,11 @@ TEST(WorldFaction, ChangingFactionAfterDeathIsRefused) {
 TEST(WorldFaction, ACharacterBackWithoutABodyKeepsItsFactionInTheRoster) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    lit::game::World world(incoming, gw, short_grace_config());
+    lit::game::World world(incoming, gw, short_grace_config(), placed({{"ann", {5}}}));
 
     incoming.push(hello_event(1, "ann"));
     incoming.push(hello_event(2, "bob"));
-    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/2));
+    incoming.push(spawn_event(1, /*faction=*/2));
     world.tick(kTick);
     const auto first = welcome_to(gw, 1);
     ASSERT_TRUE(first.has_value());
@@ -2725,10 +2780,10 @@ TEST(WorldCapitals, TheWelcomeCarriesTheCapitals) {
 TEST(WorldCapitals, ACapitalsZoneIsItsFactionsFromTheStart) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    lit::game::World world(incoming, gw, capital_config());
+    lit::game::World world(incoming, gw, capital_config(), placed({{"ann", {15}}}));
 
     incoming.push(hello_event(1, "ann"));
-    incoming.push(spawn_event(1, /*cell=*/15, /*faction=*/2));  // sees the whole 4x4 map
+    incoming.push(spawn_event(1, /*faction=*/2));  // sees the whole 4x4 map
     run_ticks(world, 3, kTick);
 
     for (std::uint32_t index : {1U, 4U, 5U, 6U, 9U}) {

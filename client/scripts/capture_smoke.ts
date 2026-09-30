@@ -1,59 +1,49 @@
-// M4-first-iteration e2e: spawn, hold capture ('e'), verify the server flips the
-// cell under the player to our faction and reports it in Snapshot.cells.
+// Capture e2e: spawn at the "capture" capital of the smoke map (its cell is ours
+// already), step right onto the neutral cell next to it, hold capture ('e'), and
+// verify the server flips that cell to our faction and reports it in
+// Snapshot.cells — first as progress on a neutral cell, then as ours.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
-import { ClientMessageSchema, ServerMessageSchema } from "../src/gen/game/v1/protocol_pb.js";
+import { ClientMessageSchema, ProtocolVersion, ServerMessageSchema } from "../src/gen/game/v1/protocol_pb.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
+
+const HOME = spot("capture");
+const TARGET = HOME.cell + 1; // the neutral cell to its right
 
 const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const ws = new WebSocket(URL);
 ws.binaryType = "arraybuffer";
 
 let myId = 0;
-let faction = 0;
-const spawnCell = 5050; // 100-wide map: col 50, row 50
+const faction = HOME.factionId;
+let stepping = false;
+let holding = false;
 let captured = false;
 let progressSeen = false;
 
-function sendHello(): void {
-  ws.send(
-    toBinary(
-      ClientMessageSchema,
-      create(ClientMessageSchema, {
-        payload: { case: "hello", value: { protocolVersion: 1, name: uniqueName("cap") } },
-      }),
-    ),
-  );
-}
-function sendSpawnAndCapture(): void {
-  ws.send(
-    toBinary(
-      ClientMessageSchema,
-      create(ClientMessageSchema, {
-        payload: { case: "spawn", value: { cell: spawnCell, factionId: faction } },
-      }),
-    ),
-  );
-  ws.send(
-    toBinary(
-      ClientMessageSchema,
-      create(ClientMessageSchema, {
-        payload: { case: "input", value: { frames: [{ seq: 1, moveX: 0, moveY: 0, capturing: true }] } },
-      }),
-    ),
-  );
+function send(payload: Parameters<typeof create<typeof ClientMessageSchema>>[1]["payload"]): void {
+  ws.send(toBinary(ClientMessageSchema, create(ClientMessageSchema, { payload })));
 }
 
-ws.onopen = () => sendHello();
+ws.onopen = () => send({ case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName("cap") } });
 ws.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case === "welcome") {
     myId = m.payload.value.playerId;
-    faction = m.payload.value.factions[0]?.id ?? 1;
-    sendSpawnAndCapture();
+    send({ case: "spawn", value: { factionId: faction } });
   } else if (m.payload.case === "snapshot") {
+    const me = m.payload.value.players.find((p) => p.id === myId);
+    if (me && !stepping) {
+      stepping = true;
+      send({ case: "input", value: { frames: [{ seq: 1, moveX: 1, moveY: 0 }] } }); // toward TARGET
+    }
+    if (me && stepping && !holding && me.x >= HOME.x + 70) {
+      holding = true; // on TARGET (its centre is 100 right of home): stop and hold E
+      send({ case: "input", value: { frames: [{ seq: 2, moveX: 0, moveY: 0, capturing: true }] } });
+    }
     for (const c of m.payload.value.cells) {
-      if (c.index !== spawnCell) continue;
+      if (c.index !== TARGET) continue;
       if (c.captureProgress > 0 && c.owner === 0) progressSeen = true;
       if (c.owner === faction) captured = true;
     }
@@ -67,4 +57,4 @@ setTimeout(() => {
   console.log("VERDICT:", pass ? "PASS" : "FAIL");
   ws.close();
   process.exit(pass ? 0 : 1);
-}, 1800);
+}, 3000);

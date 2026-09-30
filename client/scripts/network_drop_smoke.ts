@@ -12,11 +12,12 @@ import { connect, createServer, type Socket } from "node:net";
 import { LifeState } from "../src/gen/game/v1/protocol_pb.js";
 import { STALE_MS } from "../src/net/client.js";
 import { SessionPlayer } from "./sessionPlayer.js";
+import { spot } from "./smokeMap.js";
 import { uniqueName } from "./uniqueName.js";
 
 const SERVER = new URL(process.env.SERVER_URL ?? "ws://127.0.0.1:27998/");
 const DROP_MS = Number(process.env.DROP_MS ?? 10_000);
-const CELL = 40 * 100 + 90; // its own cell (col 90, row 40) — away from other smokes' cells
+const HOME = spot("network-drop"); // its own capital on the smoke map, away from other smokes' spots
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -62,12 +63,12 @@ tab.session.join(uniqueName("drop"));
 const welcome = await tab.until(() => tab.welcomes()[0]);
 if (!welcome) throw new Error("FAIL no Welcome"); // exits non-zero
 const id = welcome.playerId;
-tab.client.sendSpawn(CELL, welcome.factions[0]?.id ?? 1);
+tab.client.sendSpawn(HOME.factionId);
 tab.client.sendInput(1, 0, false);
 await sleep(300);
 tab.client.sendInput(0, 0, false);
 const before = await tab.standing(id);
-check("the body walked and stands", before !== undefined && before.x > (CELL % 100) * 100 + 50, `x=${before?.x}`);
+check("the body walked and stands", before !== undefined && before.x > HOME.x, `x=${before?.x}`);
 
 // 2) The network drops: nothing comes, nothing closes.
 setDown(true);
