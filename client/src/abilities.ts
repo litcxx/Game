@@ -40,11 +40,13 @@ export function abilitiesFromWelcome(list: readonly Ability[]): AbilityInfo[] {
   return out;
 }
 
-// Keys "1".."5" pick that bar slot (0-based index); an empty slot or any other key
+// Digit keys 1..5 — the top row or the numpad, by KeyboardEvent.code, so any
+// layout — pick that bar slot (0-based index); an empty slot or any other key
 // keeps the current one.
-export function selectSlot(abilities: readonly AbilityInfo[], current: number, key: string): number {
-  const n = Number(key);
-  if (!Number.isInteger(n) || n < 1 || n > BAR_SLOTS || n > abilities.length) return current;
+export function selectSlot(abilities: readonly AbilityInfo[], current: number, code: string): number {
+  const digit = /^(?:Digit|Numpad)(\d)$/.exec(code);
+  const n = digit ? Number(digit[1]) : 0;
+  if (n < 1 || n > BAR_SLOTS || n > abilities.length) return current;
   return n - 1;
 }
 

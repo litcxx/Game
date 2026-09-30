@@ -98,12 +98,13 @@ async function main(): Promise<void> {
   const readKeys = installInput();
   window.addEventListener("keydown", (e) => {
     if (isTyping(e.target)) return; // the nickname field
-    if (e.key.toLowerCase() === "m") {
+    // By the key's place (KeyboardEvent.code), so any layout: M types «ь» in Russian.
+    if (e.code === "KeyM") {
       scene.toggleMap();
       return;
     }
     // 1–5: the active ability bar slot (instant switch; empty slots are ignored).
-    const slot = selectSlot(state.abilities, state.activeSlot, e.key);
+    const slot = selectSlot(state.abilities, state.activeSlot, e.code);
     if (slot !== state.activeSlot) {
       state.activeSlot = slot;
       views.bar.setActive(slot);

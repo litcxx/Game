@@ -35,14 +35,17 @@ check(
   ]),
 );
 
-// selectSlot: digits 1–5 pick a filled slot; empty slots and other keys keep the current one.
-check("key 2 selects slot 2", selectSlot(bar, 0, "2") === 1);
-check("key 1 selects slot 1", selectSlot(bar, 1, "1") === 0);
-check("key 3 selects the block slot", selectSlot(bar, 1, "3") === 2);
-check("empty slot 4 keeps the current slot", selectSlot(bar, 1, "4") === 1);
-check("key 0 is not a slot", selectSlot(bar, 1, "0") === 1);
-check("key 6 is past the bar", selectSlot([...bar, ...bar, ...bar], 1, "6") === 1);
-check("non-digit keys are ignored", selectSlot(bar, 0, "w") === 0);
+// selectSlot: digit keys 1–5 (by KeyboardEvent.code: the top row or the numpad)
+// pick a filled slot; empty slots and other keys keep the current one.
+check("key 2 selects slot 2", selectSlot(bar, 0, "Digit2") === 1);
+check("key 1 selects slot 1", selectSlot(bar, 1, "Digit1") === 0);
+check("key 3 selects the block slot", selectSlot(bar, 1, "Digit3") === 2);
+check("numpad 2 selects slot 2", selectSlot(bar, 0, "Numpad2") === 1);
+check("empty slot 4 keeps the current slot", selectSlot(bar, 1, "Digit4") === 1);
+check("key 0 is not a slot", selectSlot(bar, 1, "Digit0") === 1);
+check("key 6 is past the bar", selectSlot([...bar, ...bar, ...bar], 1, "Digit6") === 1);
+check("non-digit keys are ignored", selectSlot(bar, 0, "KeyW") === 0);
+check("a bare digit is a key, not a code", selectSlot(bar, 0, "2") === 0);
 
 // aimVector: unit direction x 1000, rounded; no aim when the cursor sits on the player.
 check("aim right", same(aimVector({ x: 100, y: 100 }, { x: 200, y: 100 }), { x: 1000, y: 0 }));
