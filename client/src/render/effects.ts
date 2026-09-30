@@ -3,15 +3,20 @@ import { Container, Graphics, Text } from "pixi.js";
 import { effectProgress, type Effect } from "../effects.js";
 
 const SHIELD = 0xffe9a8; // pale gold: a block reads the same for every faction
+const HIT = 0xff5a4a; // red: your hit landed
+const BLOCK_TEXT = "#fff4d0";
+const DAMAGE_TEXT = "#ff9a8a";
 
 // Draws the timed effects (see ../effects.ts) on the players' tokens:
 //   swing   — a ring expanding to the melee reach in the swinger's colour;
 //   shield  — a bright ring around the token while the block holds;
-//   blocked — a white burst plus a rising "БЛОК" on the defender.
+//   blocked — a white burst plus a rising "БЛОК" on the defender;
+//   hit     — your hit landed: a white-and-red flash on the target and the
+//             damage ("−20") rising above it.
 export class EffectsView {
   readonly root = new Container();
   private readonly gfx = new Graphics();
-  private readonly labels: Text[] = []; // pooled "БЛОК" texts
+  private readonly labels: Text[] = []; // pooled texts: "БЛОК" and damage
   private effects: Effect[] = [];
 
   constructor() {
@@ -49,24 +54,34 @@ export class EffectsView {
         const a = 1 - 0.35 * t;
         g.circle(sx, sy, 26).stroke({ width: 7, color: SHIELD, alpha: 0.18 * a });
         g.circle(sx, sy, 20).stroke({ width: 3, color: SHIELD, alpha: 0.95 * a });
-      } else {
+      } else if (e.kind === "blocked") {
         g.circle(sx, sy, 12 + 20 * t).stroke({ width: 2, color: 0xffffff, alpha: 1 - t });
-        const label = this.label(used++);
-        label.position.set(Math.round(sx), Math.round(sy - 34 - 18 * t));
-        label.alpha = 1 - t;
-        label.visible = true;
+        this.rise(this.label(used++, "БЛОК", BLOCK_TEXT), sx, sy, t);
+      } else {
+        const flash = Math.max(0, 1 - 2 * t); // the first half
+        g.circle(sx, sy, 15).fill({ color: HIT, alpha: 0.4 * flash });
+        g.circle(sx, sy, 9).fill({ color: 0xffffff, alpha: 0.85 * flash });
+        this.rise(this.label(used++, `−${e.damage}`, DAMAGE_TEXT), sx, sy, t);
       }
     }
     for (let i = used; i < this.labels.length; i++) this.labels[i]!.visible = false;
   }
 
-  private label(i: number): Text {
+  // A text rising above the token and fading out over the effect.
+  private rise(label: Text, sx: number, sy: number, t: number): void {
+    label.position.set(Math.round(sx), Math.round(sy - 34 - 18 * t));
+    label.alpha = 1 - t;
+    label.visible = true;
+  }
+
+  // Pooled text `i`, set to `text` in `fill` (redrawn only when they change).
+  private label(i: number, text: string, fill: string): Text {
     let t = this.labels[i];
     if (t === undefined) {
       t = new Text({
-        text: "БЛОК",
+        text,
         style: {
-          fill: "#fff4d0",
+          fill,
           fontFamily: "monospace",
           fontWeight: "bold",
           fontSize: 13,
@@ -77,6 +92,8 @@ export class EffectsView {
       this.root.addChild(t);
       this.labels[i] = t;
     }
+    if (t.text !== text) t.text = text;
+    if (t.style.fill !== fill) t.style.fill = fill;
     return t;
   }
 }

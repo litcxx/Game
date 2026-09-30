@@ -4,7 +4,9 @@ import type { GameEvent } from "./gen/game/v1/protocol_pb.js";
 // Short visual effects driven by snapshot events, so everyone sees what others
 // pressed: a melee "swing", a block's "shield", and a hit stopped by a block
 // ("blocked"). Projectile launches need none — the projectile itself is drawn.
-export type EffectKind = "swing" | "shield" | "blocked";
+// A hit that landed ("hit": a flash and the damage on the target) shows only to
+// whoever dealt it; everyone else sees the hp bar drop, and a miss shows nothing.
+export type EffectKind = "swing" | "shield" | "blocked" | "hit";
 
 export interface Effect {
   kind: EffectKind;
@@ -12,10 +14,12 @@ export interface Effect {
   startMs: number; // performance.now() time it becomes visible
   durationMs: number;
   radius: number; // world units: the swing's reach; 0 otherwise
+  damage: number; // hp the hit took; 0 otherwise
 }
 
 export const SWING_MS = 220;
 export const BLOCKED_MS = 700;
+export const HIT_MS = 600;
 
 // Effects for one snapshot's events. Remote players are drawn `delayMs` in the
 // past (interpolation), so their effects start `delayMs` after arrival and line
@@ -35,14 +39,19 @@ export function effectsFromEvents(
       const { playerId, abilityId } = e.kind.value;
       const a = abilities.find((x) => x.id === abilityId);
       if (a?.kind === "melee") {
-        out.push({ kind: "swing", playerId, startMs: startFor(playerId), durationMs: SWING_MS, radius: a.range });
+        out.push({ kind: "swing", playerId, startMs: startFor(playerId), durationMs: SWING_MS, radius: a.range, damage: 0 });
       } else if (a?.kind === "block") {
         const durationMs = a.durationTicks * tickMs; // exactly while the block holds
-        out.push({ kind: "shield", playerId, startMs: startFor(playerId), durationMs, radius: 0 });
+        out.push({ kind: "shield", playerId, startMs: startFor(playerId), durationMs, radius: 0, damage: 0 });
       }
-    } else if (e.kind.case === "hit" && e.kind.value.blocked) {
-      const id = e.kind.value.targetId;
-      out.push({ kind: "blocked", playerId: id, startMs: startFor(id), durationMs: BLOCKED_MS, radius: 0 });
+    } else if (e.kind.case === "hit") {
+      const { attackerId, targetId, damage, blocked } = e.kind.value;
+      const startMs = startFor(targetId);
+      if (blocked) {
+        out.push({ kind: "blocked", playerId: targetId, startMs, durationMs: BLOCKED_MS, radius: 0, damage: 0 });
+      } else if (attackerId === selfId) {
+        out.push({ kind: "hit", playerId: targetId, startMs, durationMs: HIT_MS, radius: 0, damage });
+      }
     }
   }
   return out;

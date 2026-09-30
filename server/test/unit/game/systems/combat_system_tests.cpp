@@ -125,6 +125,30 @@ TEST(UnitWithoutCharacter, StrikesAPlayerWithTheSameAbility) {
     EXPECT_EQ(e.stub().attack_ready_tick, e.state.tick + 10);  // the shared cooldown
 }
 
+// A strike reaches bodies, not centres: the target's edge within the range is hit,
+// as a projectile hits on touching the body.
+TEST(MeleeStrike, HitsATargetWhoseBodyTouchesTheRange) {
+    Encounter e;
+    e.stub().x = e.player().x + 120 + 16;  // Strike's range + player_radius
+    e.stub().intent.attack = true;
+    e.stub().intent.ability = 1;
+
+    e.tick();
+
+    EXPECT_EQ(e.player().hp, 60u);  // Strike: 40
+}
+
+TEST(MeleeStrike, MissesATargetJustBeyondTheRangeAndBody) {
+    Encounter e;
+    e.stub().x = e.player().x + 120 + 16 + 1;
+    e.stub().intent.attack = true;
+    e.stub().intent.ability = 1;
+
+    e.tick();
+
+    EXPECT_EQ(e.player().hp, 100u);
+}
+
 TEST(UnitWithoutCharacter, IsKilledByAPlayerLikeAnyBody) {
     Encounter e;
     e.stub().hp = 40;  // one Strike
