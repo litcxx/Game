@@ -80,7 +80,8 @@ release — the game at `https://<domain>/`, Caddy in front (HTTPS, the client,
 **Controls:** WASD move · hold **E** capture the cell under you · hold **left
 mouse** to use the active ability (**1** melee area attack, **2** ranged shot
 toward the cursor, **3** block) · keys **1–5** pick the ability · click a faction
-card, then a cell to spawn/respawn · **M** toggle the full-map view.
+card, then a cell to spawn/respawn · **M** toggle the full-map view. Keys work
+by their place on the keyboard, in any layout.
 
 ## Checks & CI
 

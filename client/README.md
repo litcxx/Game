@@ -149,10 +149,13 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   server refuses a name) and `ConnectionDialogs` (reconnecting — a countdown to
   the next attempt, nothing to press; stopped — why, and «Перезагрузить»).
 - **`src/input/keyboard.ts`** — `installInput()` returns a reader for the current
-  WASD/arrows + **E** intent, sampled once per fixed step; keys typed into a
-  text field (`isTyping`) are not game input.
+  WASD/arrows + **E** intent, sampled once per fixed step. Keys count by their
+  place on the keyboard (`KeyboardEvent.code`), so any layout works; the window
+  losing focus releases them all; keys typed into a text field (`isTyping`) are
+  not game input.
 - **`src/input/mouse.ts`** — `installMouse()`: left-button hold (with a 60 ms
-  min-hold so quick clicks reach a fixed step) and the cursor position for aiming.
+  min-hold so quick clicks reach a fixed step) and the cursor position for
+  aiming; a right click on the canvas opens no browser menu.
 - **`src/main.ts`** — wires it together: `Session` (over `GameClient`) → router
   → `GameState` → views, and the session's status → the nickname screen and the
   connection dialogs; the fixed-step loop (sample → predict → batch-send, with
@@ -171,6 +174,8 @@ is redrawn from predicted (self) and interpolated (remote) positions.
 | **Click** a faction card | Pick the faction for the next spawn (while not alive) |
 | **Click** a cell | Spawn / respawn there (while not alive) |
 | **M** | Toggle the full-map overview |
+
+Keys work by their place on the keyboard, in any layout (in the Russian one too).
 
 The attack cooldown is shared: using an attack blocks every attack for that
 ability's cooldown (melee 0.75 s, ranged 1.5 s by default — server config).
@@ -243,6 +248,7 @@ npx tsx scripts/playtest_report_check.ts  # a playtest's log -> the summary for 
 npx tsx scripts/interpolation_check.ts  # snapshot interpolation
 npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
+npx tsx scripts/input_check.ts          # keys by place (any layout), release on blur, no right-click menu (happy-dom)
 npx tsx scripts/picker_check.ts         # faction card layout + click hit-testing
 npx tsx scripts/effects_check.ts        # events -> swing/shield/blocked effects, timing
 npx tsx scripts/fog_check.ts            # fog of war: cell sight, explored memory, draw runs

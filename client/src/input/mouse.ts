@@ -1,6 +1,7 @@
 // Left mouse button = use the active ability while held; a min-hold keeps a quick
 // click's attack alive long enough to be sampled by a fixed step. Also tracks
-// the cursor (canvas pixels) for aiming.
+// the cursor (canvas pixels) for aiming. A right click on the canvas opens no
+// browser menu: the menu would take the focus, and with it the keys held.
 const MIN_ATTACK_HOLD_MS = 60;
 
 export interface MouseState {
@@ -30,7 +31,9 @@ export function installMouse(canvas: HTMLCanvasElement, canAttack: () => boolean
     downAt = performance.now();
     attacking = true;
   });
-  window.addEventListener("mouseup", (e) => {
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  // A release anywhere in the window ends the attack (the canvas's own window).
+  canvas.ownerDocument.defaultView!.addEventListener("mouseup", (e) => {
     if (e.button !== 0 || !attacking || releaseTimer !== undefined) return;
     const held = performance.now() - downAt;
     const release = () => {
