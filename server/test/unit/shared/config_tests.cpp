@@ -1,6 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <exception>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 
 #include "config/config.hpp"
@@ -201,4 +206,65 @@ TEST(LogConfigParse, RejectsAZeroMetricsInterval) {
 TEST(LogConfigParse, RequiresTheSection) {
     EXPECT_THROW(lit::parse_log_config(with_log("")), std::exception);
     EXPECT_THROW(lit::parse_log_config(with_log(R"({ "level": "info" })")), std::exception);
+}
+
+// --- The shipped config/config.json: what its combat balance keeps to ---------------
+// The numbers are tuned (after PT-0, docs/playtests/pt-0-report.md); these rules are
+// why they are what they are. Retune freely within them; change a rule only with the
+// reason it no longer holds.
+
+namespace {
+
+lit::GameConfig shipped_config() {
+    const std::ifstream file(LIT_SHIPPED_CONFIG);
+    if (!file) {
+        throw std::runtime_error("cannot read " LIT_SHIPPED_CONFIG);
+    }
+    std::stringstream text;
+    text << file.rdbuf();
+    return lit::parse_game_config(text.str());
+}
+
+const lit::AbilityConfig& ability_of(const lit::GameConfig& config, lit::AbilityKind kind) {
+    const auto it = std::ranges::find(config.abilities, kind, &lit::AbilityConfig::kind);
+    if (it == config.abilities.end()) {
+        throw std::runtime_error("no ability of that kind");
+    }
+    return *it;
+}
+
+double seconds(std::uint32_t ticks, const lit::GameConfig& config) {
+    return static_cast<double>(ticks) / static_cast<double>(config.tick_rate);
+}
+
+}  // namespace
+
+// A block can answer what you see coming: a reaction (~0.25 s) plus half a round trip.
+TEST(ShippedConfig, TheBlockOutlastsAReaction) {
+    const auto config = shipped_config();
+    EXPECT_GE(seconds(ability_of(config, lit::AbilityKind::Block).duration_ticks, config), 0.3);
+}
+
+// Blocking can't be the default state: at most a third of the time (the cooldown
+// runs from the block's start).
+TEST(ShippedConfig, TheBlockHoldsAtMostAThirdOfTheTime) {
+    const auto config = shipped_config();
+    const auto& block = ability_of(config, lit::AbilityKind::Block);
+    EXPECT_LE(block.duration_ticks * 3, block.cooldown_ticks);
+}
+
+// A shot can be dodged or blocked: it is in sight for half a second before it reaches you.
+TEST(ShippedConfig, AShotIsInSightForHalfASecond) {
+    const auto config = shipped_config();
+    const auto& shot = ability_of(config, lit::AbilityKind::Projectile);
+    EXPECT_GE(
+        static_cast<double>(config.vision_radius) / static_cast<double>(shot.projectile_speed),
+        0.5);
+}
+
+// Ranged alone isn't the whole fight: at least five hits to kill.
+TEST(ShippedConfig, RangedTakesFiveHitsToKill) {
+    const auto config = shipped_config();
+    const auto& shot = ability_of(config, lit::AbilityKind::Projectile);
+    EXPECT_GE((config.max_hp + shot.damage - 1) / shot.damage, 5u);
 }

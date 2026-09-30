@@ -185,7 +185,7 @@ Keys work by their place on the keyboard, in any layout (in the Russian one too)
 
 The attack cooldown is shared: using an attack blocks every attack for that
 ability's cooldown (melee 0.75 s, ranged 1.5 s by default — server config).
-The block has its own (0.75 s) and lasts 0.15 s: during it no hit, melee or
+The block has its own (1 s) and lasts 0.33 s: during it no hit, melee or
 projectile, deals damage — so you can block, switch and attack at once.
 
 ## Prerequisites
