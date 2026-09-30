@@ -35,8 +35,9 @@ void Server::listen() { asio::co_spawn(acceptor_strand_, do_listen(), asio::deta
 
 asio::awaitable<void> Server::do_listen() {
     for (;;) {
-        auto [ec, socket] = co_await acceptor_.async_accept(asio::make_strand(io_),
-                                                            asio::as_tuple(asio::use_awaitable));
+        auto received = co_await acceptor_.async_accept(asio::make_strand(io_),
+                                                        asio::as_tuple(asio::use_awaitable));
+        auto& [ec, socket] = received;
         if (ec) {
             // acceptor_.close() during graceful shutdown cancels the pending accept.
             if (ec != asio::error::operation_aborted) {
