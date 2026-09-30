@@ -1,6 +1,7 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 
 import { BAR_SLOTS, type AbilityInfo } from "../abilities.js";
+import { ABOVE_HINT_LINE } from "./hud.js";
 
 const SLOT = 56; // px, square
 const GAP = 12;
@@ -124,7 +125,7 @@ export class AbilityBar {
     const width = BAR_SLOTS * SLOT + (BAR_SLOTS - 1) * GAP;
     this.root.position.set(
       Math.round((this.app.screen.width - width) / 2),
-      Math.round(this.app.screen.height - 16 - SLOT),
+      Math.round(this.app.screen.height - ABOVE_HINT_LINE - SLOT), // above the hint line
     );
   }
 }

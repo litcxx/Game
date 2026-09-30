@@ -1,7 +1,6 @@
 import { usualHint } from "../hint.js";
 import type { GameState } from "../state/gameState.js";
 import type { AbilityBar } from "./abilityBar.js";
-import { UNITS_PER_CELL } from "./camera.js";
 import type { FactionPicker } from "./factionPicker.js";
 import type { Hud } from "./hud.js";
 
@@ -41,10 +40,8 @@ export function showStatus(state: GameState, views: StatusViews, mapMode: boolea
   hud.setTerritory(stats.cells, stats.percent);
   hud.setHp(state.hp, state.maxHp, state.alive);
 
-  if (state.alive && state.predictor) {
-    const col = Math.floor(state.predictor.position.x / UNITS_PER_CELL);
-    const row = Math.floor(state.predictor.position.y / UNITS_PER_CELL);
-    const cell = state.territory.cell(col, row);
+  const cell = state.cellUnderMe();
+  if (cell) {
     hud.setCell(
       cell.index,
       cell.owner !== 0 ? state.factionColor(cell.owner) : undefined,

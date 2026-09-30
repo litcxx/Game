@@ -1,5 +1,8 @@
 import type { CellUpdate } from "../gen/game/v1/protocol_pb.js";
 
+// A cell's side in world units.
+export const UNITS_PER_CELL = 100;
+
 // One cell as the client knows it: its owner and the capture in progress
 // (faction ids, 0 = none; progress 0..100).
 export interface CellState {

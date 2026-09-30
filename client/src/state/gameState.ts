@@ -6,7 +6,7 @@ import { LifeState } from "../gen/game/v1/protocol_pb.js";
 import { InterpolationBuffer } from "../net/interpolation.js";
 import type { Predictor } from "../net/prediction.js";
 import { Roster } from "./roster.js";
-import { Territory } from "./territory.js";
+import { Territory, UNITS_PER_CELL, type CellState } from "./territory.js";
 
 export const FIXED_DT = 1 / 60;
 // Remote players are drawn this far in the past (~2 snapshots) to interpolate.
@@ -54,6 +54,7 @@ export class GameState {
   activeSlot = 0; // ability bar slot in use (keys 1–5)
   selectedFaction = 1; // for the next spawn
   myFaction = 0; // of the current life
+  captureLearned = false; // captured a cell once: no capture hint (onboarding.ts); outlives sessions
 
   // --- From snapshots
   life: LifeState = LifeState.NOT_SPAWNED;
@@ -103,6 +104,13 @@ export class GameState {
 
   get activeAbility(): AbilityInfo | undefined {
     return this.abilities[this.activeSlot];
+  }
+
+  // The cell under the local player (at the predicted position); none unless alive.
+  cellUnderMe(): CellState | undefined {
+    if (!this.alive || !this.predictor) return undefined;
+    const { x, y } = this.predictor.position;
+    return this.territory.cell(Math.floor(x / UNITS_PER_CELL), Math.floor(y / UNITS_PER_CELL));
   }
 
   setFactions(factions: readonly Faction[]): void {
