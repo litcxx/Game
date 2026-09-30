@@ -9,7 +9,9 @@ runs the simulation; the browser client sends intent, predicts its own player,
 interpolates the others, and renders.
 
 > **Status: MVP, work in progress.** Working today: connection/presence,
-> faction choice, spawn, movement, combat (a melee area attack and a dodgeable
+> faction choice (once a season), a capital per faction in the map's corners
+> (its zone of 49 cells is the faction's from the start, its marker seen through
+> the fog), spawn, movement, combat (a melee area attack and a dodgeable
 > ranged projectile on a shared cooldown, and a block on its own, on a 1–5
 > ability bar), death/respawn, territory capture, and fog of war (you see only
 > what your faction's players and cells see, 3 cells around — `vision_radius`

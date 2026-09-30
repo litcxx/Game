@@ -18,6 +18,7 @@ set(SOURCES
   shared/ts_queue_tests.cpp
   game/spatial/geometry_tests.cpp
   game/spatial/spatial_index_tests.cpp
+  game/systems/capital_system_tests.cpp
   game/systems/combat_system_tests.cpp
   game/systems/damage_tests.cpp
   game/systems/input_system_tests.cpp

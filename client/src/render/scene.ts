@@ -5,6 +5,7 @@ import type { Effect } from "../effects.js";
 import type { GameState } from "../state/gameState.js";
 import { UNITS_PER_CELL } from "../state/territory.js";
 import { Camera } from "./camera.js";
+import { CapitalsView } from "./capitals.js";
 import { EffectsView } from "./effects.js";
 import { FogView } from "./fog.js";
 import { nameplate } from "./nameplate.js";
@@ -38,6 +39,7 @@ export class Scene {
   private readonly grid = new Graphics();
   private readonly coordsLayer = new Container();
   private readonly fogView = new FogView();
+  private readonly capitalsView = new CapitalsView();
   private readonly playersLayer = new Container();
   private readonly projectileView = new ProjectileView();
   private readonly effectsView = new EffectsView();
@@ -76,6 +78,7 @@ export class Scene {
     app.stage.addChild(this.grid);
     app.stage.addChild(this.coordsLayer);
     app.stage.addChild(this.fogView.gfx); // over the territory, under the players
+    app.stage.addChild(this.capitalsView.gfx); // over the fog: known from the start
     app.stage.addChild(this.playersLayer);
     app.stage.addChild(this.projectileView.gfx); // shots fly over the tokens
     app.stage.addChild(this.effectsView.root); // swings, shields, blocked hits
@@ -247,6 +250,13 @@ export class Scene {
       cols: this.state.territory.cols,
       rows: this.state.territory.rows,
     });
+    this.capitalsView.draw(
+      this.state.capitals,
+      this.state.territory.cols,
+      (x, y) => cam.worldToScreen(x, y),
+      cellPx,
+      (id) => this.state.factionColor(id) ?? 0xd8d8d0,
+    );
   }
 
   // Deterministic per-cell brightness in [0,1) for tonal variation (no flicker).

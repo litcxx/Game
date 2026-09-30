@@ -65,6 +65,12 @@ void fill_player_info(::game::v1::PlayerInfo* info, const WorldState& state,
         ability->set_projectile_radius(a.projectile_radius);
         ability->set_duration_ticks(a.duration_ticks);
     }
+    for (const auto& c : config.capitals) {  // static: seen through the fog
+        auto* capital = welcome->mutable_map()->add_capitals();
+        capital->set_faction_id(c.faction_id);
+        capital->set_cell(c.cell);
+        capital->set_protected_radius(c.protected_radius);
+    }
     return msg;
 }
 

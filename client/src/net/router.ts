@@ -56,6 +56,7 @@ function onWelcome(state: GameState, w: Welcome): void {
   state.maxHp = w.config?.maxHp ?? 100;
   state.tickRate = w.config?.tickRate || 60;
   state.setFactions(w.factions.map((f) => ({ id: f.id, name: f.name, color: f.color })));
+  state.capitals = (w.map?.capitals ?? []).map((c) => ({ factionId: c.factionId, cell: c.cell, protectedRadius: c.protectedRadius }));
   state.selectedFaction = w.factions[0]?.id ?? 1;
   state.abilities = abilitiesFromWelcome(w.abilities);
   state.projectileRadius = state.abilities.find((a) => a.kind === "projectile")?.projectileRadius ?? 0;

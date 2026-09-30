@@ -139,6 +139,10 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   **`src/render/fog.ts`** (`FogView`) covers the on-screen cells: unexplored
   under dense fog (only the grid shows through), explored dimmed over the last
   known state, visible untouched; one rect per run, the map border on top.
+  **`src/render/capitals.ts`** (`CapitalsView`) draws over it the capitals'
+  markers (`GameState.capitals`, from `Welcome.map`): where they are is known from
+  the start, fog or not; who owns their zones only under sight. The minimap's
+  markers come with GAME-021.
 - **`src/errors.ts`** — server errors as the player sees them: a text per
   `ErrorCode` (`ServerError.detail` is only for logs), the error a close code
   4000 + code carries, and `Notices`: the hint line shows a fatal error until
@@ -344,7 +348,8 @@ src/net/       GameClient (transport), Session (join, token, reconnect),
                router (ServerMessage -> GameState), Predictor (prediction),
                InterpolationBuffer
 src/render/    PixiJS views of GameState: Camera, Scene (world + minimap), Hud,
-               AbilityBar, FactionPicker, ProjectileView, EffectsView, FogView;
+               AbilityBar, FactionPicker, ProjectileView, EffectsView, FogView,
+               CapitalsView;
                status (HUD / bar / picker from the state)
 src/ui/        DOM overlay over the canvas: Overlay, Modal, Toasts,
                NicknameScreen, ConnectionDialogs

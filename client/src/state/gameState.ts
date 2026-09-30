@@ -25,6 +25,14 @@ export interface Faction {
   color: number;
 }
 
+// A faction's capital (Welcome.map): static, known through the fog. Its zone —
+// the cells within protectedRadius cells — is the faction's from the season's start.
+export interface Capital {
+  factionId: number;
+  cell: number; // row * cols + col
+  protectedRadius: number; // cells
+}
+
 // A player's body in the latest snapshot.
 export interface Body {
   x: number;
@@ -87,6 +95,7 @@ export class GameState {
   maxHp = 100;
   tickRate = 60;
   factions: readonly Faction[] = []; // in Welcome order (the picker's cards); see setFactions
+  capitals: readonly Capital[] = []; // one per faction: always drawn, fog or not
   abilities: AbilityInfo[] = []; // the ability bar, slot 1 first
   projectileRadius = 0; // units, of the projectile ability
   predictor: Predictor | undefined; // the local player's movement, predicted

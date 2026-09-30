@@ -42,6 +42,12 @@
       { "id": 2, "name": "Green", "color": 65280 },
       { "id": 3, "name": "Blue",  "color": 255 },
       { "id": 4, "name": "Gold",  "color": 16766720 }
+    ],
+    "capitals": [
+      { "faction_id": 1, "cell": 1010, "protected_radius": 4 },
+      { "faction_id": 2, "cell": 1089, "protected_radius": 4 },
+      { "faction_id": 3, "cell": 8910, "protected_radius": 4 },
+      { "faction_id": 4, "cell": 8989, "protected_radius": 4 }
     ]
   }
 }

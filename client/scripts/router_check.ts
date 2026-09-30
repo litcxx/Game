@@ -28,11 +28,12 @@ type Payload = ServerMessage["payload"];
 const msg = (payload: Payload): ServerMessage => create(ServerMessageSchema, { payload } as never);
 
 // A 4x3 map (cells 0..11), you are player 7; Red (1) and Green (2); a melee
-// ability and a projectile one.
-const welcome = (): ServerMessage =>
+// ability and a projectile one. `extra`: more Welcome fields (e.g. the map).
+const welcome = (extra: Record<string, unknown> = {}): ServerMessage =>
   msg({
     case: "welcome",
     value: {
+      ...extra,
       playerId: 7,
       config: { tickRate: 60, snapshotRate: 20, mapWidth: 4, mapHeight: 3, moveSpeed: 300, maxHp: 120 },
       factions: [
@@ -291,6 +292,15 @@ const joined = (nowMs = 1000): GameState => {
   const fresh = joined();
   routeMessage(fresh, msg({ case: "roster", value: { upsert: [{ id: 7, name: "Me", factionId: 0 }], full: true } } as never), 1000);
   check("... none yet: the first faction stays selected", fresh.myFaction === 0 && fresh.selectedFaction === 1);
+}
+
+// --- Capitals: static knowledge from Welcome, seen through the fog -----------------------
+{
+  const state = new GameState();
+  routeMessage(state, welcome({ map: { capitals: [{ factionId: 1, cell: 5, protectedRadius: 1 }, { factionId: 2, cell: 10, protectedRadius: 1 }] } }), 1000);
+  check("capitals: from Welcome", same(state.capitals, [{ factionId: 1, cell: 5, protectedRadius: 1 }, { factionId: 2, cell: 10, protectedRadius: 1 }]));
+  routeMessage(state, welcome(), 2000); // a new session, on a server with none
+  check("... a new Welcome replaces them", state.capitals.length === 0);
 }
 
 // --- Your faction: chosen once, at the first spawn, for the season ----------------------

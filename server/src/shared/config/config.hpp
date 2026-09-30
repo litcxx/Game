@@ -26,6 +26,14 @@ struct FactionConfig {
     std::uint32_t color;  // 0xRRGGBB
 };
 
+// A faction's capital (GDD 7.3): its cell and the radius, in cells, of its zone —
+// the faction's from the start of the season. Sent to clients as Welcome.map.
+struct CapitalConfig {
+    std::uint32_t faction_id;
+    std::uint32_t cell;              // row * map_width + col
+    std::uint32_t protected_radius;  // cells (4)
+};
+
 // Mirrors game.v1.AbilityKind: what using the ability does.
 enum class AbilityKind : std::uint8_t {
     Melee = 1,       // hit every enemy whose body is within `range` around the player
@@ -78,6 +86,7 @@ struct GameConfig {
                                            //   units (300 = 3 cells); server-only, like capture
     LimitsConfig limits;                   // per-connection limits (server-only)
     std::vector<FactionConfig> factions;   // selectable factions (colours)
+    std::vector<CapitalConfig> capitals;   // one per faction
     std::vector<AbilityConfig> abilities;  // bar order: abilities[0] is key 1 and the default
 };
 

@@ -108,6 +108,15 @@ lives on the server; the browser client predicts, interpolates, and renders.
   sight keep the faction with no body too (dead, or back after the grace). The
   body copies it at spawn for combat, capture and vision. Saving it (and
   `season_id`) comes with the world save (GAME-019).
+- **Capitals.** Each faction has one (`capitals[]` in the config: the cell and
+  `protected_radius`, 4; the four sit in the map's corners). Its zone —
+  `capital_zone()` in `src/game/systems/capital_system`: the cells whose centre
+  is within the radius of the capital cell's centre, a disc of 49 cells — is the
+  faction's from the start of the season (`seed_capitals()`, at every server
+  start until the world save). Where the capitals are is static knowledge,
+  sent in `Welcome.map` and seen through the fog; who owns the zones is
+  territory, seen under sight like any cell (the zones' cells keep watch for
+  their faction). Their protection from capture comes with capture v2 (GAME-017).
 - **Fog of war is a delivery filter.** The simulation ignores sight — attacks
   from the fog land as usual. On each snapshot `compute_vision()` marks, once
   per faction, the cells whose centre is within `vision_radius` (config; 300 = 3 cells)
@@ -259,11 +268,12 @@ Address+UB sanitizers). `release` is what goes to the VPS (`deploy/deploy.sh`,
 see [docs/ops.md](../docs/ops.md)); CI builds and unit-tests it too.
 
 The server reads its address, port, thread count, and the game rules (matching
-`game.v1.GameConfig`, plus the factions and the abilities, and the server-only
-`capture_ticks`, `vision_radius` and the connection `limits`) from the config
-file, and the `log` section below; invalid abilities, a zero vision radius, a
-zero or missing limit, an unknown log level or a zero metrics interval stop the
-server at startup.
+`game.v1.GameConfig`, plus the factions, their capitals and the abilities, and
+the server-only `capture_ticks`, `vision_radius` and the connection `limits`) from
+the config file, and the `log` section below; invalid abilities, a faction
+without exactly one capital (or a capital off the map, or two whose zones may
+overlap), a zero vision radius, a zero or missing limit, an unknown log level or
+a zero metrics interval stop the server at startup.
 
 ## Logs & metrics
 
