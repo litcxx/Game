@@ -239,6 +239,7 @@ closes, so a script that fights or shoots spawns on cells of its own.
 ```bash
 npx tsx scripts/prediction_check.ts     # integrate / predict / reconcile, corrections counted
 npx tsx scripts/client_check.ts         # GameClient over a fake WebSocket: the Ping's report
+npx tsx scripts/playtest_report_check.ts  # a playtest's log -> the summary for the report
 npx tsx scripts/interpolation_check.ts  # snapshot interpolation
 npx tsx scripts/camera_check.ts         # follow/map mapping, clamping
 npx tsx scripts/abilities_check.ts      # ability bar model, slot keys, aim, cooldown arc
