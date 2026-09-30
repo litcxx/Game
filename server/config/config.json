@@ -32,10 +32,10 @@
       { "id": 1, "kind": "melee", "name": "Удар",
         "cooldown_ticks": 45, "damage": 20, "range": 120 },
       { "id": 2, "kind": "projectile", "name": "Выстрел",
-        "cooldown_ticks": 90, "damage": 30, "range": 500,
-        "projectile_speed": 800, "projectile_radius": 8 },
+        "cooldown_ticks": 90, "damage": 20, "range": 500,
+        "projectile_speed": 600, "projectile_radius": 8 },
       { "id": 3, "kind": "block", "name": "Блок",
-        "cooldown_ticks": 45, "duration_ticks": 9 }
+        "cooldown_ticks": 60, "duration_ticks": 20 }
     ],
     "factions": [
       { "id": 1, "name": "Red",   "color": 16711680 },
