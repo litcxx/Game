@@ -163,8 +163,11 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   slot darkened from the top while its cooldown runs; shown while alive, above
   the hint line (`ABOVE_HINT_LINE`, as the faction cards).
 - **`src/render/factionPicker.ts`** — `FactionPicker`: faction cards (badge +
-  name) above the hint line while not alive; click routing via the pure layout
-  in `src/render/cardRow.ts`.
+  name) above the hint line and, in the middle of the screen, one sentence: the
+  choice is once a season. Shown only before the first spawn
+  (`GameState.choosingFaction`), never after a death: the first spawn locks the
+  faction (`GameState.spawnFaction()`), and the server refuses another
+  (`INVALID_FACTION`). Click routing via the pure layout in `src/render/cardRow.ts`.
 - **`src/render/hud.ts`** — `Hud`: faction badge + territory stats (top-left),
   "В СЕТИ n · ПИНГ m" (players online, round trip in ms — as in the concept;
   no ping until the first `Pong`) + FPS (top-right), an HP gauge (bottom-left),
@@ -207,7 +210,7 @@ is redrawn from predicted (self) and interpolated (remote) positions.
 | Hold **E** | Capture the cell under you |
 | Hold **left mouse** | Use the active ability, repeating each cooldown: slot 1 hits every enemy around you, slot 2 fires a projectile toward the cursor, slot 3 blocks |
 | Keys **1–5** | Pick the ability bar slot (1 melee, 2 ranged, 3 block; 4–5 empty for now) |
-| **Click** a faction card | Pick the faction for the next spawn (while not alive) |
+| **Click** a faction card | Pick your faction — once, before the first spawn: it stays until the season changes |
 | **Click** a cell | Spawn / respawn there (while not alive) |
 | **M** | Toggle the full-map overview |
 

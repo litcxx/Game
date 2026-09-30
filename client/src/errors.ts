@@ -24,7 +24,7 @@ const TEXTS: Partial<Record<ErrorCode, string>> = {
   [ErrorCode.SPAWN_FORBIDDEN]: "Здесь появиться нельзя",
   [ErrorCode.SPAWN_TOO_EARLY]: "Возрождение ещё не готово",
   [ErrorCode.ALREADY_SPAWNED]: "Вы уже в игре",
-  [ErrorCode.INVALID_FACTION]: "Эта фракция недоступна",
+  [ErrorCode.INVALID_FACTION]: "Фракция закреплена за персонажем до смены сезона",
 };
 
 // What to tell the player about an error code.

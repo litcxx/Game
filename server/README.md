@@ -99,9 +99,15 @@ lives on the server; the browser client predicts, interpolates, and renders.
   greeting — `MapState`, the full roster — and its first snapshot reveals all
   it sees. A second connection with the token takes the character over: the
   one driving it gets `SESSION_REPLACED` (fatal). An unknown token (e.g. from
-  before a restart) is no token: a new character. The faction still comes with
-  the body and is picked again on spawn after the grace (pinning it to the
-  character is GAME-014).
+  before a restart) is no token: a new character.
+- **Faction lock.** A character's faction is its own, not its body's:
+  `Character.faction_id`, fixed by its first successful spawn for the season
+  (GDD 7.11). `try_spawn()` refuses any other faction after that with
+  `INVALID_FACTION` — a dead body stays dead — and a refused first spawn locks
+  nothing. `faction_of()` reads the character, so the roster and the recipient's
+  sight keep the faction with no body too (dead, or back after the grace). The
+  body copies it at spawn for combat, capture and vision. Saving it (and
+  `season_id`) comes with the world save (GAME-019).
 - **Fog of war is a delivery filter.** The simulation ignores sight — attacks
   from the fog land as usual. On each snapshot `compute_vision()` marks, once
   per faction, the cells whose centre is within `vision_radius` (config; 300 = 3 cells)
@@ -342,9 +348,9 @@ cleanly (exit 0 — no sanitizer report, no leak).
 
 The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`,
 `Combat`, `Ability`, `Ranged`, `Block`, `Capture`, `Fog`, `Resync`, `Errors`,
-`Limits`, `Metrics`, `Reconnect`) test the game end to end through a mock
+`Limits`, `Metrics`, `Reconnect`, `Faction`) test the game end to end through a mock
 gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
-`Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits`,
+`Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits`, `SpawnFaction`,
 `FixedStep`, `Metrics`, `GameConfigParse`, `LogConfigParse`, `SessionToken` and
 `TSQueueTest` test those units directly; `Presence` covers characters and
 sessions (away, the grace, takeover, two sessions in a row driving one

@@ -24,6 +24,7 @@ set(SOURCES
   game/systems/join_system_tests.cpp
   game/systems/presence_system_tests.cpp
   game/systems/projectile_system_tests.cpp
+  game/systems/spawn_system_tests.cpp
   game/systems/vision_system_tests.cpp
   game/sync/delivery_tests.cpp
   game/world/connection_tests.cpp

@@ -2619,3 +2619,73 @@ TEST(WorldMetrics, CountsSpawnsDeathsAndCaptures) {
     EXPECT_EQ(m.at("captures"), 1);
     EXPECT_EQ(m.at("errors").at("ALREADY_SPAWNED"), 1);
 }
+
+// --- Faction lock: a character's faction is fixed at its first spawn --------
+// For the season (GDD 7.11): a respawn in another faction is refused, and the
+// roster shows the locked faction whether or not the character has a body.
+
+TEST(WorldFaction, ChangingFactionAfterDeathIsRefused) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    melee(config).cooldown_ticks = 1;  // three swings on ticks 1..3 kill
+    config.respawn_delay_ticks = 1;
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "victim"));
+    incoming.push(hello_event(2, "killer"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/1));
+    incoming.push(spawn_event(2, /*cell=*/6, /*faction=*/2));
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    run_ticks(world, 4, kTick);
+    incoming.push(input_event(2, 0, 0, /*seq=*/2));  // the killer stops
+    run_ticks(world, 2, kTick);                      // past the respawn delay
+    const std::uint32_t victim = welcome_to(gw, 1)->player_id();
+    const int upserts = roster_news_about(gw, 2, victim).first;
+
+    incoming.push(with_request(spawn_event(1, /*cell=*/15, /*faction=*/2), 15));  // join the killer
+    run_ticks(world, 3, kTick);
+
+    expect_refusal(gw, 1, ::game::v1::ERROR_CODE_INVALID_FACTION, 15);
+    const auto snap = last_snapshot_to(gw, 1);
+    ASSERT_TRUE(snap.has_value());
+    EXPECT_EQ(snap->you().life(), ::game::v1::LIFE_STATE_DEAD);
+    EXPECT_EQ(roster_news_about(gw, 2, victim).first, upserts);  // no one is told of a switch
+
+    incoming.push(spawn_event(1, /*cell=*/15, /*faction=*/1));  // its own faction
+    run_ticks(world, 3, kTick);
+    EXPECT_EQ(last_snapshot_to(gw, 1)->you().life(), ::game::v1::LIFE_STATE_ALIVE);
+}
+
+TEST(WorldFaction, ACharacterBackWithoutABodyKeepsItsFactionInTheRoster) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, short_grace_config());
+
+    incoming.push(hello_event(1, "ann"));
+    incoming.push(hello_event(2, "bob"));
+    incoming.push(spawn_event(1, /*cell=*/5, /*faction=*/2));
+    world.tick(kTick);
+    const auto first = welcome_to(gw, 1);
+    ASSERT_TRUE(first.has_value());
+    const std::uint32_t ann = first->player_id();
+
+    incoming.push(disconnect_event(1));
+    run_ticks(world, 8, kTick);  // the grace is over: ann left the world, body and all
+    ASSERT_EQ(roster_news_about(gw, 2, ann).second, 1);
+
+    incoming.push(hello_with_token(3, "ann", first->session_token()));
+    world.tick(kTick);
+
+    // Its own full roster and bob's news of its return both carry the faction.
+    const auto faction_in = [&](std::uint64_t session_id, bool full) {
+        std::uint32_t faction = 0;
+        for (const auto& m : messages_to(gw, session_id))
+            if (m.has_roster() && m.roster().full() == full)
+                for (const auto& info : m.roster().upsert())
+                    if (info.id() == ann) faction = info.faction_id();
+        return faction;
+    };
+    EXPECT_EQ(faction_in(3, /*full=*/true), 2u);
+    EXPECT_EQ(faction_in(2, /*full=*/false), 2u);
+}

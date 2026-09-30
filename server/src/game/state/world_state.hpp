@@ -41,9 +41,10 @@ inline const Unit* find_unit(const WorldState& state, std::uint32_t id) {
     return it == state.units.end() ? nullptr : &it->second;
 }
 
-// A character's faction: its body's, or 0 while it has none (not spawned yet).
+// A character's faction, locked at its first spawn — with or without a body now
+// (dead, or back after leaving the world); 0 before its first spawn.
 inline std::uint32_t faction_of(const WorldState& state, std::uint32_t character_id) {
-    const Unit* unit = find_unit(state, character_id);
-    return unit != nullptr ? unit->faction_id : 0;
+    auto it = state.characters.find(character_id);
+    return it == state.characters.end() ? 0 : it->second.faction_id;
 }
 }  // namespace lit::game

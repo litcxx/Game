@@ -17,5 +17,7 @@ struct Character {
     TokenHash token_hash{};  // SHA-256 of its session token; the token itself is never kept
     bool in_world{true};     // false once it has left; back when a session drives it again
     std::optional<std::uint32_t> away_until;  // no session drives it: leaves on this tick
+    // Its faction for the season, fixed at its first spawn (GDD 7.11); 0 until then.
+    std::uint32_t faction_id{0};
 };
 }  // namespace lit::game
