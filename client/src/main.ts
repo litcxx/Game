@@ -126,8 +126,8 @@ async function main(): Promise<void> {
   // Attack: hold the left mouse button while alive; aim follows the cursor.
   const mouse = installMouse(app.canvas, () => state.alive);
 
-  // Click a faction card to pick it; click a cell to spawn / respawn — only when
-  // not alive (alive clicks attack).
+  // Click a faction card to pick it (before the first spawn only); click a cell to
+  // spawn / respawn — only when not alive (alive clicks attack).
   app.canvas.addEventListener("click", (e) => {
     const rect = app.canvas.getBoundingClientRect();
     const sx = e.clientX - rect.left;
@@ -143,10 +143,9 @@ async function main(): Promise<void> {
     if (state.alive || state.respawnTick > state.serverTick) return;
     const [col, row] = scene.screenToCell(sx, sy);
     if (col < 0 || row < 0 || col >= state.mapWidth || row >= state.mapHeight) return;
-    state.myFaction = state.selectedFaction;
-    state.roster.setFaction(state.myId, state.myFaction); // the roster doesn't echo our own
+    const faction = state.spawnFaction(); // the first spawn locks the one picked
     state.predictor?.reset({ x: col * 100 + 50, y: row * 100 + 50 });
-    client.sendSpawn(row * state.mapWidth + col, state.selectedFaction);
+    client.sendSpawn(row * state.mapWidth + col, faction);
   });
 
   // Fixed-step input + prediction; interpolate remotes; render every frame.

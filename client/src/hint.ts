@@ -5,10 +5,14 @@ import type { GameState } from "./state/gameState.js";
 // at playtest #0.
 export const CAPTURE_HINT = "Встаньте на чужую или ничью клетку и держите E — захват";
 
+// Over the map while the faction is still to be chosen (FactionPicker): the choice
+// is once a season (the server refuses another faction).
+export const FACTION_ONCE = "Выберите фракцию — это можно сделать только один раз до смены сезона.";
+
 // The hint line's usual text (server errors take its place, see errors.ts):
 // while alive, how to capture until the first capture, then nothing; otherwise
-// how to (re)spawn, the respawn countdown, and the M key. `mapMode`: the
-// full-map view is on.
+// how to (re)spawn — choosing the faction only before the first spawn — the
+// respawn countdown, and the M key. `mapMode`: the full-map view is on.
 export function usualHint(state: GameState, mapMode: boolean): string {
   if (state.alive) return state.captureLearned ? "" : CAPTURE_HINT;
   const mapHint = `M — ${mapMode ? "к игроку" : "вся карта"}`;
@@ -16,7 +20,9 @@ export function usualHint(state: GameState, mapMode: boolean): string {
     const left = Math.max(0, Math.ceil((state.respawnTick - state.serverTick) / state.tickRate));
     return left > 0
       ? `Убит · возрождение через ${left}с · ${mapHint}`
-      : `Убит · выберите фракцию и кликните по клетке — возрождение · ${mapHint}`;
+      : `Убит · кликните по клетке — возрождение · ${mapHint}`;
   }
-  return `Выберите фракцию и кликните по клетке — старт · ${mapHint}`;
+  return state.choosingFaction
+    ? `Выберите фракцию и кликните по клетке — старт · ${mapHint}`
+    : `Кликните по клетке — старт · ${mapHint}`;
 }

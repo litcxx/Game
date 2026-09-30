@@ -293,6 +293,27 @@ const joined = (nowMs = 1000): GameState => {
   check("... none yet: the first faction stays selected", fresh.myFaction === 0 && fresh.selectedFaction === 1);
 }
 
+// --- Your faction: chosen once, at the first spawn, for the season ----------------------
+// The choice shows until the first spawn and never again, after death neither: the
+// server refuses another faction for the season.
+{
+  const state = joined();
+  check("faction: to choose before the first spawn", state.choosingFaction);
+  state.selectedFaction = 2; // a card clicked
+  check("faction: the first spawn locks the one picked", state.spawnFaction() === 2 && state.myFaction === 2);
+  check("... told to the roster at once (it doesn't echo our own)", state.roster.factionOf(7) === 2);
+  check("... no choice from then on", !state.choosingFaction);
+  routeMessage(state, snapshot({ tick: 10, you: { life: LifeState.DEAD, respawnTick: 10 } }), 1000);
+  check("... none after death either", !state.choosingFaction);
+  state.selectedFaction = 1;
+  check("... a respawn goes in the locked faction", state.spawnFaction() === 2);
+}
+{
+  const state = joined();
+  routeMessage(state, msg({ case: "roster", value: { upsert: [{ id: 7, name: "Me", factionId: 2 }], full: true } } as never), 1000);
+  check("faction: a character back with one: no choice, it spawns in it", !state.choosingFaction && state.spawnFaction() === 2);
+}
+
 // --- Pong: round-trip time ---------------------------------------------------------------
 {
   const state = joined();
@@ -309,10 +330,12 @@ const joined = (nowMs = 1000): GameState => {
   const state = joined();
   check("hint: before spawning", usualHint(state, false) === "Выберите фракцию и кликните по клетке — старт · M — вся карта");
   check("hint: in the map view", usualHint(state, true).endsWith("M — к игроку"));
+  state.myFaction = 2; // locked (a character back after leaving the world)
+  check("hint: back with a faction: no choice", usualHint(state, false) === "Кликните по клетке — старт · M — вся карта");
   routeMessage(state, snapshot({ tick: 200, you: { life: LifeState.DEAD, respawnTick: 260 } }), 1000);
   check("hint: dead, waiting", usualHint(state, false) === "Убит · возрождение через 1с · M — вся карта");
   routeMessage(state, snapshot({ tick: 260, you: { life: LifeState.DEAD, respawnTick: 260 } }), 1000);
-  check("hint: dead, may respawn", usualHint(state, false).startsWith("Убит · выберите фракцию"));
+  check("hint: dead, may respawn — in its faction, no choice", usualHint(state, false) === "Убит · кликните по клетке — возрождение · M — вся карта");
   routeMessage(state, snapshot({ tick: 300, you: { life: LifeState.ALIVE } }), 1000);
   check("hint: alive, no cell captured yet -> how to capture", usualHint(state, false) === "Встаньте на чужую или ничью клетку и держите E — захват");
   state.captureLearned = true; // see onboarding_check.ts

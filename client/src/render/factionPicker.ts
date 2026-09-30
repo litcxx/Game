@@ -1,5 +1,6 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 
+import { FACTION_ONCE } from "../hint.js";
 import { CARD_H, CARD_W, cardAt, cardRow, type CardRow } from "./cardRow.js";
 import { ABOVE_HINT_LINE } from "./hud.js";
 
@@ -13,15 +14,22 @@ interface Card {
   name: Text;
 }
 
-// Faction choice before (re)spawning: a centred row of cards — the faction's
-// diamond badge and name — above the hint line; the selected card is
-// gold-rimmed. Shown while the player is not alive. main routes canvas clicks
-// through pick() first, so a click on a card selects instead of spawning.
+// Faction choice before the first spawn: a centred row of cards — the faction's
+// diamond badge and name — above the hint line, the selected card gold-rimmed,
+// and in the middle of the screen one sentence: the choice is once a season.
+// Shown only while the faction is still to be chosen (GameState.choosingFaction),
+// never after a death. main routes canvas clicks through pick() first, so a click
+// on a card selects instead of spawning.
 export class FactionPicker {
   private readonly root = new Container();
   private readonly title = new Text({
     text: "ФРАКЦИЯ",
     style: { fill: "#9a9a88", fontFamily: "monospace", fontSize: 12, letterSpacing: 2 },
+  });
+  private readonly noteBack = new Graphics();
+  private readonly note = new Text({
+    text: FACTION_ONCE,
+    style: { fill: "#f0e6c8", fontFamily: "monospace", fontSize: 16, fontWeight: "bold", align: "center", wordWrap: true },
   });
   private cards: Card[] = [];
   private selected = 0;
@@ -29,7 +37,8 @@ export class FactionPicker {
 
   constructor(private readonly app: Application) {
     this.title.anchor.set(0.5, 1);
-    this.root.addChild(this.title);
+    this.note.anchor.set(0.5);
+    this.root.addChild(this.title, this.noteBack, this.note);
     app.stage.addChild(this.root);
     app.renderer.on("resize", () => this.layout());
   }
@@ -80,6 +89,17 @@ export class FactionPicker {
     this.row = cardRow(this.app.screen.width, this.app.screen.height, this.cards.length, ABOVE_HINT_LINE);
     this.cards.forEach((c, i) => c.root.position.set(this.row.x0 + i * (this.row.w + this.row.gap), this.row.y));
     this.title.position.set(Math.round(this.app.screen.width / 2), this.row.y - 8);
+
+    const { width, height } = this.app.screen;
+    this.note.style.wordWrapWidth = Math.min(width - 64, 760); // wraps on a narrow screen
+    this.note.position.set(Math.round(width / 2), Math.round(height / 2));
+    const w = this.note.width + 32;
+    const h = this.note.height + 20;
+    this.noteBack
+      .clear()
+      .roundRect(Math.round((width - w) / 2), Math.round((height - h) / 2), w, h, 6)
+      .fill({ color: 0x0a0a0f, alpha: 0.75 })
+      .stroke({ width: 1, color: BORDER });
   }
 
   private redraw(): void {

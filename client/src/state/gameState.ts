@@ -93,8 +93,8 @@ export class GameState {
 
   // --- Local choices
   activeSlot = 0; // ability bar slot in use (keys 1–5)
-  selectedFaction = 1; // for the next spawn
-  myFaction = 0; // of the current life
+  selectedFaction = 1; // picked on the cards, for the first spawn
+  myFaction = 0; // locked at the first spawn for the season (the server refuses another); 0 until then
   captureLearned = false; // captured a cell once: no capture hint (onboarding.ts); outlives sessions
 
   // --- From snapshots
@@ -150,6 +150,22 @@ export class GameState {
 
   get alive(): boolean {
     return this.life === LifeState.ALIVE;
+  }
+
+  // The faction is still to be chosen: not alive and never spawned. The choice
+  // shows only then — once, not after a death.
+  get choosingFaction(): boolean {
+    return !this.alive && this.myFaction === 0;
+  }
+
+  // The faction to (re)spawn in: the locked one, or — at the first spawn — the
+  // one picked, which this locks.
+  spawnFaction(): number {
+    if (this.myFaction === 0) {
+      this.myFaction = this.selectedFaction;
+      this.roster.setFaction(this.myId, this.myFaction); // the roster doesn't echo our own
+    }
+    return this.myFaction;
   }
 
   get activeAbility(): AbilityInfo | undefined {

@@ -21,9 +21,12 @@ std::expected<void, ::game::v1::ErrorCode> try_spawn(WorldState& state, const Ga
     }
     const bool valid_faction = std::ranges::any_of(
         config.factions, [faction_id](const auto& f) { return f.id == faction_id; });
-    if (!valid_faction) {
+    Character& character = state.characters.at(character_id);
+    const bool locked_elsewhere = character.faction_id != 0 && character.faction_id != faction_id;
+    if (!valid_faction || locked_elsewhere) {
         return std::unexpected(::game::v1::ERROR_CODE_INVALID_FACTION);
     }
+    character.faction_id = faction_id;  // locked for the season (a no-op after the first spawn)
 
     const std::uint32_t col = cell % config.map_width;
     const std::uint32_t row = cell / config.map_width;
