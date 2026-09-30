@@ -16,6 +16,13 @@ struct TimingStats {
     std::uint32_t max_us{0};
 };
 
+// The round trips the players' clients reported (Ping.rtt_ms), in milliseconds.
+struct RoundTripStats {
+    std::uint32_t p50_ms{0};  // nearest rank
+    std::uint32_t p95_ms{0};
+    std::uint32_t max_ms{0};
+};
+
 // What the server did over one period — logged as one `metrics` line (GAME-012).
 struct MetricsReport {
     std::uint32_t period_s{0};
@@ -32,6 +39,14 @@ struct MetricsReport {
     std::uint32_t joins{0};          // characters entering the world: new, or back after the grace
     std::uint32_t leaves{0};         // characters leaving it: their reconnect grace is over
     std::uint32_t resumes{0};        // sessions taking over a character still in the world
+    // What the players' clients reported in their Pings (PT-0).
+    RoundTripStats rtt;
+    std::uint32_t corrections{0};     // prediction corrections, over the client's threshold
+    std::uint32_t max_correction{0};  // the largest, world units
+    // What happened in the game.
+    std::uint32_t spawns{0};                      // spawns and respawns
+    std::uint32_t deaths{0};                      // characters killed
+    std::uint32_t captures{0};                    // cells that changed owner
     std::map<std::string, std::uint32_t> errors;  // ServerErrors sent, by code name
 };
 
@@ -46,6 +61,13 @@ class Metrics {
     void record_join() { ++current_.joins; }
     void record_leave() { ++current_.leaves; }
     void record_resume() { ++current_.resumes; }
+    // A client's report from its Ping: its last round trip (0: not measured yet,
+    // not a sample) and the prediction corrections since its previous Ping.
+    void record_client_report(std::uint32_t rtt_ms, std::uint32_t corrections,
+                              std::uint32_t max_correction);
+    void record_spawn() { ++current_.spawns; }
+    void record_deaths(std::uint32_t n) { current_.deaths += n; }
+    void record_captures(std::uint32_t n) { current_.captures += n; }
     // Counted under the code's name without its prefix: "RATE_LIMITED".
     void record_error(::game::v1::ErrorCode code);
 
@@ -57,6 +79,7 @@ class Metrics {
     std::vector<std::uint32_t> tick_us_;      // every tick's duration
     std::vector<std::uint32_t> snapshot_us_;  // the snapshot ticks' durations
     std::uint64_t snapshot_bytes_{0};
+    std::vector<std::uint32_t> rtt_ms_;  // every measured round trip reported
 };
 
 // One line of JSON: {"period_s":60,"ccu":3,"ticks":3600,"tick_us":{"avg":..,"p99":..,"max":..},..}

@@ -99,7 +99,7 @@ void World::tick(double dt) {
     activate_blocks(state_, config_);                // before attacks: same-tick blocks count
     resolve_attacks(state_, config_, alive_index_);  // melee hits + projectile launches
     update_projectiles(state_, config_, alive_index_, dt);
-    update_captures(state_, config_);
+    metrics_.record_captures(update_captures(state_, config_));
     time_out_connections();
     end_reconnect_graces();
     send_snapshots();
@@ -271,6 +271,7 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
     }
     // Drop stale pre-spawn commands (last_enqueued_seq stays monotonic).
     session.input.commands.clear();
+    metrics_.record_spawn();
 
     // Faction (colour) chosen -> tell everyone else.
     broadcast_except(session_id, make_roster_upsert(state_, state_.characters.at(character_id)));
@@ -287,6 +288,7 @@ void World::on_input(std::uint64_t session_id, const ::game::v1::Input& input) {
 }
 
 void World::on_ping(std::uint64_t session_id, const ::game::v1::Ping& ping) {
+    metrics_.record_client_report(ping.rtt_ms(), ping.corrections(), ping.max_correction());
     send(session_id, make_pong(state_, ping.client_time_ms()));
 }
 
@@ -340,6 +342,8 @@ void World::send_snapshots() {
         recipient.sync.vision = vision;  // what this client now knows it sees
     }
     // This period's cell changes and events are delivered; start the next one.
+    metrics_.record_deaths(static_cast<std::uint32_t>(std::ranges::count_if(
+        state_.events, [](const ::game::v1::GameEvent& e) { return e.has_death(); })));
     state_.territory.dirty.clear();
     state_.events.clear();
 }

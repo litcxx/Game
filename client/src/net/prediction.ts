@@ -36,6 +36,16 @@ export function integrate(
   };
 }
 
+// A misprediction smaller than this (world units) is not counted as a
+// correction: a quarter of a player's radius, below what the eye notices.
+export const CORRECTION_UNITS = 4;
+
+// Corrections since they were last taken: how many, and the largest (units).
+export interface Corrections {
+  count: number;
+  max: number;
+}
+
 // Predicts the local player and reconciles against authoritative snapshots.
 // `renderPosition` = predicted + a correction error that decays to zero, so a
 // divergence eases in over ~100 ms instead of popping.
@@ -44,6 +54,7 @@ export class Predictor {
   private error: Vec2 = { x: 0, y: 0 };
   private pending: PendingInput[] = [];
   private nextSeq = 1;
+  private corrections: Corrections = { count: 0, max: 0 };
 
   constructor(
     private readonly speed: number,
@@ -77,6 +88,7 @@ export class Predictor {
 
   // Drop acked inputs, replay the remainder from the authoritative pos, and keep
   // the currently-displayed point continuous by folding the delta into `error`.
+  // A prediction off by more than CORRECTION_UNITS counts as a correction.
   reconcile(authoritative: Vec2, lastInputSeq: number): void {
     const displayed = this.renderPosition;
     this.pending = this.pending.filter((f) => f.seq > lastInputSeq);
@@ -84,8 +96,20 @@ export class Predictor {
     for (const f of this.pending) {
       pos = integrate(pos, f.moveX, f.moveY, this.fixedDt, this.speed, this.bounds);
     }
+    const off = Math.hypot(this.predicted.x - pos.x, this.predicted.y - pos.y);
+    if (off > CORRECTION_UNITS) {
+      const { count, max } = this.corrections;
+      this.corrections = { count: count + 1, max: Math.max(max, Math.round(off)) };
+    }
     this.predicted = pos;
     this.error = { x: displayed.x - pos.x, y: displayed.y - pos.y };
+  }
+
+  // The corrections since the last call; counting starts over.
+  takeCorrections(): Corrections {
+    const taken = this.corrections;
+    this.corrections = { count: 0, max: 0 };
+    return taken;
   }
 
   // Ease the correction error toward zero (tau ≈ 80 ms). Call once per frame.

@@ -34,7 +34,7 @@ client/     Browser client — TypeScript + PixiJS + protobuf-es; renders the ma
             and players, sends input
 deploy/     Running it on a VPS: setup and deploy scripts, the systemd service,
             the Caddy site (HTTPS, the client, /ws to the server)
-docs/       The game design document (GDD.md) and operations (ops.md)
+docs/       The game design document (GDD.md), operations (ops.md), playtests
 ```
 
 Each side has its own README with details:

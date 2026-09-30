@@ -24,6 +24,17 @@ export const STALE_MS = 6000;
 // The close code reported for such a connection (never sent on the wire).
 export const STALE_CLOSE_CODE = 4900;
 
+// What each Ping tells the server for its metrics (the playtests): the last
+// round trip (0: not measured yet) and the prediction corrections since the
+// previous Ping.
+export interface PingReport {
+  rttMs: number;
+  corrections: number;
+  maxCorrection: number;
+}
+
+const NO_REPORT: PingReport = { rttMs: 0, corrections: 0, maxCorrection: 0 };
+
 // A Ping carries the client's clock as uint32 ms (performance.now()); its Pong
 // echoes it back. The round trip, across a wrap of that clock too.
 export function roundTripMs(echoedMs: number, nowMs: number): number {
@@ -47,6 +58,7 @@ export class GameClient {
     private readonly url: string,
     private readonly onMessage: (msg: ServerMessage) => void,
     private readonly onClose: (code: number) => void = () => {},
+    private readonly report: () => PingReport = () => NO_REPORT,
   ) {}
 
   // Opens a socket and says Hello: a new player, or with a session token from
@@ -90,9 +102,16 @@ export class GameClient {
   }
 
   // client_time_ms comes back in the Pong (RTT); uint32 ms since the page loaded.
+  // The report is taken only for a Ping that goes out (none while not open).
   sendPing(): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
     const clientTimeMs = Math.floor(performance.now()) >>> 0;
-    this.dispatch(create(ClientMessageSchema, { payload: { case: "ping", value: { clientTimeMs } } }));
+    const { rttMs, corrections, maxCorrection } = this.report();
+    this.dispatch(
+      create(ClientMessageSchema, {
+        payload: { case: "ping", value: { clientTimeMs, rttMs, corrections, maxCorrection } },
+      }),
+    );
   }
 
   sendSpawn(cell: number, factionId: number): void {
