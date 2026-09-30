@@ -202,8 +202,8 @@ The address is fixed at build time from `VITE_SERVER_URL`:
 - **`npm run build`** — unset: the built page connects to its own origin at
   `/ws` (`wss://<host>/ws` when served over https, `ws://` over http). Serve
   `dist/` and the game server behind one reverse proxy that forwards `/ws` to
-  it (e.g. Caddy: `reverse_proxy /ws 127.0.0.1:27998`); the server takes a
-  WebSocket on any path.
+  it — as `deploy/` does with Caddy (see [docs/ops.md](../docs/ops.md)); the
+  server takes a WebSocket on any path.
 - **Anywhere else** — `VITE_SERVER_URL=wss://game.example/ws npm run build`.
 
 The smoke scripts take the address from `SERVER_URL` (default

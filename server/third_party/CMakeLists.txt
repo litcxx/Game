@@ -16,10 +16,12 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
+# 1.15 bundles fmt 11: the fmt 9 in 1.12 trips a false -Warray-bounds in GCC 13
+# at -O3 (fmt's bigint, inlined), which -Werror turns into a failed Release build.
 FetchContent_Declare(
     spdlog
-    URL https://github.com/gabime/spdlog/archive/refs/tags/v1.12.0.tar.gz
-    URL_HASH SHA256=4dccf2d10f410c1e2feaff89966bfc49a1abb29ef6f08246335b110e001e09a9
+    URL https://github.com/gabime/spdlog/archive/refs/tags/v1.15.3.tar.gz
+    URL_HASH SHA256=15a04e69c222eb6c01094b5c7ff8a249b36bb22788d72519646fb85feb267e67
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     SYSTEM
 )

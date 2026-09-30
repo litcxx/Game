@@ -3,6 +3,8 @@
 #   server — against protobuf 36 (server/scripts/install-protobuf.sh, cached):
 #            Debug + ASan/UBSan build, unit tests, then the e2e smoke suite
 #            (npm run smoke) against that server, which must also shut down clean
+#   server-release — the build that is deployed (deploy/deploy.sh): Release
+#            (-O3, which brings its own warnings under -Werror) and unit tests
 # A red run blocks the merge once "client" and "server" are required checks
 # (Settings → Branches → main).
 name: CI
@@ -104,3 +106,34 @@ jobs:
       - name: Server log
         if: ${{ !cancelled() && hashFiles('server/server.log') != '' }}
         run: cat server.log
+
+  server-release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CMAKE_PREFIX_PATH: ${{ github.workspace }}/.protobuf
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ cmake ninja-build libboost-dev libssl-dev
+      - name: Cache protobuf
+        id: protobuf
+        uses: actions/cache@v4
+        with:
+          path: .protobuf
+          key: protobuf-ubuntu-24.04-${{ hashFiles('server/scripts/install-protobuf.sh') }}
+      - name: Build protobuf
+        if: steps.protobuf.outputs.cache-hit != 'true'
+        run: scripts/install-protobuf.sh "$CMAKE_PREFIX_PATH"
+      - name: Configure
+        run: cmake --preset release -G Ninja -DUSE_CLANG_FORMAT=OFF -DUSE_CLANG_TIDY=OFF
+      - name: Build
+        run: cmake --build --preset release
+      - name: Unit tests
+        run: ctest --preset release

@@ -35,8 +35,9 @@ void Server::listen() { asio::co_spawn(acceptor_strand_, do_listen(), asio::deta
 
 asio::awaitable<void> Server::do_listen() {
     for (;;) {
-        auto [ec, socket] = co_await acceptor_.async_accept(asio::make_strand(io_),
-                                                            asio::as_tuple(asio::use_awaitable));
+        auto received = co_await acceptor_.async_accept(asio::make_strand(io_),
+                                                        asio::as_tuple(asio::use_awaitable));
+        auto& [ec, socket] = received;
         if (ec) {
             // acceptor_.close() during graceful shutdown cancels the pending accept.
             if (ec != asio::error::operation_aborted) {
@@ -94,8 +95,9 @@ asio::awaitable<void> Server::add_session(Socket socket) {
         // entry invalidates them) — this is what makes by-value storage safe.
         {
             std::lock_guard lock(sessions_mutex_);
-            auto [it, success] = sessions_.try_emplace(id, *this, std::move(socket), id);
-            assert(success);
+            [[maybe_unused]] const bool inserted =
+                sessions_.try_emplace(id, *this, std::move(socket), id).second;
+            assert(inserted);
         }
         // Tell the game loop first: ahead of every message the session will send,
         // so a connection that never says Hello still times out.
