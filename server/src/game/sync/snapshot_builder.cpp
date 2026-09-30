@@ -101,6 +101,7 @@ bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::u
         ps->set_faction_id(p.faction_id);
         ps->set_vx(static_cast<std::int32_t>(std::lround(p.vx)));
         ps->set_vy(static_cast<std::int32_t>(std::lround(p.vy)));
+        ps->set_mine(p.owner_id == self);  // whether it is yours, never whose
     }
     return msg;
 }

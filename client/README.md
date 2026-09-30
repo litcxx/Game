@@ -12,7 +12,8 @@ PixiJS + protobuf-es** over a WebSocket.
 > Everyone sees what others press: swings, blocks and blocked hits are drawn; your own hit that
 > lands flashes on the target with its damage. Play is smooth via client-side
 > prediction + reconciliation (local player) and interpolation (remotes and
-> projectiles). Fog of war: the server sends only what your faction sees; cells
+> their projectiles; your own shot runs on from the latest snapshot, so it leaves
+> your token along the aim line). Fog of war: the server sends only what your faction sees; cells
 > seen before stay dimmed with their last known state, unexplored ones are
 > covered — on the map and the minimap. Rendering follows the design concept: a tinted,
 > coordinate-labelled territory grid; glowing player tokens with grounding
@@ -99,8 +100,12 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   the next `Ping`.
 - **`src/net/interpolation.ts`** — `InterpolationBuffer`: buffers snapshots and
   returns positions ~100 ms in the past (smooth motion between 20 Hz
-  snapshots) — for remote players and, in a second buffer, for projectiles;
-  `ids()` keeps a projectile drawn until render time reaches its last position.
+  snapshots) — for remote players and, in a second buffer, for others'
+  projectiles; `ids()` keeps a projectile drawn until render time reaches its
+  last position. Your own shots (`ProjectileState.mine`) skip it:
+  `GameState.shotsAt()` runs them on from the latest snapshot by their velocity
+  (at most 100 ms), so they leave your token — drawn at the predicted position —
+  along the aim line instead of behind it.
 - **`src/abilities.ts`** — the ability model from `Welcome.abilities` (bar
   order), slot selection for keys 1–5, the aim vector sent in each input frame
   (unit vector × 1000 toward the cursor) and the cooldown-arc progress.

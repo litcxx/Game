@@ -128,8 +128,15 @@ function onSnapshot(state: GameState, s: Snapshot, nowMs: number): void {
   for (const p of s.players) if (p.id !== state.myId) remotes.set(p.id, { x: p.x, y: p.y });
   state.interp.push(nowMs, remotes);
 
+  // Projectiles: yours run on from this snapshot (GameState.shotsAt), others'
+  // are interpolated.
   const shots = new Map<number, RemoteState>();
+  state.ownShots = new Map();
   for (const p of s.projectiles) {
+    if (p.mine) {
+      state.ownShots.set(p.id, { x: p.x, y: p.y, vx: p.vx, vy: p.vy, factionId: p.factionId, seenMs: nowMs });
+      continue;
+    }
     shots.set(p.id, { x: p.x, y: p.y });
     state.shotMeta.set(p.id, { vx: p.vx, vy: p.vy, factionId: p.factionId, seenMs: nowMs });
   }

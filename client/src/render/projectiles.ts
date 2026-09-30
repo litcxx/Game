@@ -1,7 +1,7 @@
 import { Graphics } from "pixi.js";
 
 export interface ProjectileSprite {
-  x: number; // world units (interpolated)
+  x: number; // world units (see GameState.shotsAt)
   y: number;
   vx: number; // units/s: the trail points against it
   vy: number;

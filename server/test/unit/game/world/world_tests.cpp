@@ -932,6 +932,31 @@ TEST(WorldRanged, FiresTowardTheAim) {
     EXPECT_EQ(p.y(), 150u);
 }
 
+// Each recipient learns whether a projectile is its own shot (drawn without the
+// interpolation delay), not whose it is: an enemy in the fog stays unnamed.
+TEST(WorldRanged, OnlyTheShooterSeesItsShotAsMine) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config);
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*cell=*/4, /*faction=*/1));  // (50,150)
+    incoming.push(spawn_event(2, /*cell=*/8, /*faction=*/2));  // (50,250): off the shot's path
+    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    run_ticks(world, 3, 0.016);
+
+    auto shooter = last_snapshot_to(gw, 1);
+    auto other = last_snapshot_to(gw, 2);
+    ASSERT_TRUE(shooter.has_value());
+    ASSERT_TRUE(other.has_value());
+    ASSERT_EQ(shooter->projectiles_size(), 1);
+    ASSERT_EQ(other->projectiles_size(), 1);
+    EXPECT_TRUE(shooter->projectiles(0).mine());
+    EXPECT_FALSE(other->projectiles(0).mine());
+}
+
 TEST(WorldRanged, HitsAnEnemyForTheRangedDamage) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;

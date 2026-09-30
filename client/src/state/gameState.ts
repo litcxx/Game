@@ -11,6 +11,9 @@ import { Territory, UNITS_PER_CELL, type CellState } from "./territory.js";
 export const FIXED_DT = 1 / 60;
 // Remote players are drawn this far in the past (~2 snapshots) to interpolate.
 export const INTERP_DELAY_MS = 100;
+// Your own shots run on from the latest snapshot by their velocity, at most this
+// far (late snapshots don't send them off ahead).
+export const OWN_SHOT_LEAD_MS = 100;
 
 export interface Faction {
   id: number;
@@ -32,6 +35,26 @@ export interface ShotMeta {
   vy: number;
   factionId: number;
   seenMs: number;
+}
+
+// Your own projectile in the latest snapshot (ProjectileState.mine), and when
+// that snapshot came.
+export interface OwnShot {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  factionId: number;
+  seenMs: number;
+}
+
+// A projectile to draw now.
+export interface ShotView {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  factionId: number;
 }
 
 // Everything the client knows, as data: what the server said (net/router.ts
@@ -74,8 +97,9 @@ export class GameState {
   // Bumped whenever the territory or the sight changes: the world view redraws.
   worldRevision = 0;
   readonly interp = new InterpolationBuffer(INTERP_DELAY_MS); // remote players
-  readonly shots = new InterpolationBuffer(INTERP_DELAY_MS); // projectiles
+  readonly shots = new InterpolationBuffer(INTERP_DELAY_MS); // others' projectiles
   readonly shotMeta = new Map<number, ShotMeta>();
+  ownShots = new Map<number, OwnShot>(); // yours, from the latest snapshot
   readonly notices = new Notices(); // server errors for the hint line
   private effects: Effect[] = []; // new ones, for the view to take
   private readonly colors = new Map<number, number>(); // faction id -> colour
@@ -94,6 +118,7 @@ export class GameState {
     this.interp.clear();
     this.shots.clear();
     this.shotMeta.clear();
+    this.ownShots.clear();
     this.effects = [];
     this.notices.clear();
   }
@@ -121,6 +146,25 @@ export class GameState {
 
   factionColor(id: number): number | undefined {
     return this.colors.get(id);
+  }
+
+  // The projectiles to draw at `nowMs`. Others' are interpolated INTERP_DELAY_MS
+  // in the past, in step with the players who fired them. Yours run on from the
+  // latest snapshot by their velocity (at most OWN_SHOT_LEAD_MS), so a shot
+  // leaves your token — drawn at the predicted position — along the aim line
+  // rather than behind it; one gone from the latest snapshot is gone at once.
+  shotsAt(nowMs: number): ShotView[] {
+    const out: ShotView[] = [];
+    for (const id of this.shots.ids(nowMs)) {
+      const pos = this.shots.sample(id, nowMs);
+      const meta = this.shotMeta.get(id);
+      if (pos && meta) out.push({ ...pos, vx: meta.vx, vy: meta.vy, factionId: meta.factionId });
+    }
+    for (const s of this.ownShots.values()) {
+      const lead = Math.min(Math.max(0, nowMs - s.seenMs), OWN_SHOT_LEAD_MS) / 1000;
+      out.push({ x: s.x + s.vx * lead, y: s.y + s.vy * lead, vx: s.vx, vy: s.vy, factionId: s.factionId });
+    }
+    return out;
   }
 
   // The server tick now, advancing smoothly between snapshots.
