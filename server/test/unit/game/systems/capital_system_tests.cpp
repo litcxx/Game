@@ -63,3 +63,18 @@ TEST(SeedCapitals, EachZoneBelongsToItsFaction) {
     EXPECT_EQ(territory.owners[cell(6, 3, 20)], 0u);  // just outside Red's zone
     EXPECT_EQ(territory.owners[cell(10, 10, 20)], 0u);
 }
+
+TEST(ProtectCapitals, EveryZoneIsProtectedAndNothingElse) {
+    lit::game::Territory territory;
+    territory.reset(20, 20);
+    const std::vector<lit::CapitalConfig> capitals{{1, cell(3, 3, 20), 2},
+                                                   {2, cell(15, 15, 20), 2}};
+
+    lit::game::protect_capitals(territory, capitals);
+
+    for (const auto& capital : capitals)
+        for (std::uint32_t i : lit::game::capital_zone(capital, 20, 20))
+            EXPECT_TRUE(territory.protected_cells[i]) << "cell " << i;
+    EXPECT_EQ(std::ranges::count(territory.protected_cells, true), 26);
+    EXPECT_EQ(std::ranges::count(territory.owners, 0), 400);  // the land is the season's
+}

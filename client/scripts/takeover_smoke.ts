@@ -1,6 +1,7 @@
 // Verifies the data behind the takeover gradient: A captures the neutral cell
 // between its capital and B's on the smoke map (it steps right onto it), then B
-// (another faction, stepping left onto it) captures that OWNED cell. Mid-takeover the
+// (another faction, stepping left onto it, next to its own capital) captures that
+// OWNED cell, which takes twice as long as a neutral one. Mid-takeover the
 // server should keep owner_faction_id = A while B's capture_progress rises (0<..<100),
 // then flip owner_faction_id = B. (The client cross-fades those two.)
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
@@ -116,4 +117,4 @@ setTimeout(() => {
   a.close();
   b.close();
   process.exit(pass ? 0 : 1);
-}, 6000);
+}, 9000); // A's capture (1.5 s), then B's of an enemy cell (twice as long)

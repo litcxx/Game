@@ -351,7 +351,7 @@ const joined = (nowMs = 1000): GameState => {
   check("... may respawn", state.maySpawn);
   routeMessage(state, snapshot({ tick: 300, you: { life: LifeState.ALIVE } }), 1000);
   check("may not spawn while alive", !state.maySpawn);
-  check("hint: alive, no cell captured yet -> how to capture", usualHint(state, false) === "Встаньте на чужую или ничью клетку и держите E — захват");
+  check("hint: alive, no cell captured yet -> how to capture (next to your land)", usualHint(state, false) === "Встаньте на чужую или ничью клетку рядом со своей и держите E — захват");
   state.captureLearned = true; // see onboarding_check.ts
   check("hint: none while alive once you have captured", usualHint(state, false) === "");
 }

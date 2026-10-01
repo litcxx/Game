@@ -335,6 +335,7 @@ npx tsx scripts/smoke.ts            # connect + Hello/Welcome
 npx tsx scripts/m2_smoke.ts         # spawn + movement
 npx tsx scripts/capture_smoke.ts    # hold E -> capture a cell
 npx tsx scripts/takeover_smoke.ts   # capture an enemy-owned cell
+npx tsx scripts/front_smoke.ts      # only next to your land: a far cell won't go, then does once the one between is yours
 npx tsx scripts/combat_smoke.ts     # area attack -> hit -> death
 npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
 npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit (fails on no damage)

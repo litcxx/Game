@@ -30,4 +30,12 @@ void seed_capitals(Territory& territory, const std::vector<CapitalConfig>& capit
         }
     }
 }
+
+void protect_capitals(Territory& territory, const std::vector<CapitalConfig>& capitals) {
+    for (const CapitalConfig& capital : capitals) {
+        for (std::uint32_t index : capital_zone(capital, territory.width, territory.height)) {
+            territory.protected_cells[index] = true;
+        }
+    }
+}
 }  // namespace lit::game

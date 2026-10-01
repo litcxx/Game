@@ -53,6 +53,7 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
       metrics_interval_ticks_{std::max<std::uint32_t>(metrics_interval_s_ * config.tick_rate, 1)} {
     state_.territory.reset(config_.map_width, config_.map_height);
     seed_capitals(state_.territory, config_.capitals);  // every start is a season's, until saves
+    protect_capitals(state_.territory, config_.capitals);
 
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
     snapshot_interval_ = config_.tick_rate / rate;

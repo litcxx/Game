@@ -148,6 +148,10 @@ GameConfig parse_game_config(const std::string& config_json) {
     config.respawn_delay_ticks = game.at("respawn_delay_ticks");
     config.reconnect_grace_ms = game.at("reconnect_grace_ms");
     config.capture_ticks = game.at("capture_ticks");
+    config.capture_enemy_multiplier = game.at("capture_enemy_multiplier");
+    if (config.capture_enemy_multiplier <= 0.0) {
+        throw std::runtime_error("config: capture_enemy_multiplier must be > 0");
+    }
     config.player_radius = game.at("player_radius");
     config.vision_radius = game.at("vision_radius");
     if (config.vision_radius == 0) {
