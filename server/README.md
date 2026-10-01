@@ -91,7 +91,7 @@ lives on the server; the browser client predicts, interpolates, and renders.
   dropped session leaves its character in the world, **away** — visible and
   vulnerable, its body standing still — for `reconnect_grace_ms` (30 s): closing
   the tab does not take it out of a fight. Then the character leaves the world
-  with its body (`Roster.removed`); its record stays. A `Hello` with the token
+  with its body (`Roster.removed_player_ids`); its record stays. A `Hello` with the token
   brings it back whatever name it carries: still in the world, it is the same
   body in the same state (`Welcome.resumed`), which no one else notices; after
   the grace it comes back `NOT_SPAWNED`, with the same id (and joins the

@@ -10,10 +10,10 @@ namespace lit::game {
 struct Intent {
     std::int32_t move_x{0};  // movement direction (any length; normalized when moving)
     std::int32_t move_y{0};
-    bool capturing{false};     // holding capture: captures the cell under the centre
-    bool attack{false};        // holding attack: use the selected ability when ready
-    std::uint32_t ability{0};  // selected Ability.id (0 = the first)
-    std::int32_t aim_x{0};     // aim direction from the centre (projectiles)
+    bool capturing{false};        // holding capture: captures the cell under the centre
+    bool attack{false};           // holding attack: use the selected ability when ready
+    std::uint32_t ability_id{0};  // selected Ability.id (0 = the first)
+    std::int32_t aim_x{0};        // aim direction from the centre (projectiles)
     std::int32_t aim_y{0};
 };
 

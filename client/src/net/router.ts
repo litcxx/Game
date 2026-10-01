@@ -75,12 +75,12 @@ function onWelcome(state: GameState, w: Welcome): void {
 }
 
 function onMapState(state: GameState, m: MapState): void {
-  state.territory.setMapState(m.owners, m.captures);
+  state.territory.setMapState(m.ownerFactionIds, m.captures);
   state.worldRevision++;
 }
 
 function onRoster(state: GameState, r: Roster): void {
-  state.roster.apply(r.upsert, r.full, r.removed);
+  state.roster.apply(r.upsert, r.full, r.removedPlayerIds);
   // A resumed character is back with its faction: the full roster after Welcome
   // is the first to tell it.
   const mine = state.roster.factionOf(state.myId);

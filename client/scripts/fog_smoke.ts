@@ -69,7 +69,7 @@ let farSawScout = false;
 
 const scout = open("scout", "fog-scout", (m) => {
   if (m.payload.case === "mapState") {
-    mapStateBlank = m.payload.value.owners.every((b) => b === 0);
+    mapStateBlank = m.payload.value.ownerFactionIds.every((b) => b === 0);
   } else if (m.payload.case === "snapshot") {
     const s = m.payload.value;
     if (revealedOnSpawn.length === 0) revealedOnSpawn = [...s.revealed];

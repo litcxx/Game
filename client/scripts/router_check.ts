@@ -72,8 +72,8 @@ const joined = (nowMs = 1000): GameState => {
 // --- Roster -------------------------------------------------------------------
 {
   const state = joined();
-  const roster = (upsert: { id: number; name: string; factionId: number }[], full: boolean, removed: number[] = []) =>
-    routeMessage(state, msg({ case: "roster", value: { upsert, full, removed } } as never), 1000);
+  const roster = (upsert: { id: number; name: string; factionId: number }[], full: boolean, removedPlayerIds: number[] = []) =>
+    routeMessage(state, msg({ case: "roster", value: { upsert, full, removedPlayerIds } } as never), 1000);
   roster([{ id: 1, name: "Ann", factionId: 1 }, { id: 2, name: "Bob", factionId: 2 }], true);
   check("a full roster lists everyone", state.roster.online === 2 && state.roster.nameOf(1) === "Ann" && state.roster.factionOf(2) === 2);
   roster([{ id: 3, name: "Cid", factionId: 0 }], false);
@@ -91,7 +91,7 @@ const joined = (nowMs = 1000): GameState => {
   const state = joined();
   const before = state.worldRevision;
   const owners = new Uint8Array([1, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
-  routeMessage(state, msg({ case: "mapState", value: { owners, captures: [{ index: 2, owner: 0, captureFaction: 2, captureProgress: 40 }] } } as never), 1000);
+  routeMessage(state, msg({ case: "mapState", value: { ownerFactionIds: owners, captures: [{ index: 2, ownerFactionId: 0, captureFactionId: 2, captureProgress: 40 }] } } as never), 1000);
   check("MapState: owned cells per faction", state.territory.owned(1) === 2 && state.territory.owned(2) === 1);
   check("MapState: faction stats", same(state.territory.stats(1), { cells: 2, percent: 17 }));
   check("MapState: a capture in progress", same(state.territory.cell(2, 0), { index: 2, owner: 0, captureFaction: 2, captureProgress: 40 }));
@@ -99,7 +99,7 @@ const joined = (nowMs = 1000): GameState => {
   check("a cell off the map reads as nothing", same(state.territory.cell(4, 0), { index: 4, owner: 0, captureFaction: 0, captureProgress: 0 }));
 
   const mid = state.worldRevision;
-  routeMessage(state, snapshot({ tick: 5, cells: [{ index: 2, owner: 2, captureFaction: 0, captureProgress: 0 }, { index: 0, owner: 0 }] }), 1000);
+  routeMessage(state, snapshot({ tick: 5, cells: [{ index: 2, ownerFactionId: 2, captureFactionId: 0, captureProgress: 0 }, { index: 0, ownerFactionId: 0 }] }), 1000);
   check("Snapshot.cells: owners and counts follow", state.territory.owned(1) === 1 && state.territory.owned(2) === 2 && state.territory.cell(2, 0).owner === 2);
   check("Snapshot.cells: the capture is over", state.territory.cell(2, 0).captureProgress === 0);
   check("Snapshot.cells: the world is redrawn", state.worldRevision > mid);
@@ -361,7 +361,7 @@ const joined = (nowMs = 1000): GameState => {
   const state = joined();
   check("not spawned: no cell under you", state.cellUnderMe() === undefined);
   const owners = new Uint8Array([0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0]);
-  routeMessage(state, msg({ case: "mapState", value: { owners, captures: [] } } as never), 1000);
+  routeMessage(state, msg({ case: "mapState", value: { ownerFactionIds: owners, captures: [] } } as never), 1000);
   routeMessage(state, snapshot({ tick: 10, you: { life: LifeState.ALIVE }, players: [{ id: 7, x: 150, y: 150, hp: 90 }] }), 1000);
   check("alive: the cell under the predicted position", state.cellUnderMe()?.index === 5 && state.cellUnderMe()?.owner === 2);
   state.predictor?.reset({ x: 399, y: 250 });

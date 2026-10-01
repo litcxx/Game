@@ -43,7 +43,7 @@ enum class AbilityKind : std::uint8_t {
 
 // An ability on the 1–5 bar. Server-defined; sent to clients as Welcome.abilities.
 struct AbilityConfig {
-    std::uint32_t id;  // >= 1; InputFrame.ability refers to it (0 = the first ability)
+    std::uint32_t id;  // >= 1; InputFrame.ability_id refers to it (0 = the first ability)
     AbilityKind kind;
     std::string name;
     std::uint32_t cooldown_ticks;     // shared cooldown after use (45 = 0.75 s at 60 Hz)

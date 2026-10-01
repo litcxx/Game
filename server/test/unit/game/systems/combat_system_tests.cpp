@@ -80,7 +80,7 @@ struct Encounter {
         f->set_move_x(intent.move_x);
         f->set_move_y(intent.move_y);
         f->set_attack(intent.attack);
-        f->set_ability(intent.ability);
+        f->set_ability_id(intent.ability_id);
         f->set_aim_x(intent.aim_x);
         f->set_aim_y(intent.aim_y);
         lit::game::enqueue_frames(state.sessions.at(kSession).input, input, config.limits);
@@ -113,7 +113,7 @@ struct Encounter {
 TEST(UnitWithoutCharacter, StrikesAPlayerWithTheSameAbility) {
     Encounter e;
     e.stub().intent.attack = true;  // its "AI" swings the melee Strike
-    e.stub().intent.ability = 1;
+    e.stub().intent.ability_id = 1;
 
     e.tick();
 
@@ -133,7 +133,7 @@ TEST(MeleeStrike, HitsATargetWhoseBodyTouchesTheRange) {
     Encounter e;
     e.stub().x = e.player().x + 120 + 16;  // Strike's range + player_radius
     e.stub().intent.attack = true;
-    e.stub().intent.ability = 1;
+    e.stub().intent.ability_id = 1;
 
     e.tick();
 
@@ -144,7 +144,7 @@ TEST(MeleeStrike, MissesATargetJustBeyondTheRangeAndBody) {
     Encounter e;
     e.stub().x = e.player().x + 120 + 16 + 1;
     e.stub().intent.attack = true;
-    e.stub().intent.ability = 1;
+    e.stub().intent.ability_id = 1;
 
     e.tick();
 
@@ -155,7 +155,7 @@ TEST(UnitWithoutCharacter, IsKilledByAPlayerLikeAnyBody) {
     Encounter e;
     e.stub().hp = 40;  // one Strike
 
-    e.player_input(1, {.attack = true, .ability = 1});
+    e.player_input(1, {.attack = true, .ability_id = 1});
     e.tick();
 
     EXPECT_EQ(e.stub().hp, 0u);
@@ -168,7 +168,7 @@ TEST(UnitWithoutCharacter, IsKilledByAPlayerLikeAnyBody) {
 
 TEST(UnitWithoutCharacter, IsHitByAPlayersProjectile) {
     Encounter e;
-    e.player_input(1, {.attack = true, .ability = 2, .aim_x = 1});
+    e.player_input(1, {.attack = true, .ability_id = 2, .aim_x = 1});
 
     for (int i = 0; i < 12; ++i) e.tick();  // 100 units at 10 per tick
 
@@ -179,8 +179,8 @@ TEST(UnitWithoutCharacter, IsHitByAPlayersProjectile) {
 TEST(UnitWithoutCharacter, BlocksAndMovesByItsOwnIntent) {
     Encounter e;
     e.config.abilities.push_back({3, lit::AbilityKind::Block, "Guard", 10, 0, 0, 0, 0, 9});
-    e.stub().intent = {.move_x = 1, .attack = true, .ability = 3};  // walks right, guarding
-    e.player_input(1, {.move_x = -1, .attack = true, .ability = 1});
+    e.stub().intent = {.move_x = 1, .attack = true, .ability_id = 3};  // walks right, guarding
+    e.player_input(1, {.move_x = -1, .attack = true, .ability_id = 1});
 
     e.tick();
 

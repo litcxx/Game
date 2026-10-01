@@ -6,7 +6,7 @@
 
 namespace lit::game {
 // Attacks, once per tick. An alive unit holding attack whose shared cooldown is
-// ready uses the selected ability (Intent.ability; 0 = the first, unknown or a
+// ready uses the selected ability (Intent.ability_id; 0 = the first, unknown or a
 // block = nothing here): melee hits every enemy (another faction) within the
 // ability's range through apply_damage; a projectile ability launches a shot
 // along the aim. Using an ability starts the shared cooldown with that ability's

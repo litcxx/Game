@@ -225,8 +225,9 @@ TEST(WorldHello, SendsNeutralMapStateToJoiner) {
             found = true;
         }
     ASSERT_TRUE(found);
-    EXPECT_EQ(map.owners().size(), static_cast<std::size_t>(config.map_width) * config.map_height);
-    for (char b : map.owners()) EXPECT_EQ(b, 0);
+    EXPECT_EQ(map.owner_faction_ids().size(),
+              static_cast<std::size_t>(config.map_width) * config.map_height);
+    for (char b : map.owner_faction_ids()) EXPECT_EQ(b, 0);
 }
 
 TEST(WorldHello, SendsFullRosterIncludingSelf) {
@@ -295,7 +296,7 @@ TEST(WorldRoster, ADisconnectedPlayerLeavesAfterTheGraceAndOthersAreTold) {
     const auto bob_removed = [&] {
         for (const auto& m : messages_to(gw, 1))
             if (m.has_roster())
-                for (auto removed_id : m.roster().removed())
+                for (auto removed_id : m.roster().removed_player_ids())
                     if (removed_id == bob_id) return true;
         return false;
     };
@@ -339,7 +340,7 @@ lit::ClientEvent attack_event(std::uint64_t session_id, std::uint32_t seq, std::
                               std::int32_t aim_x = 0, std::int32_t aim_y = 0) {
     auto ev = input_event(session_id, 0, 0, seq, /*capturing=*/false, /*attack=*/true);
     auto* frame = ev.msg.mutable_input()->mutable_frames(0);
-    frame->set_ability(ability);
+    frame->set_ability_id(ability);
     frame->set_aim_x(aim_x);
     frame->set_aim_y(aim_y);
     return ev;
@@ -610,7 +611,7 @@ TEST(WorldCapture, HoldingCaptureFlipsCellOwner) {
 
     auto cu = last_cell_update(gw, 7, /*index=*/5);
     ASSERT_TRUE(cu.has_value());
-    EXPECT_EQ(cu->owner(), 1u);  // cell now owned by faction 1
+    EXPECT_EQ(cu->owner_faction_id(), 1u);  // cell now owned by faction 1
 }
 
 TEST(WorldCapture, ReleasingCaptureResetsProgress) {
@@ -628,7 +629,7 @@ TEST(WorldCapture, ReleasingCaptureResetsProgress) {
 
     auto cu = last_cell_update(gw, 7, /*index=*/5);
     ASSERT_TRUE(cu.has_value());
-    EXPECT_EQ(cu->owner(), 0u);             // never captured
+    EXPECT_EQ(cu->owner_faction_id(), 0u);  // never captured
     EXPECT_EQ(cu->capture_progress(), 0u);  // progress reset
 }
 
@@ -645,8 +646,8 @@ TEST(WorldCapture, NoCaptureWithoutHoldingKey) {
     // The cell's state arrives once, when spawning reveals it — still untouched.
     auto cu = last_cell_update(gw, 7, /*index=*/5);
     ASSERT_TRUE(cu.has_value());
-    EXPECT_EQ(cu->owner(), 0u);
-    EXPECT_EQ(cu->capture_faction(), 0u);
+    EXPECT_EQ(cu->owner_faction_id(), 0u);
+    EXPECT_EQ(cu->capture_faction_id(), 0u);
     EXPECT_EQ(cu->capture_progress(), 0u);
 }
 
@@ -906,7 +907,7 @@ TEST(FixedStep, ClampsSpiralOfDeath) {
 }
 
 // --- Abilities: selection by id, shared cooldown ---------------------------
-// InputFrame.ability picks the ability (0 = the first); using one starts the
+// InputFrame.ability_id picks the ability (0 = the first); using one starts the
 // shared cooldown with that ability's length, reported in SelfState.
 
 TEST(WorldAbility, UsesTheSelectedAbility) {
@@ -1451,7 +1452,7 @@ TEST(WorldFog, ChangesInTheFogArriveOnlyOnceSeen) {
 
     auto cu = last_cell_update(gw, 1, /*index=*/9);
     ASSERT_TRUE(cu.has_value());
-    EXPECT_EQ(cu->owner(), 2u);  // the current state, once it is seen again
+    EXPECT_EQ(cu->owner_faction_id(), 2u);  // the current state, once it is seen again
 }
 
 TEST(WorldFog, OwnedCellsKeepWatch) {
@@ -1566,7 +1567,8 @@ TEST(WorldFog, AJoinerSeesNothing) {
     for (const auto& m : messages_to(gw, 2))
         if (m.has_map_state()) map = m.map_state();
     ASSERT_TRUE(map.has_value());
-    for (char owner : map->owners()) EXPECT_EQ(owner, 0);  // the owned cell stays unknown
+    for (char owner : map->owner_faction_ids())
+        EXPECT_EQ(owner, 0);  // the owned cell stays unknown
     auto snap = last_snapshot_to(gw, 2);
     ASSERT_TRUE(snap.has_value());
     EXPECT_EQ(snap->players_size(), 0);
@@ -1610,7 +1612,7 @@ struct ClientModel {
         if (m.has_roster()) {
             if (m.roster().full()) roster.clear();
             for (const auto& p : m.roster().upsert()) roster.insert(p.id());
-            for (std::uint32_t id : m.roster().removed()) roster.erase(id);
+            for (std::uint32_t id : m.roster().removed_player_ids()) roster.erase(id);
         }
         if (!m.has_snapshot()) return;
         const auto& s = m.snapshot();
@@ -1621,7 +1623,7 @@ struct ClientModel {
         for (std::uint32_t index : s.revealed()) sight[index] = Sight::Visible;
         for (std::uint32_t index : s.hidden()) sight[index] = Sight::Explored;
         for (const auto& c : s.cells())
-            cells[c.index()] = {c.owner(), c.capture_faction(), c.capture_progress()};
+            cells[c.index()] = {c.owner_faction_id(), c.capture_faction_id(), c.capture_progress()};
     }
 
     std::set<std::uint32_t> visible() const {
@@ -1789,7 +1791,7 @@ TEST(WorldResync, FallingBehindAgainWithinTheWindowCloses) {
     bool told = false;
     for (const auto& m : messages_to(gw, 2))
         if (m.has_roster())
-            for (std::uint32_t id : m.roster().removed()) told = told || id == 1;
+            for (std::uint32_t id : m.roster().removed_player_ids()) told = told || id == 1;
     EXPECT_TRUE(told);  // the others see it leave once the grace is over
 }
 
@@ -1847,7 +1849,7 @@ std::pair<int, int> roster_news_about(const lit::test::MockClientGateway& gw,
     for (const auto& m : messages_to(gw, session_id)) {
         if (!m.has_roster()) continue;
         for (const auto& p : m.roster().upsert()) upserts += p.id() == id ? 1 : 0;
-        for (std::uint32_t r : m.roster().removed()) removals += r == id ? 1 : 0;
+        for (std::uint32_t r : m.roster().removed_player_ids()) removals += r == id ? 1 : 0;
     }
     return {upserts, removals};
 }
@@ -2789,11 +2791,11 @@ TEST(WorldCapitals, ACapitalsZoneIsItsFactionsFromTheStart) {
     for (std::uint32_t index : {1U, 4U, 5U, 6U, 9U}) {
         const auto seen = last_cell_update(gw, 1, index);
         ASSERT_TRUE(seen.has_value()) << "cell " << index;
-        EXPECT_EQ(seen->owner(), 1u) << "cell " << index;
+        EXPECT_EQ(seen->owner_faction_id(), 1u) << "cell " << index;
     }
     for (std::uint32_t index : {0U, 10U, 15U}) {
         const auto seen = last_cell_update(gw, 1, index);
         ASSERT_TRUE(seen.has_value()) << "cell " << index;
-        EXPECT_EQ(seen->owner(), 0u) << "cell " << index;
+        EXPECT_EQ(seen->owner_faction_id(), 0u) << "cell " << index;
     }
 }

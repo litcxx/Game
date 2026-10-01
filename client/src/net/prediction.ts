@@ -11,7 +11,7 @@ export interface InputSample {
   moveY: number;
   capturing: boolean;
   attack: boolean;
-  ability: number; // Ability.id of the active bar slot
+  abilityId: number; // Ability.id of the active bar slot (InputFrame.ability_id)
   aimX: number; // aim direction (unit vector x 1000), see aimVector()
   aimY: number;
 }

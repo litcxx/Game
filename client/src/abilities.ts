@@ -2,7 +2,7 @@ import { AbilityKind, type Ability } from "./gen/game/v1/protocol_pb.js";
 
 // An ability on the 1–5 bar, as the client needs it (Welcome.abilities, bar order).
 export interface AbilityInfo {
-  id: number; // sent as InputFrame.ability
+  id: number; // sent as InputFrame.ability_id
   kind: "melee" | "projectile" | "block";
   name: string;
   range: number; // units: melee radius / projectile flight distance
