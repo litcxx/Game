@@ -141,7 +141,7 @@ export class GameClient {
       moveY: number;
       capturing: boolean;
       attack: boolean;
-      ability: number;
+      abilityId: number;
       aimX: number;
       aimY: number;
     }[],

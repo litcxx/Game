@@ -129,7 +129,7 @@ message GameConfig {
 
 // Способность на панели 1–5. Набор, порядок и числа задаёт сервер.
 message Ability {
-  uint32 id = 1;                 // ≥ 1; на него ссылается InputFrame.ability
+  uint32 id = 1;                 // ≥ 1; на него ссылается InputFrame.ability_id
   AbilityKind kind = 2;
   string name = 3;               // «Удар», «Выстрел»
   uint32 cooldown_ticks = 4;     // общая перезарядка после применения: 45 = 0,75 с; 90 = 1,5 с
@@ -164,16 +164,16 @@ message Faction {
 // остальных 0 — значение неизвестно (что видно, сообщает Snapshot.revealed).
 message MapState {
   uint32 tick = 1;
-  bytes owners = 2;                  // map_width * map_height байт по строкам; байт = faction id
+  bytes owner_faction_ids = 2;       // map_width * map_height байт по строкам; байт = faction id
   repeated CellUpdate captures = 3;  // клетки, где сейчас идёт захват
 }
 
 // Полное (не разностное) состояние клетки: повторное применение ничего не ломает.
 message CellUpdate {
-  uint32 index = 1;             // y * map_width + x
-  uint32 owner = 2;             // faction id владельца; 0 = нейтральная
-  uint32 capture_faction = 3;   // кто захватывает; 0 = никто
-  uint32 capture_progress = 4;  // 0..100 — процент захвата в пользу capture_faction
+  uint32 index = 1;               // y * map_width + x
+  uint32 owner_faction_id = 2;    // фракция-владелец; 0 = нейтральная
+  uint32 capture_faction_id = 3;  // фракция, которая захватывает; 0 = никто
+  uint32 capture_progress = 4;    // 0..100 — процент захвата в пользу capture_faction_id
 }
 
 // Редко меняющиеся данные игрока.
@@ -186,10 +186,10 @@ message PlayerInfo {
 // Изменения списка игроков в сети. Первый Roster после Welcome содержит всех,
 // включая самого получателя (full = true).
 message Roster {
-  repeated PlayerInfo upsert = 1;  // новые игроки и изменившиеся (первое появление: фракция)
-  repeated uint32 removed = 2;     // игрок покинул мир: грейс-период после разрыва истёк
-  bool full = 3;                   // true: upsert — полный список, клиент заменяет свой
-                                   //   (после входа и при пересинхронизации, см. Snapshot.resync)
+  repeated PlayerInfo upsert = 1;          // новые игроки и изменившиеся (первое появление: фракция)
+  repeated uint32 removed_player_ids = 2;  // покинули мир: грейс-период после разрыва истёк
+  bool full = 3;                           // true: upsert — полный список, клиент заменяет свой
+                                           //   (после входа и при пересинхронизации, см. Snapshot.resync)
 }
 
 // ============================================================================
@@ -217,7 +217,7 @@ message InputFrame {
                              //   сервер применяет выбранную способность
   bool capturing = 5;        // держит клавишу захвата: сервер захватывает клетку
                              //   под центром игрока (1 захватчик ≈ capture_ticks)
-  uint32 ability = 6;        // Ability.id выбранной способности; 0 = первая (ближний бой)
+  uint32 ability_id = 6;     // Ability.id выбранной способности; 0 = первая на панели
   sint32 aim_x = 7;          // прицел: направление от центра игрока, длина любая
   sint32 aim_y = 8;          //   (сервер нормирует); (0, 0) = нет прицела, снаряд не вылетает
 }

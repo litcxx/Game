@@ -12,7 +12,7 @@ void enqueue_frames(InputQueue& queue, const ::game::v1::Input& input, const Lim
         queue.last_enqueued_seq = frame.seq();
         queue.commands.push_back(InputCommand{
             frame.seq(), Intent{frame.move_x(), frame.move_y(), frame.capturing(), frame.attack(),
-                                frame.ability(), frame.aim_x(), frame.aim_y()}});
+                                frame.ability_id(), frame.aim_x(), frame.aim_y()}});
     }
 }
 

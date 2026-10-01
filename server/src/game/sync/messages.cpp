@@ -83,7 +83,7 @@ void fill_player_info(::game::v1::PlayerInfo* info, const WorldState& state,
     for (std::uint32_t index = 0; index < owners.size(); ++index) {
         if (vision.sees(index)) owners[index] = static_cast<char>(t.owners[index]);
     }
-    map->set_owners(std::move(owners));
+    map->set_owner_faction_ids(std::move(owners));
     for (std::uint32_t index : t.active) {
         if (vision.sees(index)) fill_cell_update(map->add_captures(), t, index);
     }
@@ -108,7 +108,7 @@ void fill_player_info(::game::v1::PlayerInfo* info, const WorldState& state,
 
 ::game::v1::ServerMessage make_roster_removed(std::uint32_t player_id) {
     ::game::v1::ServerMessage msg;
-    msg.mutable_roster()->add_removed(player_id);
+    msg.mutable_roster()->add_removed_player_ids(player_id);
     return msg;
 }
 
@@ -138,8 +138,8 @@ bool is_fatal(::game::v1::ErrorCode code) {
 void fill_cell_update(::game::v1::CellUpdate* out, const Territory& territory,
                       std::uint32_t index) {
     out->set_index(index);
-    out->set_owner(territory.owners[index]);
-    out->set_capture_faction(territory.capture_faction[index]);
+    out->set_owner_faction_id(territory.owners[index]);
+    out->set_capture_faction_id(territory.capture_faction[index]);
     out->set_capture_progress(static_cast<std::uint32_t>(territory.capture_progress[index]));
 }
 }  // namespace lit::game

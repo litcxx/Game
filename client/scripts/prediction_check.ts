@@ -61,7 +61,7 @@ check("error decays toward predicted", approx(pred.renderPosition.x, 400, 1.0));
   check("taking them starts the count over", same(pr.takeCorrections(), { count: 0, max: 0 }));
 
   pr.reset({ x: 2000, y: 2000 });
-  pr.step({ moveX: 1, moveY: 0, capturing: false, attack: false, ability: 0, aimX: 0, aimY: 0 });
+  pr.step({ moveX: 1, moveY: 0, capturing: false, attack: false, abilityId: 0, aimX: 0, aimY: 0 });
   pr.reconcile({ x: 2000, y: 2000 }, 0); // the server has not seen the step yet: replayed
   check("an input the server has not applied yet is no correction", same(pr.takeCorrections(), { count: 0, max: 0 }));
   pr.reset({ x: 5000, y: 5000 });

@@ -53,7 +53,7 @@ const fireMsg = (seq: number, attack: boolean) =>
       case: "input",
       value: {
         frames: [
-          { seq, moveX: 0, moveY: 0, capturing: false, attack, ability: shotAbility, aimX: 1000, aimY: 0 },
+          { seq, moveX: 0, moveY: 0, capturing: false, attack, abilityId: shotAbility, aimX: 1000, aimY: 0 },
         ],
       },
     },

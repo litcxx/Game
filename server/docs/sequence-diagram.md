@@ -127,7 +127,7 @@ WebSocket с кодом 4000 + code, а всё, что она ещё пришл�
 появляется при спавне. При отключении сессия отвязывается (`detach_session`), и
 персонаж **отходит**: остаётся в мире — видим и уязвим, тело стоит — на
 `reconnect_grace_ms` (30 с). По истечении `leave_after_grace` уводит его из мира
-вместе с телом (`Roster.removed`), запись о персонаже остаётся.
+вместе с телом (`Roster.removed_player_ids`), запись о персонаже остаётся.
 
 **Reconnect.** `Hello` с известным токеном возвращает того же персонажа, какое бы
 имя в нём ни было. Пока персонаж в мире — `Welcome{resumed=true}`: то же тело в
@@ -158,8 +158,8 @@ sequenceDiagram
     B->>world: Hello{name, session_token} (другая вкладка)
     world->>A: ServerError{SESSION_REPLACED, fatal} → close 4009
     world->>B: Welcome{resumed=true, тот же player_id}, MapState, Roster{full}
-    B--xworld: разрыв; грейс-период истёк
-    world->>others: Roster{removed: player_id}
+    B--xworld: разрыв, грейс-период истёк
+    world->>others: Roster{removed_player_ids: [player_id]}
     B->>world: Hello{name, session_token}
     world->>B: Welcome{resumed=false, тот же player_id} → NOT_SPAWNED
     world->>others: Roster{upsert}
@@ -222,7 +222,7 @@ flowchart LR
     timeouts["time_out_connections()<br/>HANDSHAKE_TIMEOUT / IDLE_TIMEOUT<br/>end_reconnect_graces(): уход отошедших"]
     snap["send_snapshots()<br/>compute_vision(фракция) → build_snapshot(state, получатель, vision)"]
     close["close_released_sessions()<br/>отпущенные сессии уходят из мира"]
-    metrics["finish_tick_metrics()<br/>время тика → Metrics; раз в период — строка metrics"]
+    metrics["finish_tick_metrics()<br/>время тика → Metrics, раз в период — строка metrics"]
     drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> timeouts --> snap --> close --> metrics
 ```
 
@@ -237,7 +237,7 @@ resync'и, закрытия за отставание, входы и выход�
 **Бой: способности.** Набор способностей задаёт конфиг сервера (`abilities`: вид
 `melee` / `projectile`, перезарядка, урон, дальность, скорость и радиус снаряда);
 клиент получает его в `Welcome.abilities`. Пока игрок держит клавишу атаки
-(`InputFrame.attack`), выбранная способность (`InputFrame.ability`, 0 = первая)
+(`InputFrame.attack`), выбранная способность (`InputFrame.ability_id`, 0 = первая на панели)
 срабатывает, как только готова **общая** перезарядка; применение любой способности
 ставит `attack_ready_tick = tick + её cooldown_ticks`, а длину сообщает
 `SelfState.attack_cooldown_ticks`. **Удар** (`melee`): урон получают все живые
@@ -272,7 +272,7 @@ sequenceDiagram
     participant P as Снаряд
     participant V as Враг на пути
 
-    A->>world: Input{attack, ability = выстрел, aim}
+    A->>world: Input{attack, ability_id = выстрел, aim}
     world->>P: resolve_attacks: снаряд из центра A вдоль aim
     world->>world: attack_ready_tick = tick + cooldown выстрела (общая перезарядка)
     loop каждый тик, пока летит
@@ -359,7 +359,7 @@ sequenceDiagram
     gw-->>C: клиент: видимые → исследованные, затем revealed (всё видимое с состоянием)
     alt ещё отказ в пределах resync_window_ms
         world->>gw: disconnect(сессия)
-        world->>world: on_disconnect → Roster.removed остальным
+        world->>world: on_disconnect → Roster.removed_player_ids остальным
     end
 ```
 

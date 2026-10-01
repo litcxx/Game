@@ -7,9 +7,9 @@ export class Roster {
   private readonly factions = new Map<number, number>();
   private readonly names = new Map<number, string>();
 
-  // Roster.upsert / removed; a full roster replaces the whole list (on join and
-  // on resync).
-  apply(upsert: readonly PlayerInfo[], full: boolean, removed: readonly number[]): void {
+  // Roster.upsert / removed_player_ids; a full roster replaces the whole list
+  // (on join and on resync).
+  apply(upsert: readonly PlayerInfo[], full: boolean, removedPlayerIds: readonly number[]): void {
     if (full) {
       this.factions.clear();
       this.names.clear();
@@ -18,7 +18,7 @@ export class Roster {
       this.factions.set(p.id, p.factionId);
       this.names.set(p.id, p.name);
     }
-    for (const id of removed) {
+    for (const id of removedPlayerIds) {
       this.factions.delete(id);
       this.names.delete(id);
     }

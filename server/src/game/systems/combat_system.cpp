@@ -63,7 +63,7 @@ void resolve_attacks(WorldState& state, const GameConfig& config, const SpatialI
         if (attacker.life != ::game::v1::LIFE_STATE_ALIVE) continue;
         if (!attacker.intent.attack) continue;                  // attack not held
         if (state.tick < attacker.attack_ready_tick) continue;  // on cooldown
-        const AbilityConfig* ability = find_ability(config, attacker.intent.ability);
+        const AbilityConfig* ability = find_ability(config, attacker.intent.ability_id);
         if (ability == nullptr) continue;  // unknown ability: nothing happens
 
         switch (ability->kind) {
@@ -88,7 +88,7 @@ void activate_blocks(WorldState& state, const GameConfig& config) {
         if (unit.life != ::game::v1::LIFE_STATE_ALIVE) continue;
         if (!unit.intent.attack) continue;                 // attack not held
         if (state.tick < unit.block_ready_tick) continue;  // block on cooldown
-        const AbilityConfig* ability = find_ability(config, unit.intent.ability);
+        const AbilityConfig* ability = find_ability(config, unit.intent.ability_id);
         if (ability == nullptr || ability->kind != AbilityKind::Block) continue;
 
         unit.block_until_tick = state.tick + ability->duration_ticks;

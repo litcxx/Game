@@ -46,10 +46,11 @@ export class Territory {
     for (const c of cells) {
       if (c.index < this.owners.length) {
         const old = this.owners[c.index]!;
-        if (old !== c.owner) {
+        const owner = c.ownerFactionId;
+        if (old !== owner) {
           if (old !== 0) this.ownedCount.set(old, (this.ownedCount.get(old) ?? 1) - 1);
-          if (c.owner !== 0) this.ownedCount.set(c.owner, (this.ownedCount.get(c.owner) ?? 0) + 1);
-          this.owners[c.index] = c.owner;
+          if (owner !== 0) this.ownedCount.set(owner, (this.ownedCount.get(owner) ?? 0) + 1);
+          this.owners[c.index] = owner;
         }
       }
       this.setCapture(c);
@@ -84,7 +85,7 @@ export class Territory {
 
   private setCapture(c: CellUpdate): void {
     if (c.index >= this.captureFaction.length) return;
-    this.captureFaction[c.index] = c.captureFaction;
+    this.captureFaction[c.index] = c.captureFactionId;
     this.captureProgress[c.index] = Math.min(100, c.captureProgress);
   }
 }

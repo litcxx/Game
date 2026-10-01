@@ -180,7 +180,7 @@ async function main(): Promise<void> {
             moveY: state.alive ? k.moveY : 0,
             capturing: k.capturing,
             attack: state.alive && mouse.attacking(),
-            ability: state.activeAbility?.id ?? 0,
+            abilityId: state.activeAbility?.id ?? 0,
             aimX: aim.x,
             aimY: aim.y,
           }),

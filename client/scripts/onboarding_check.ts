@@ -40,12 +40,12 @@ const joined = (owners: number[]): GameState => {
     }),
     1000,
   );
-  routeMessage(state, msg({ case: "mapState", value: { owners: new Uint8Array(owners), captures: [] } }), 1000);
+  routeMessage(state, msg({ case: "mapState", value: { ownerFactionIds: new Uint8Array(owners), captures: [] } }), 1000);
   state.myFaction = RED; // as a spawn click sets it
   return state;
 };
 const neutral = () => new Array<number>(12).fill(0);
-const at = (state: GameState, x: number, cells: { index: number; owner: number }[] = []) =>
+const at = (state: GameState, x: number, cells: { index: number; ownerFactionId: number }[] = []) =>
   routeMessage(
     state,
     msg({
@@ -59,7 +59,7 @@ const dead = (state: GameState) =>
 
 // The game's order for one snapshot interval: E held (or not) over the fixed
 // steps, then the snapshot lands, then the lesson looks at it.
-const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x: number, cells?: { index: number; owner: number }[]) => {
+const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x: number, cells?: { index: number; ownerFactionId: number }[]) => {
   lesson.noteCapturing(holdingE);
   at(state, x, cells);
   lesson.observe();
@@ -79,7 +79,7 @@ const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x:
   const lesson = new CaptureLesson(state, store);
   interval(state, lesson, true, 150);
   check("standing on a neutral cell with E: not yet", !state.captureLearned);
-  interval(state, lesson, true, 150, [{ index: 5, owner: RED }]);
+  interval(state, lesson, true, 150, [{ index: 5, ownerFactionId: RED }]);
   check("the neutral cell under you turns yours while you hold E: learned", state.captureLearned);
   check("... and remembered in the store", store.getItem(CAPTURED_KEY) !== null);
 }
@@ -90,7 +90,7 @@ const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x:
   const state = joined(owners);
   const lesson = new CaptureLesson(state, memoryStore());
   interval(state, lesson, true, 150);
-  interval(state, lesson, true, 150, [{ index: 5, owner: RED }]);
+  interval(state, lesson, true, 150, [{ index: 5, ownerFactionId: RED }]);
   check("an enemy cell under you turns yours while you hold E: learned", state.captureLearned);
 }
 
@@ -102,7 +102,7 @@ const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x:
   interval(state, lesson, true, 150);
   at(state, 150); // no input step since the last snapshot
   lesson.observe();
-  at(state, 150, [{ index: 5, owner: RED }]);
+  at(state, 150, [{ index: 5, ownerFactionId: RED }]);
   lesson.observe();
   check("snapshots between two input steps: E still held, learned", state.captureLearned);
 }
@@ -113,7 +113,7 @@ const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x:
   const state = joined(neutral());
   const lesson = new CaptureLesson(state, store);
   interval(state, lesson, false, 150);
-  interval(state, lesson, false, 150, [{ index: 5, owner: RED }]);
+  interval(state, lesson, false, 150, [{ index: 5, ownerFactionId: RED }]);
   check("an ally captured the cell under you, you never held E: not learned", !state.captureLearned);
   check("... and nothing stored", store.getItem(CAPTURED_KEY) === null);
 }
@@ -123,7 +123,7 @@ const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x:
   const lesson = new CaptureLesson(state, memoryStore());
   interval(state, lesson, true, 150);
   interval(state, lesson, false, 150);
-  interval(state, lesson, false, 150, [{ index: 5, owner: RED }]);
+  interval(state, lesson, false, 150, [{ index: 5, ownerFactionId: RED }]);
   check("E let go a snapshot before the cell turned: not learned", !state.captureLearned);
 }
 
@@ -142,7 +142,7 @@ const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x:
   const state = joined(neutral());
   const lesson = new CaptureLesson(state, memoryStore());
   interval(state, lesson, true, 50); // cell 4
-  interval(state, lesson, true, 150, [{ index: 5, owner: RED }]); // moved onto cell 5 as it turned
+  interval(state, lesson, true, 150, [{ index: 5, ownerFactionId: RED }]); // moved onto cell 5 as it turned
   check("the cell turned as you stepped onto it: not learned", !state.captureLearned);
 }
 
@@ -156,7 +156,7 @@ const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x:
   lesson.noteCapturing(true);
   dead(state);
   lesson.observe();
-  interval(state, lesson, true, 150, [{ index: 5, owner: RED }]); // back on cell 5, an ally took it meanwhile
+  interval(state, lesson, true, 150, [{ index: 5, ownerFactionId: RED }]); // back on cell 5, an ally took it meanwhile
   check("a death in between: the change seen on respawn doesn't count", !state.captureLearned);
 }
 
@@ -166,7 +166,7 @@ const interval = (state: GameState, lesson: CaptureLesson, holdingE: boolean, x:
   const first = joined(neutral());
   const lesson = new CaptureLesson(first, store);
   interval(first, lesson, true, 150);
-  interval(first, lesson, true, 150, [{ index: 5, owner: RED }]);
+  interval(first, lesson, true, 150, [{ index: 5, ownerFactionId: RED }]);
   const later = joined(neutral());
   new CaptureLesson(later, store);
   check("a later visit with the same store: learned from the start", later.captureLearned);

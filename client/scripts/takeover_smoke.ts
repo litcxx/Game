@@ -1,8 +1,8 @@
 // Verifies the data behind the takeover gradient: A captures the neutral cell
 // between its capital and B's on the smoke map (it steps right onto it), then B
 // (another faction, stepping left onto it) captures that OWNED cell. Mid-takeover the
-// server should keep owner = A while B's capture_progress rises (0<..<100),
-// then flip owner = B. (The client cross-fades those two.)
+// server should keep owner_faction_id = A while B's capture_progress rises (0<..<100),
+// then flip owner_faction_id = B. (The client cross-fades those two.)
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
@@ -33,7 +33,7 @@ let bHolding = false;
 let aOwned = false;
 let bReady = false;
 let bStarted = false;
-let sawGradient = false; // owner == fA while B's progress is between 0 and 100
+let sawGradient = false; // owner_faction_id == fA while B's progress is between 0 and 100
 let finalOwner = 0;
 let aSeq = 0;
 let bSeq = 0;
@@ -75,7 +75,7 @@ a.onmessage = (ev: MessageEvent) => {
     }
     for (const c of m.payload.value.cells) {
       if (c.index !== CELL) continue;
-      if (!aOwned && c.owner === fA) {
+      if (!aOwned && c.ownerFactionId === fA) {
         aOwned = true;
         send(a, capture(++aSeq, false)); // A stops so B isn't contested
         startB();
@@ -98,8 +98,8 @@ b.onmessage = (ev: MessageEvent) => {
     }
     for (const c of m.payload.value.cells) {
       if (c.index !== CELL) continue;
-      finalOwner = c.owner;
-      if (c.owner === fA && c.captureFaction === fB && c.captureProgress > 0 && c.captureProgress < 100) {
+      finalOwner = c.ownerFactionId;
+      if (c.ownerFactionId === fA && c.captureFactionId === fB && c.captureProgress > 0 && c.captureProgress < 100) {
         sawGradient = true;
       }
     }

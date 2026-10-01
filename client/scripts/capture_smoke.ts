@@ -44,8 +44,8 @@ ws.onmessage = (ev: MessageEvent) => {
     }
     for (const c of m.payload.value.cells) {
       if (c.index !== TARGET) continue;
-      if (c.captureProgress > 0 && c.owner === 0) progressSeen = true;
-      if (c.owner === faction) captured = true;
+      if (c.captureProgress > 0 && c.ownerFactionId === 0) progressSeen = true;
+      if (c.ownerFactionId === faction) captured = true;
     }
   }
 };
