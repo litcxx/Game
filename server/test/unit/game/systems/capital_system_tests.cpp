@@ -60,6 +60,8 @@ TEST(SeedCapitals, EachZoneBelongsToItsFaction) {
             EXPECT_EQ(territory.owners[i], capital.faction_id) << "cell " << i;
     EXPECT_EQ(std::ranges::count(territory.owners, 1), 13);  // a disc of radius 2
     EXPECT_EQ(std::ranges::count(territory.owners, 2), 13);
+    EXPECT_EQ(territory.owned(1), 13u);  // counted as they are (GAME-018)
+    EXPECT_EQ(territory.owned(2), 13u);
     EXPECT_EQ(territory.owners[cell(6, 3, 20)], 0u);  // just outside Red's zone
     EXPECT_EQ(territory.owners[cell(10, 10, 20)], 0u);
 }

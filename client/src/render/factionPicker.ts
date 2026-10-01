@@ -3,6 +3,7 @@ import { Application, Container, Graphics, Text } from "pixi.js";
 import { FACTION_ONCE } from "../hint.js";
 import { Button } from "./button.js";
 import { CARD_H, CARD_W, cardAt, cardRow, choiceLayout, type CardRow } from "./cardRow.js";
+import { percentText } from "./percent.js";
 
 const SELECTED = 0xe0b060; // gold rim, as the active ability slot
 const BORDER = 0x3a3a46;
@@ -12,11 +13,13 @@ interface Card {
   root: Container;
   frame: Graphics;
   name: Text;
+  score: Text; // «в сети N · P%»
 }
 
 // Faction choice before the first spawn, one block in the middle of the screen:
 // one sentence — the choice is once a season — above a row of cards (the
-// faction's diamond badge and name), the selected card gold-rimmed, and «В бой»
+// faction's diamond badge and name, under it its players online and share of the
+// map — the server's count, FactionScores), the selected card gold-rimmed, and «В бой»
 // under them: into the world, at the chosen faction's capital.
 // Shown only while the faction is still to be chosen (GameState.choosingFaction),
 // never after a death. main routes canvas clicks through hit() first, so a click
@@ -62,13 +65,25 @@ export class FactionPicker {
       badge.position.set(22, CARD_H / 2);
       const name = new Text({ text: f.name, style: { fill: "#e6e6e6", fontFamily: "monospace", fontSize: 14 } });
       name.anchor.set(0, 0.5);
-      name.position.set(40, Math.round(CARD_H / 2));
-      root.addChild(frame, badge, name);
+      name.position.set(40, Math.round(CARD_H / 2) - 8);
+      const score = new Text({ text: "", style: { fill: "#9a9a88", fontFamily: "monospace", fontSize: 11 } });
+      score.anchor.set(0, 0.5);
+      score.position.set(40, Math.round(CARD_H / 2) + 9);
+      root.addChild(frame, badge, name, score);
       this.root.addChild(root);
-      return { id: f.id, root, frame, name };
+      return { id: f.id, root, frame, name, score };
     });
     this.layout();
     this.redraw();
+  }
+
+  // Each faction's players online and share of the map (FactionScores).
+  setScores(scores: readonly { id: number; online: number; percent: number }[]): void {
+    for (const s of scores) {
+      const card = this.cards.find((c) => c.id === s.id);
+      const text = `в сети ${s.online} · ${percentText(s.percent)}`;
+      if (card && card.score.text !== text) card.score.text = text; // a Text redraws on every change
+    }
   }
 
   setSelected(id: number): void {

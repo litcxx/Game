@@ -147,17 +147,17 @@ sequenceDiagram
     participant others as остальные
 
     A->>world: Hello{name}
-    world->>A: Welcome{player_id, session_token}, MapState, Roster{full}
+    world->>A: Welcome{player_id, session_token}, MapState, Roster{full}, FactionScores
     world->>others: Roster{upsert}
     A--xworld: разрыв → Disconnected
     world->>world: detach_session: отошёл до tick + grace, намерение сброшено
     Note over world,others: тело в мире: его видят и могут ударить
     A->>world: Hello{name, session_token} (новое соединение, в грейс-период)
-    world->>A: Welcome{resumed=true, тот же player_id}, MapState, Roster{full}
+    world->>A: Welcome{resumed=true, тот же player_id}, MapState, Roster{full}, FactionScores
     Note over A: первый снапшот раскрывает всю видимость
     B->>world: Hello{name, session_token} (другая вкладка)
     world->>A: ServerError{SESSION_REPLACED, fatal} → close 4009
-    world->>B: Welcome{resumed=true, тот же player_id}, MapState, Roster{full}
+    world->>B: Welcome{resumed=true, тот же player_id}, MapState, Roster{full}, FactionScores
     B--xworld: разрыв, грейс-период истёк
     world->>others: Roster{removed_player_ids: [player_id]}
     B->>world: Hello{name, session_token}
@@ -220,10 +220,11 @@ flowchart LR
     proj["update_projectiles(state, index, dt)<br/>полёт + свип-попадания → apply_damage"]
     cap["update_captures(state)<br/>захват клетки под центром: смежной своей,<br/>не защищённой, вражеской — × множитель"]
     timeouts["time_out_connections()<br/>HANDSHAKE_TIMEOUT / IDLE_TIMEOUT<br/>end_reconnect_graces(): уход отошедших"]
+    scores["send_faction_scores()<br/>раз в секунду: FactionScores всем, не под туманом"]
     snap["send_snapshots()<br/>compute_vision(фракция) → build_snapshot(state, получатель, vision)"]
     close["close_released_sessions()<br/>отпущенные сессии уходят из мира"]
     metrics["finish_tick_metrics()<br/>время тика → Metrics, раз в период — строка metrics"]
-    drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> timeouts --> snap --> close --> metrics
+    drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> timeouts --> scores --> snap --> close --> metrics
 ```
 
 **Метрики** (GAME-012). `World` меряет каждый тик (`steady_clock`) и копит в

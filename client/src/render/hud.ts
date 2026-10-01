@@ -1,5 +1,7 @@
 import { Application, Container, Graphics, Text } from "pixi.js";
 
+import { percentText } from "./percent.js";
+
 interface Gauge {
   root: Container;
   fill: Graphics; // liquid level (masked to the circle)
@@ -63,8 +65,10 @@ export class Hud {
     this.factionName.text = name;
   }
 
+  // The faction's cells and share of the map, as the server counts them.
   setTerritory(cells: number, percent: number): void {
-    this.territory.text = `${cells} клеток · ${percent}% карты`;
+    const text = `${cells} клеток · ${percentText(percent)} карты`;
+    if (this.territory.text !== text) this.territory.text = text; // a Text redraws on every change
   }
 
   // "В СЕТИ n · ПИНГ m" (the round trip in ms, as in the concept); just the

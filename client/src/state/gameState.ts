@@ -6,6 +6,7 @@ import { LifeState } from "../gen/game/v1/protocol_pb.js";
 import { InterpolationBuffer } from "../net/interpolation.js";
 import type { Predictor } from "../net/prediction.js";
 import { SnapshotClock } from "../net/snapshotClock.js";
+import { FactionScores, type FactionStats } from "./factionScores.js";
 import { Roster } from "./roster.js";
 import { Territory, UNITS_PER_CELL, type CellState } from "./territory.js";
 
@@ -120,6 +121,7 @@ export class GameState {
   readonly players = new Map<number, Body>(); // everyone in the last snapshot
   readonly territory = new Territory();
   readonly roster = new Roster();
+  readonly scores = new FactionScores(); // the server's, once a second
   readonly fog = new FogOfWar();
   // Bumped whenever the territory or the sight changes: the world view redraws.
   worldRevision = 0;
@@ -145,6 +147,7 @@ export class GameState {
     this.blockReadyTick = this.blockCooldownTicks = 0;
     this.rttMs = undefined;
     this.myFaction = 0; // the roster tells it for a resumed body
+    this.scores.clear(); // they come right after the roster
     this.players.clear();
     this.interp.clear();
     this.shots.clear();
@@ -192,6 +195,11 @@ export class GameState {
     if (!this.alive || !this.predictor) return undefined;
     const { x, y } = this.predictor.position;
     return this.territory.cell(Math.floor(x / UNITS_PER_CELL), Math.floor(y / UNITS_PER_CELL));
+  }
+
+  // A faction's cells, share of the map and players online, as the server counts them.
+  factionStats(factionId: number): FactionStats {
+    return this.scores.of(factionId, this.territory.cols * this.territory.rows);
   }
 
   setFactions(factions: readonly Faction[]): void {

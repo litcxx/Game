@@ -30,6 +30,11 @@ namespace lit::game {
 // Echo of a Ping (RTT on the client) with the current server tick.
 ::game::v1::ServerMessage make_pong(const WorldState& state, std::uint32_t client_time_ms);
 
+// The faction scores (GDD 7.3): for each faction, in the config's order, the
+// cells it owns and its characters in the world (as in the roster) — the real
+// count, not under fog.
+::game::v1::ServerMessage make_faction_scores(const WorldState& state, const GameConfig& config);
+
 // Whether an error closes the connection: codes 1–19 (connection and protocol)
 // always do, 20+ (a refused request) never do — see ErrorCode in protocol.proto.
 bool is_fatal(::game::v1::ErrorCode code);

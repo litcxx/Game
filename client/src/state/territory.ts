@@ -13,15 +13,15 @@ export interface CellState {
 }
 
 // The territory grid as far as the client knows it: owner and capture state per
-// cell (row-major) and how many cells each faction owns. MapState sets it whole,
-// Snapshot.cells change it; a cell in the fog keeps what was last seen of it.
+// cell (row-major). MapState sets it whole, Snapshot.cells change it; a cell in
+// the fog keeps what was last seen of it. How much each faction owns is the
+// server's count (FactionScores), not this.
 export class Territory {
   cols = 1;
   rows = 1;
   owners: Uint8Array = new Uint8Array(0); // owner faction id (0 = neutral)
   captureFaction: Uint8Array = new Uint8Array(0); // who is capturing (0 = none)
   captureProgress: Uint8Array = new Uint8Array(0); // 0..100
-  private readonly ownedCount = new Map<number, number>(); // faction id -> owned cells
 
   // The map's size (Welcome); its cells come with MapState.
   resize(cols: number, rows: number): void {
@@ -34,39 +34,16 @@ export class Territory {
     this.owners = owners;
     this.captureFaction = new Uint8Array(owners.length);
     this.captureProgress = new Uint8Array(owners.length);
-    this.ownedCount.clear();
-    for (const o of owners) {
-      if (o !== 0) this.ownedCount.set(o, (this.ownedCount.get(o) ?? 0) + 1);
-    }
     for (const c of captures) this.setCapture(c);
   }
 
   // Incremental changes; returns whether there were any.
   applyCellUpdates(cells: readonly CellUpdate[]): boolean {
     for (const c of cells) {
-      if (c.index < this.owners.length) {
-        const old = this.owners[c.index]!;
-        const owner = c.ownerFactionId;
-        if (old !== owner) {
-          if (old !== 0) this.ownedCount.set(old, (this.ownedCount.get(old) ?? 1) - 1);
-          if (owner !== 0) this.ownedCount.set(owner, (this.ownedCount.get(owner) ?? 0) + 1);
-          this.owners[c.index] = owner;
-        }
-      }
+      if (c.index < this.owners.length) this.owners[c.index] = c.ownerFactionId;
       this.setCapture(c);
     }
     return cells.length > 0;
-  }
-
-  owned(factionId: number): number {
-    return this.ownedCount.get(factionId) ?? 0;
-  }
-
-  // A faction's cells and its share of the map (rounded percent).
-  stats(factionId: number): { cells: number; percent: number } {
-    const cells = this.owned(factionId);
-    const total = this.cols * this.rows;
-    return { cells, percent: total > 0 ? Math.round((cells / total) * 100) : 0 };
   }
 
   // The cell at (col, row); off the map it reads as nothing.

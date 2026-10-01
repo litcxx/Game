@@ -2856,3 +2856,77 @@ TEST(WorldCapitals, AnEnemyCannotTakeACapitalsZone) {
     ASSERT_TRUE(beside.has_value());
     EXPECT_EQ(beside->owner_faction_id(), 2u);
 }
+
+// --- Faction scores: the real count, once a second (GAME-018) ----------------
+
+namespace {
+
+std::vector<::game::v1::FactionScores> scores_to(const lit::test::MockClientGateway& gw,
+                                                 std::uint64_t session_id) {
+    std::vector<::game::v1::FactionScores> out;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_faction_scores()) out.push_back(m.faction_scores());
+    return out;
+}
+
+// One faction's line of a score.
+::game::v1::FactionScore score_of(const ::game::v1::FactionScores& scores, std::uint32_t faction) {
+    for (const auto& s : scores.scores())
+        if (s.faction_id() == faction) return s;
+    return {};
+}
+
+}  // namespace
+
+TEST(WorldScores, AJoinerGetsThemAtOnceAfterTheRoster) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, capital_config());
+
+    incoming.push(hello_event(1, "ann"));
+    world.tick(kTick);
+
+    const auto messages = messages_to(gw, 1);
+    ASSERT_GE(messages.size(), 4u);
+    EXPECT_TRUE(messages[2].has_roster());
+    ASSERT_TRUE(messages[3].has_faction_scores());
+    const auto& scores = messages[3].faction_scores();
+    ASSERT_EQ(scores.scores_size(), 2);
+    EXPECT_EQ(score_of(scores, 1).cells(), 5u);  // Red's capital zone
+    EXPECT_EQ(score_of(scores, 2).cells(), 0u);
+    EXPECT_EQ(score_of(scores, 1).online(), 0u);  // ann has not chosen yet
+}
+
+TEST(WorldScores, ThenOnceASecond) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, capital_config());  // tick_rate 60
+
+    incoming.push(hello_event(1, "ann"));
+    run_ticks(world, 120, kTick);
+
+    EXPECT_EQ(scores_to(gw, 1).size(), 3u);  // on joining, then at 1 s and 2 s
+}
+
+// The share is the real one: a capture counts though the one told cannot see it.
+TEST(WorldScores, ACaptureCountsWhereverItIs) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = capital_config();
+    config.vision_radius = 50;  // sight: the cell under you only
+    lit::game::World world(incoming, gw, config, placed({{"red", {2}}, {"blue", {15}}}));
+
+    incoming.push(hello_event(1, "red"));
+    incoming.push(hello_event(2, "blue"));
+    incoming.push(spawn_event(1, /*faction=*/1));  // on cell 2, next to Red's zone
+    incoming.push(spawn_event(2, /*faction=*/2));  // far away, in the corner
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 60, kTick);
+
+    EXPECT_FALSE(last_cell_update(gw, 2, /*index=*/2).has_value());  // blue never saw it
+    const auto scores = scores_to(gw, 2);
+    ASSERT_FALSE(scores.empty());
+    EXPECT_EQ(score_of(scores.back(), 1).cells(), 6u);  // the zone and cell 2
+    EXPECT_EQ(score_of(scores.back(), 1).online(), 1u);
+    EXPECT_EQ(score_of(scores.back(), 2).online(), 1u);
+}

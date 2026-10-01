@@ -1,12 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <random>
+#include <vector>
 
 #include "config/config.hpp"
 #include "game/v1/protocol.pb.h"
 #include "state/territory.hpp"
 #include "state/unit.hpp"
 #include "state/world_state.hpp"
+#include "systems/capital_system.hpp"
 #include "systems/capture_system.hpp"
 
 namespace {
@@ -213,4 +216,37 @@ TEST(UpdateCaptures, LosingTheLinkResetsTheCapture) {
     EXPECT_EQ(f.state.territory.capture_faction[Front::cell(3, 2)], 0);
     EXPECT_TRUE(f.state.territory.dirty.contains(Front::cell(3, 2)));  // told: it stopped
     EXPECT_EQ(f.ticks_to_capture(3, 2, 1, 300), 0);
+}
+
+// --- The counts per faction (GAME-018) --------------------------------------------
+
+// Taken cells change the owner counts as they go: after a long random fight over
+// a map they still equal a recount from scratch.
+TEST(UpdateCaptures, TheCountsMatchARecountAfterRandomCaptures) {
+    Front f;
+    f.config.capture_ticks = 3;
+    f.state.territory.reset(12, 12);
+    lit::game::seed_capitals(f.state.territory, {{1, 13, 1}, {2, 22, 1}, {3, 125, 1}});
+    std::mt19937 random{20261001};
+    std::uniform_int_distribution<std::uint32_t> pos{0, 1199};
+    std::uniform_int_distribution<std::uint32_t> faction{1, 3};
+    for (std::uint32_t id = 1; id <= 12; ++id) f.capturer(id, faction(random), 0, 0);
+
+    std::uint32_t captured = 0;
+    for (int tick = 0; tick < 6000; ++tick) {
+        if (tick % 4 == 0) {  // everyone moves on now and then
+            for (auto& [id, unit] : f.state.units) {
+                unit.x = pos(random);
+                unit.y = pos(random);
+            }
+        }
+        captured += lit::game::update_captures(f.state, f.config);
+    }
+
+    ASSERT_GT(captured, 100u);  // a real fight: cells changed hands many times
+    std::vector<std::uint32_t> recount(4, 0);
+    for (std::uint8_t owner : f.state.territory.owners) ++recount[owner];
+    for (std::uint32_t id = 0; id <= 3; ++id) {
+        EXPECT_EQ(f.state.territory.owned(id), recount[id]) << "faction " << id;
+    }
 }

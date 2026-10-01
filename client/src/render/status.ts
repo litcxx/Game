@@ -43,8 +43,16 @@ export function showStatus(state: GameState, views: StatusViews, mapMode: boolea
   const again = playing && !state.choosingFaction && state.maySpawn;
   views.respawn.show(again ? (state.life === LifeState.DEAD ? "Возродиться" : "В бой") : undefined);
   hud.setNetwork(state.roster.online, state.rttMs);
-  const stats = state.territory.stats(shownFaction);
+  const stats = state.factionStats(shownFaction);
   hud.setTerritory(stats.cells, stats.percent);
+  if (state.choosingFaction) {
+    picker.setScores(
+      state.factions.map((f) => {
+        const { online, percent } = state.factionStats(f.id);
+        return { id: f.id, online, percent };
+      }),
+    );
+  }
   hud.setHp(state.hp, state.maxHp, state.alive);
 
   const cell = state.cellUnderMe();

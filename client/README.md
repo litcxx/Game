@@ -47,12 +47,16 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   in the last snapshot), the local choices (ability slot, faction), the client's
   own simulation (predictor, interpolation buffers, projectiles), the server
   notices, and the new effects for the view to take. With **`Territory`**
-  (`src/state/territory.ts`: owner and capture per cell, cells per faction) and
-  **`Roster`** (`src/state/roster.ts`: faction and name per player). A world
+  (`src/state/territory.ts`: owner and capture per cell, as far as you know),
+  **`FactionScores`** (`src/state/factionScores.ts`: the server's count per
+  faction — cells, share of the map to a tenth of a percent, players in the
+  world; `GameState.factionStats()`) and **`Roster`** (`src/state/roster.ts`:
+  faction and name per player). A world
   revision counter bumps whenever the territory or the sight changes, so the
   scene redraws the grid and fog only then.
 - **`src/net/router.ts`** — `routeMessage(state, msg, now)`: one handler per
-  `ServerMessage` kind (Welcome, MapState, Roster, Snapshot, ServerError) —
+  `ServerMessage` kind (Welcome, MapState, Roster, FactionScores, Snapshot,
+  Pong, ServerError) —
   pure data, checked headless. Every Welcome starts a session anew
   (`GameState.startSession`: no life, bodies, projectiles, effects or errors of
   the last one); for a resumed character the full roster tells its faction.
@@ -169,7 +173,8 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   the hint line (`ABOVE_HINT_LINE`).
 - **`src/render/factionPicker.ts`** — `FactionPicker`: one block in the middle
   of the screen — a sentence (the choice is once a season) above the faction
-  cards (badge + name) and **«В бой»** under them — so the bottom of the map
+  cards (badge + name, under it «в сети N · P%» from `FactionScores`) and
+  **«В бой»** under them — so the bottom of the map
   stays clear in the full-map view. Shown only before the first spawn
   (`GameState.choosingFaction`), never after a death: «В бой» sends the spawn —
   the body comes into the world at the faction's capital — and locks the faction
@@ -180,7 +185,9 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   `Button` (`src/render/button.ts`); click routing via the pure layout in
   `src/render/cardRow.ts`. A click on the map spawns nowhere: the server alone
   places the body (the prediction snaps there with the snapshot).
-- **`src/render/hud.ts`** — `Hud`: faction badge + territory stats (top-left),
+- **`src/render/hud.ts`** — `Hud`: faction badge + territory (top-left: the
+  faction's cells and share of the map, the server's count — `FactionScores`;
+  `src/render/percent.ts` writes the share, «0,5%»),
   "В СЕТИ n · ПИНГ m" (players online, round trip in ms — as in the concept;
   no ping until the first `Pong`) + FPS (top-right), an HP gauge (bottom-left),
   a current-cell gauge (bottom-right), and a centered hint line. **`src/render/status.ts`** fills the
@@ -323,7 +330,7 @@ npx tsx scripts/errors_check.ts         # error texts, close codes, fatal / refu
 npx tsx scripts/router_check.ts         # each ServerMessage -> GameState (territory, roster, fog, you, effects, a new session)
 npx tsx scripts/session_check.ts        # join with the saved name/token, reconnect backoff, when not to reconnect
 npx tsx scripts/ui_check.ts             # overlay: modal, toasts, nickname screen, connection dialogs (happy-dom)
-npx tsx scripts/status_check.ts         # what the HUD, bar, picker and respawn button get from GameState (network line, hp, fatal)
+npx tsx scripts/status_check.ts         # what the HUD, bar, picker and respawn button get from GameState (network line, territory and picker from FactionScores, hp, fatal)
 npx tsx scripts/onboarding_check.ts     # the capture hint goes after your own first capture, and stays gone
 npx tsx scripts/server_url_check.ts     # the server address: VITE_SERVER_URL, else the page's origin at /ws
 ```
@@ -336,6 +343,7 @@ npx tsx scripts/m2_smoke.ts         # spawn + movement
 npx tsx scripts/capture_smoke.ts    # hold E -> capture a cell
 npx tsx scripts/takeover_smoke.ts   # capture an enemy-owned cell
 npx tsx scripts/front_smoke.ts      # only next to your land: a far cell won't go, then does once the one between is yours
+npx tsx scripts/scores_smoke.ts     # FactionScores right after the roster, every faction counted unseen; online after a spawn; once a second
 npx tsx scripts/combat_smoke.ts     # area attack -> hit -> death
 npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
 npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit (fails on no damage)

@@ -10,7 +10,7 @@ export interface CardRow {
   count: number;
 }
 
-export const CARD_W = 150;
+export const CARD_W = 170; // room for «в сети 25 · 33,3%» under the name
 export const CARD_H = 44;
 export const CARD_GAP = 12;
 export const NOTE_GAP = 28; // between the note and the cards; the row's title sits in it

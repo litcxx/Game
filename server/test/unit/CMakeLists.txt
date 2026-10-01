@@ -28,7 +28,9 @@ set(SOURCES
   game/systems/projectile_system_tests.cpp
   game/systems/spawn_system_tests.cpp
   game/systems/vision_system_tests.cpp
+  game/state/territory_tests.cpp
   game/sync/delivery_tests.cpp
+  game/sync/messages_tests.cpp
   game/world/connection_tests.cpp
   game/world/metrics_tests.cpp
   game/world/world_tests.cpp

@@ -21,6 +21,11 @@ export interface Spot {
   y: number;
 }
 
+// Every faction of the smoke map, in its order (the server's Welcome.factions).
+export function factionIds(): number[] {
+  return map.factions.map((f) => f.id);
+}
+
 export function spot(role: string): Spot {
   const faction = map.factions.find((f) => f.name === role);
   const capital = faction && map.capitals.find((c) => c.faction_id === faction.id);

@@ -9,18 +9,18 @@ const check = (name: string, cond: boolean) => {
   if (!cond) failures++;
 };
 
-// 1000 px wide screen, 4 cards of 150x44 with 12 px gaps, the row's top at 700:
-// row width 636 -> x0 = 182.
+// 1000 px wide screen, 4 cards of 170x44 with 12 px gaps, the row's top at 700:
+// row width 716 -> x0 = 142.
 const row = cardRow(1000, 4, 700);
-check("row is centred", row.x0 === 182 && row.y === 700);
-check("top-left corner hits card 0", cardAt(row, 182, 700) === 0);
-check("right edge of card 0 still hits it", cardAt(row, 332, 722) === 0);
-check("the gap after card 0 hits nothing", cardAt(row, 338, 722) === -1);
-check("left edge of card 1", cardAt(row, 344, 722) === 1);
-check("middle of the last card", cardAt(row, 743, 722) === 3);
-check("just right of the row", cardAt(row, 819, 722) === -1);
+check("row is centred", row.x0 === 142 && row.y === 700);
+check("top-left corner hits card 0", cardAt(row, 142, 700) === 0);
+check("right edge of card 0 still hits it", cardAt(row, 312, 722) === 0);
+check("the gap after card 0 hits nothing", cardAt(row, 318, 722) === -1);
+check("left edge of card 1", cardAt(row, 324, 722) === 1);
+check("middle of the last card", cardAt(row, 773, 722) === 3);
+check("just right of the row", cardAt(row, 859, 722) === -1);
 check("far right", cardAt(row, 990, 722) === -1);
-check("just left of the row", cardAt(row, 181, 722) === -1);
+check("just left of the row", cardAt(row, 141, 722) === -1);
 check("above the row", cardAt(row, 400, 699) === -1);
 check("below the row", cardAt(row, 400, 745) === -1);
 check("an empty row hits nothing", cardAt(cardRow(1000, 0, 700), 500, 722) === -1);
@@ -33,7 +33,7 @@ const bottom = choice.button.y + BUTTON_H;
 check("choice: the note above the cards, the gap between", choice.row.y === choice.noteY + 20 + NOTE_GAP);
 check("choice: «В бой» under the cards, centred", choice.button.y === choice.row.y + CARD_H + BUTTON_GAP && choice.button.x === (1000 - BUTTON_W) / 2 && choice.button.w === BUTTON_W);
 check("choice: the block centred vertically", Math.abs(top - (800 - bottom)) <= 1);
-check("choice: the row centred horizontally", choice.row.x0 === 182);
+check("choice: the row centred horizontally", choice.row.x0 === 142);
 check("choice: clear of the bottom (the hint line and the map's edge)", bottom < 800 - 150);
 
 // Respawning: one button in the middle of the screen.

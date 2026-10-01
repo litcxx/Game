@@ -2,6 +2,7 @@
 
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 
 namespace lit::game {
@@ -141,5 +142,21 @@ void fill_cell_update(::game::v1::CellUpdate* out, const Territory& territory,
     out->set_owner_faction_id(territory.owners[index]);
     out->set_capture_faction_id(territory.capture_faction[index]);
     out->set_capture_progress(static_cast<std::uint32_t>(territory.capture_progress[index]));
+}
+
+::game::v1::ServerMessage make_faction_scores(const WorldState& state, const GameConfig& config) {
+    std::unordered_map<std::uint32_t, std::uint32_t> online;  // faction id -> in the world
+    for (const auto& [id, character] : state.characters) {
+        if (character.in_world && character.faction_id != 0) ++online[character.faction_id];
+    }
+    ::game::v1::ServerMessage msg;
+    auto* scores = msg.mutable_faction_scores();
+    for (const FactionConfig& faction : config.factions) {
+        auto* score = scores->add_scores();
+        score->set_faction_id(faction.id);
+        score->set_cells(state.territory.owned(faction.id));
+        score->set_online(online[faction.id]);
+    }
+    return msg;
 }
 }  // namespace lit::game
