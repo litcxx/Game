@@ -66,6 +66,16 @@ const joined = (): GameState => {
   check("dead, may respawn: «Возродиться» in the middle", same(last["respawn.show"], ["Возродиться"]));
 }
 {
+  const state = joined(); // a 4x3 map: 12 cells
+  const { views, last } = fakeViews();
+  showStatus(state, views, false, 0);
+  check("territory before the scores: nothing yet", same(last["hud.setTerritory"], [0, 0]));
+  routeMessage(state, msg({ case: "factionScores", value: { scores: [{ factionId: 1, cells: 3, online: 2 }] } }), 0);
+  showStatus(state, views, false, 0);
+  check("territory: the server's count and share (FactionScores)", same(last["hud.setTerritory"], [3, 25]));
+  check("the picker: online and share per faction", same(last["picker.setScores"], [[{ id: 1, online: 2, percent: 25 }]]));
+}
+{
   const state = joined();
   routeMessage(state, msg({ case: "snapshot", value: { tick: 1, you: { life: LifeState.ALIVE }, players: [{ id: 7, x: 150, y: 50, hp: 80 }] } }), 0);
   const { views, last } = fakeViews();

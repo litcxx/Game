@@ -127,6 +127,14 @@ lives on the server; the browser client predicts, interpolates, and renders.
   capitals. A neutral cell takes `capture_ticks` (90 = 1.5 s), an enemy's
   `capture_enemy_multiplier` (2.0) times as long; a capture that stops — the
   key released, or the cell it grew from lost — starts over.
+- **Faction scores (GAME-018, GDD 7.3).** `Territory` counts the cells per
+  faction as they change hands: an owner is set only through `set_owner()`,
+  which moves the cell between the counts in O(1). `make_faction_scores()` gives
+  each faction (in the config's order) its cells and its characters in the
+  world — as in the roster, the fallen and those away in their grace too.
+  `FactionScores` goes to a joiner right after the roster, then to everyone once
+  a second: the real count over the whole map, not under fog. Each is whole, so
+  a lost one needs no repair.
 - **Spawning is at the capital.** A `SpawnRequest` names only the faction: the
   body comes into the world at the centre of that faction's capital cell, the
   first time and after every death (until fortresses, GAME-029). `try_spawn()`
@@ -381,11 +389,12 @@ script role, where its players spawn — laid over the shipped rules by
 
 The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`,
 `Combat`, `Ability`, `Ranged`, `Block`, `Capture`, `Fog`, `Resync`, `Errors`,
-`Limits`, `Metrics`, `Reconnect`, `Faction`, `Capitals`) test the game end to end through a mock
+`Limits`, `Metrics`, `Reconnect`, `Faction`, `Capitals`, `Scores`) test the game end to end through a mock
 gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
 `Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits`,
 `CapitalSpawnPoint`, `SpawnAtCapital`, `SpawnFaction`, `CapitalZone`,
-`SeedCapitals`, `ProtectCapitals`, `Capturable`, `UpdateCaptures`, `SmokeMap`,
+`SeedCapitals`, `ProtectCapitals`, `Capturable`, `UpdateCaptures`, `TerritoryCounts`,
+`FactionScoresMessage`, `SmokeMap`,
 `FixedStep`, `Metrics`, `GameConfigParse`, `LogConfigParse`, `SessionToken` and
 `TSQueueTest` test those units directly; `Presence` covers characters and
 sessions (away, the grace, takeover, two sessions in a row driving one

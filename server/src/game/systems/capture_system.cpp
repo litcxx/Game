@@ -60,7 +60,7 @@ std::uint32_t update_captures(WorldState& state, const GameConfig& config) {
         t.capture_progress[index] += step(config, /*enemy=*/t.owners[index] != 0);
         t.dirty.insert(index);
         if (t.capture_progress[index] >= kCaptured) {
-            t.owners[index] = static_cast<std::uint8_t>(faction);
+            t.set_owner(index, static_cast<std::uint8_t>(faction));
             t.capture_faction[index] = 0;
             t.capture_progress[index] = 0.0;
             ++captured;

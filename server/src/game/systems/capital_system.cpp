@@ -26,7 +26,7 @@ std::vector<std::uint32_t> capital_zone(const CapitalConfig& capital, std::uint3
 void seed_capitals(Territory& territory, const std::vector<CapitalConfig>& capitals) {
     for (const CapitalConfig& capital : capitals) {
         for (std::uint32_t index : capital_zone(capital, territory.width, territory.height)) {
-            territory.owners[index] = static_cast<std::uint8_t>(capital.faction_id);
+            territory.set_owner(index, static_cast<std::uint8_t>(capital.faction_id));
         }
     }
 }

@@ -37,10 +37,10 @@ sequenceDiagram
     net->>ws: send(Ping{client_time_ms}) — сразу и дальше раз в 2 с
     ws->>srv: WS binary frame
     srv->>world: push_packet(session_id, msg)
-    world->>srv: send_to(id): Welcome, MapState, Roster
+    world->>srv: send_to(id): Welcome, MapState, Roster, FactionScores
     srv->>ws: WS binary frames
     ws-->>net: onmessage
-    net->>ses: onMessage(Welcome / MapState / Roster)
+    net->>ses: onMessage(Welcome / MapState / Roster / FactionScores)
     ses->>ses: Welcome: сохранить ник и session_token в localStorage, status playing → экран ника скрыт
     ses->>main: onMessage
     main->>main: routeMessage → GameState: новая сессия (старое состояние сброшено), конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта, ростер
@@ -77,7 +77,7 @@ sequenceDiagram
     ses->>net: connect(ник, токен) — тот же персонаж
     Note over net: сторож считает от connect(): зависшая попытка тоже кончается через 6 с
     net->>srv: Hello{name, session_token}
-    srv-->>net: Welcome{resumed = true, тот же player_id}, MapState, Roster{full}
+    srv-->>net: Welcome{resumed = true, тот же player_id}, MapState, Roster{full}, FactionScores
     net-->>ses: onMessage(Welcome)
     ses-->>main: status playing: диалог закрыт, задержки заново с 1 с
     main->>main: router: новая сессия, фракция воскрешённого тела — из полного ростера

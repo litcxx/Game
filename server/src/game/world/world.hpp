@@ -44,6 +44,8 @@ class World {
     void process_event(const ClientEvent& ev);
     bool is_snapshot_tick() const { return state_.tick % snapshot_interval_ == 0; }
     void send_snapshots();
+    // Once a second: the faction scores to everyone (GAME-018).
+    void send_faction_scores();
     // End of tick: record how long it took; log the period's metrics when it ends.
     void finish_tick_metrics(std::chrono::steady_clock::time_point started);
 
@@ -95,10 +97,11 @@ class World {
     const GameConfig config_;
     const SpawnPoint spawn_point_;  // where characters come into the world
 
-    std::uint32_t snapshot_interval_{1};    // ticks between snapshots (tick_rate / snapshot_rate)
-    std::uint32_t resync_window_ticks_{1};  // config.limits.resync_window_ms in ticks
-    std::uint32_t grace_ticks_{0};          // config.reconnect_grace_ms in ticks
-    TickLimits limits_;                     // config.limits in ticks
+    std::uint32_t snapshot_interval_{1};      // ticks between snapshots (tick_rate / snapshot_rate)
+    std::uint32_t scores_interval_ticks_{1};  // ticks between faction scores: a second
+    std::uint32_t resync_window_ticks_{1};    // config.limits.resync_window_ms in ticks
+    std::uint32_t grace_ticks_{0};            // config.reconnect_grace_ms in ticks
+    TickLimits limits_;                       // config.limits in ticks
     // Every open connection, from Connected (or its first message) to Disconnected.
     std::unordered_map<std::uint64_t, Connection> connections_;
     // Sessions to close at the end of the tick, with the reason (UNSPECIFIED = a

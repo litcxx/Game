@@ -56,6 +56,7 @@ message ServerMessage {
     Snapshot snapshot = 4;
     Pong pong = 5;
     ServerError error = 6;
+    FactionScores faction_scores = 7;
   }
 }
 
@@ -190,6 +191,20 @@ message Roster {
   repeated uint32 removed_player_ids = 2;  // покинули мир: грейс-период после разрыва истёк
   bool full = 3;                           // true: upsert — полный список, клиент заменяет свой
                                            //   (после входа и при пересинхронизации, см. Snapshot.resync)
+}
+
+// Счёт фракций (ГДД 7.3, п. 8): реальный, по всей карте, а не по тому, что видно
+// получателю, — туман его не скрывает. Сразу после входа (за Roster), затем раз
+// в секунду всем. Каждый — полный: потерянный заменит следующий.
+message FactionScores {
+  repeated FactionScore scores = 1;  // по одной на фракцию, в порядке Welcome.factions
+}
+
+message FactionScore {
+  uint32 faction_id = 1;
+  uint32 cells = 2;   // клеток во владении фракции
+  uint32 online = 3;  // её персонажей в мире — тех же, что в Roster (в т.ч. павших
+                      //   и отошедших в грейс-период)
 }
 
 // ============================================================================

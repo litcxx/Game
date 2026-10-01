@@ -58,6 +58,7 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
     snapshot_interval_ = config_.tick_rate / rate;
     if (snapshot_interval_ == 0) snapshot_interval_ = 1;
+    scores_interval_ticks_ = std::max<std::uint32_t>(config_.tick_rate, 1);
 
     // Rounded up: a window shorter than a tick still spans one.
     const std::uint64_t window =
@@ -111,6 +112,7 @@ void World::tick(double dt) {
     metrics_.record_captures(update_captures(state_, config_));
     time_out_connections();
     end_reconnect_graces();
+    send_faction_scores();
     send_snapshots();
     close_released_sessions();
     finish_tick_metrics(started);
@@ -259,10 +261,11 @@ void World::resume(std::uint64_t session_id, std::uint32_t character_id,
 void World::greet(std::uint64_t session_id, const Character& character,
                   std::string_view session_token, bool resumed) {
     // Welcome, then the map (as far as it sees: nothing yet — snapshots reveal
-    // the rest), then the full roster.
+    // the rest), the full roster and the faction scores (else the next second's).
     send(session_id, make_welcome(state_, config_, character, session_token, resumed));
     send(session_id, make_map_state(state_, state_.sessions.at(session_id).sync.vision));
     send(session_id, make_full_roster(state_));
+    send(session_id, make_faction_scores(state_, config_));
 }
 
 void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& spawn,
@@ -321,6 +324,11 @@ void World::end_reconnect_graces() {
         spdlog::info("World: player_id={} left the world: its reconnect grace is over",
                      character_id);
     }
+}
+
+void World::send_faction_scores() {
+    if (state_.tick % scores_interval_ticks_ != 0) return;
+    broadcast(make_faction_scores(state_, config_));  // the same for all: not under fog
 }
 
 void World::send_snapshots() {

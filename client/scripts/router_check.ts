@@ -14,6 +14,7 @@ import {
 } from "../src/gen/game/v1/protocol_pb.js";
 import { usualHint } from "../src/hint.js";
 import { routeMessage } from "../src/net/router.js";
+import { percentText } from "../src/render/percent.js";
 import { FADE_MS, GameState, INTERP_DELAY_MS } from "../src/state/gameState.js";
 
 let failures = 0;
@@ -86,21 +87,44 @@ const joined = (nowMs = 1000): GameState => {
   check("your own faction is set locally", state.roster.factionOf(7) === 2);
 }
 
+// --- FactionScores: the real count, from the server ------------------------------
+{
+  const state = joined(); // a 4x3 map: 12 cells
+  const scores = (list: { factionId: number; cells: number; online: number }[]) =>
+    routeMessage(state, msg({ case: "factionScores", value: { scores: list } } as never), 1000);
+  check("before any scores: nothing", same(state.factionStats(1), { cells: 0, percent: 0, online: 0 }));
+  scores([
+    { factionId: 1, cells: 3, online: 2 },
+    { factionId: 2, cells: 6, online: 0 },
+  ]);
+  check("FactionScores: cells, share of the map and online", same(state.factionStats(1), { cells: 3, percent: 25, online: 2 }));
+  check("FactionScores: whatever the client knows of the map", same(state.factionStats(2), { cells: 6, percent: 50, online: 0 }));
+  check("a faction not in them: nothing", same(state.factionStats(9), { cells: 0, percent: 0, online: 0 }));
+  scores([{ factionId: 1, cells: 4, online: 1 }]);
+  check("the next scores replace them", same(state.factionStats(1), { cells: 4, percent: 33.3, online: 1 }) && same(state.factionStats(2), { cells: 0, percent: 0, online: 0 }));
+  state.territory.resize(100, 100);
+  scores([{ factionId: 1, cells: 49, online: 1 }]); // a capital's zone at the season's start
+  check("the share to a tenth of a percent: a capital's zone isn't 0 %", state.factionStats(1).percent === 0.5);
+  check("... written the Russian way", percentText(0.5) === "0,5%" && percentText(25) === "25%" && percentText(33.3) === "33,3%");
+  routeMessage(state, welcome(), 2000);
+  check("a new Welcome forgets them (the server sends them again)", same(state.factionStats(1), { cells: 0, percent: 0, online: 0 }));
+}
+
 // --- Territory: MapState and Snapshot.cells -------------------------------------
 {
   const state = joined();
   const before = state.worldRevision;
   const owners = new Uint8Array([1, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0]);
   routeMessage(state, msg({ case: "mapState", value: { ownerFactionIds: owners, captures: [{ index: 2, ownerFactionId: 0, captureFactionId: 2, captureProgress: 40 }] } } as never), 1000);
-  check("MapState: owned cells per faction", state.territory.owned(1) === 2 && state.territory.owned(2) === 1);
-  check("MapState: faction stats", same(state.territory.stats(1), { cells: 2, percent: 17 }));
+  check("MapState: the owners", state.territory.cell(0, 0).owner === 1 && state.territory.cell(3, 0).owner === 2);
+  check("MapState: no say in the score (the server's FactionScores)", same(state.factionStats(1), { cells: 0, percent: 0, online: 0 }));
   check("MapState: a capture in progress", same(state.territory.cell(2, 0), { index: 2, owner: 0, captureFaction: 2, captureProgress: 40 }));
   check("MapState: the world is redrawn", state.worldRevision > before);
   check("a cell off the map reads as nothing", same(state.territory.cell(4, 0), { index: 4, owner: 0, captureFaction: 0, captureProgress: 0 }));
 
   const mid = state.worldRevision;
   routeMessage(state, snapshot({ tick: 5, cells: [{ index: 2, ownerFactionId: 2, captureFactionId: 0, captureProgress: 0 }, { index: 0, ownerFactionId: 0 }] }), 1000);
-  check("Snapshot.cells: owners and counts follow", state.territory.owned(1) === 1 && state.territory.owned(2) === 2 && state.territory.cell(2, 0).owner === 2);
+  check("Snapshot.cells: the owners follow", state.territory.cell(0, 0).owner === 0 && state.territory.cell(2, 0).owner === 2);
   check("Snapshot.cells: the capture is over", state.territory.cell(2, 0).captureProgress === 0);
   check("Snapshot.cells: the world is redrawn", state.worldRevision > mid);
   const quiet = state.worldRevision;

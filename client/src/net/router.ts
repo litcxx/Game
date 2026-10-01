@@ -3,6 +3,7 @@ import { effectsFromEvents, hitTakenEffect } from "../effects.js";
 import { errorText } from "../errors.js";
 import {
   LifeState,
+  type FactionScores,
   type MapState,
   type Pong,
   type Roster,
@@ -42,6 +43,9 @@ export function routeMessage(state: GameState, msg: ServerMessage, nowMs: number
     case "pong":
       onPong(state, msg.payload.value, nowMs);
       break;
+    case "factionScores":
+      onFactionScores(state, msg.payload.value);
+      break;
     default:
       break;
   }
@@ -77,6 +81,11 @@ function onWelcome(state: GameState, w: Welcome): void {
 function onMapState(state: GameState, m: MapState): void {
   state.territory.setMapState(m.ownerFactionIds, m.captures);
   state.worldRevision++;
+}
+
+// Each is whole: it replaces the last (HUD and picker read them).
+function onFactionScores(state: GameState, s: FactionScores): void {
+  state.scores.set(s.scores);
 }
 
 function onRoster(state: GameState, r: Roster): void {
