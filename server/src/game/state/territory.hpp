@@ -17,6 +17,7 @@ struct Territory {
     std::vector<std::uint8_t> owners;           // faction id, 0 = neutral
     std::vector<std::uint8_t> capture_faction;  // who is capturing (0 = none)
     std::vector<double> capture_progress;       // 0..100
+    std::vector<bool> protected_cells;          // in a capital's zone: its enemies can't take it
     std::unordered_set<std::uint32_t> active;   // cells with progress > 0
     std::unordered_set<std::uint32_t> dirty;    // changed since the last snapshot
 
@@ -27,6 +28,7 @@ struct Territory {
         owners.assign(n, 0);
         capture_faction.assign(n, 0);
         capture_progress.assign(n, 0.0);
+        protected_cells.assign(n, false);
         active.clear();
         dirty.clear();
     }

@@ -80,7 +80,9 @@ struct GameConfig {
     std::uint32_t max_hp;                  // (100)
     std::uint32_t respawn_delay_ticks;     // (300 = 5 s at 60 Hz)
     std::uint32_t reconnect_grace_ms;      // how long a dropped session is kept (30000)
-    std::uint32_t capture_ticks;           // ticks for one player to capture a cell (60 = 1 s)
+    std::uint32_t capture_ticks;           // ticks for one player to capture a cell (90 = 1.5 s)
+    double capture_enemy_multiplier;       // an enemy cell takes capture_ticks times this (2.0);
+                                           //   server-only, like capture_ticks
     std::uint32_t player_radius;           // body hit radius for projectiles, units (16)
     std::uint32_t vision_radius;           // fog of war: sight range of players and owned cells,
                                            //   units (300 = 3 cells); server-only, like capture
@@ -92,7 +94,7 @@ struct GameConfig {
 
 // Parses the "game" section of a config document. Throws on a missing or invalid
 // value (unknown ability kind, no abilities, bad ids, a projectile that can't fly,
-// a block without a duration, a zero vision radius or limit).
+// a block without a duration, a zero vision radius or limit, a capture multiplier <= 0).
 GameConfig parse_game_config(const std::string& config_json);
 
 // Parses the "log" section of a config document. Throws on a missing value, an

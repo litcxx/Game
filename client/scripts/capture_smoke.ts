@@ -57,4 +57,4 @@ setTimeout(() => {
   console.log("VERDICT:", pass ? "PASS" : "FAIL");
   ws.close();
   process.exit(pass ? 0 : 1);
-}, 3000);
+}, 4000); // spawn, a step, 1.5 s of capture

@@ -32,7 +32,8 @@ std::string config_json(const std::string& abilities, const std::string& vision_
       "game": {
         "tick_rate": 60, "snapshot_rate": 20, "map_width": 100, "map_height": 100,
         "move_speed": 300, "max_hp": 100, "respawn_delay_ticks": 300,
-        "reconnect_grace_ms": 30000, "capture_ticks": 60, "player_radius": 16,
+        "reconnect_grace_ms": 30000, "capture_ticks": 60, "capture_enemy_multiplier": 2.0,
+        "player_radius": 16,
         "vision_radius": )" +
            vision_radius + R"(, "limits": )" + limits + R"(,
         "factions": )" +
@@ -47,6 +48,17 @@ std::string config_json(const std::string& abilities, const std::string& vision_
 
 const std::string kMelee =
     R"({ "id": 1, "kind": "melee", "name": "Удар", "cooldown_ticks": 45, "damage": 20, "range": 120 })";
+
+// `config` with the game section's `key` set to `value`; a null `value` removes it.
+std::string with_game_key(const std::string& config, const char* key, const nlohmann::json& value) {
+    auto doc = nlohmann::json::parse(config);
+    if (value.is_null()) {
+        doc["game"].erase(key);
+    } else {
+        doc["game"][key] = value;
+    }
+    return doc.dump();
+}
 
 // Red and Blue with the given capitals.
 std::string two_factions(const std::string& capitals) {
@@ -184,6 +196,23 @@ TEST(GameConfigParse, RejectsCapitalZonesThatMayOverlap) {
     EXPECT_NO_THROW(lit::parse_game_config(two_factions(R"([
                      { "faction_id": 1, "cell": 1010, "protected_radius": 4 },
                      { "faction_id": 2, "cell": 1019, "protected_radius": 4 } ])")));
+}
+
+TEST(GameConfigParse, ReadsTheEnemyCaptureMultiplier) {
+    const auto c = lit::parse_game_config(config_json("[" + kMelee + "]"));
+
+    EXPECT_EQ(c.capture_enemy_multiplier, 2.0);
+}
+
+TEST(GameConfigParse, RejectsAZeroOrMissingEnemyCaptureMultiplier) {
+    const std::string config = config_json("[" + kMelee + "]");
+    for (const nlohmann::json& value :
+         {nlohmann::json(0.0), nlohmann::json(-1.5), nlohmann::json()}) {
+        EXPECT_THROW(
+            lit::parse_game_config(with_game_key(config, "capture_enemy_multiplier", value)),
+            std::exception)
+            << value;
+    }
 }
 
 TEST(GameConfigParse, RejectsZeroVisionRadius) {
@@ -342,6 +371,11 @@ TEST(ShippedConfig, EveryCapitalZoneIsWholeOnTheMap) {
         EXPECT_LT(col + r, config.map_width) << "capital of faction " << capital.faction_id;
         EXPECT_LT(row + r, config.map_height) << "capital of faction " << capital.faction_id;
     }
+}
+
+// A front holds: taking a cell from an enemy is slower than taking a neutral one.
+TEST(ShippedConfig, AnEnemyCellTakesLongerThanANeutralOne) {
+    EXPECT_GT(shipped_config().capture_enemy_multiplier, 1.0);
 }
 
 // Ranged alone isn't the whole fight: at least five hits to kill.

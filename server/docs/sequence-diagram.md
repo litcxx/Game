@@ -218,7 +218,7 @@ flowchart LR
     blocks["activate_blocks(state)<br/>блок: своя перезарядка, до атак"]
     combat["resolve_attacks(state, index)<br/>способность: удар по площади / запуск снаряда"]
     proj["update_projectiles(state, index, dt)<br/>полёт + свип-попадания → apply_damage"]
-    cap["update_captures(state)<br/>захват клетки под центром"]
+    cap["update_captures(state)<br/>захват клетки под центром: смежной своей,<br/>не защищённой, вражеской — × множитель"]
     timeouts["time_out_connections()<br/>HANDSHAKE_TIMEOUT / IDLE_TIMEOUT<br/>end_reconnect_graces(): уход отошедших"]
     snap["send_snapshots()<br/>compute_vision(фракция) → build_snapshot(state, получатель, vision)"]
     close["close_released_sessions()<br/>отпущенные сессии уходят из мира"]

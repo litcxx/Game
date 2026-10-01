@@ -17,7 +17,8 @@
     "max_hp": 100,
     "respawn_delay_ticks": 300,
     "reconnect_grace_ms": 30000,
-    "capture_ticks": 60,
+    "capture_ticks": 90,
+    "capture_enemy_multiplier": 2.0,
     "player_radius": 16,
     "vision_radius": 300,
     "limits": {

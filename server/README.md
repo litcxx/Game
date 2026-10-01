@@ -116,7 +116,17 @@ lives on the server; the browser client predicts, interpolates, and renders.
   start until the world save). Where the capitals are is static knowledge,
   sent in `Welcome.map` and seen through the fog; who owns the zones is
   territory, seen under sight like any cell (the zones' cells keep watch for
-  their faction). Their protection from capture comes with capture v2 (GAME-017).
+  their faction). Its enemies can never take them: `protect_capitals()` marks
+  the zones in `Territory::protected_cells`, from the config, whatever the
+  season's owners are.
+- **Capture v2 (GAME-017, GDD 7.3).** Each alive body holding capture claims the
+  cell under its centre; two factions on one cell contest it (no progress). A
+  faction takes only a cell it may (`capturable()` in
+  `src/game/systems/capture_system`): not its own, not protected, and next to
+  one of its cells by a side (4 neighbours) — the front grows out of the
+  capitals. A neutral cell takes `capture_ticks` (90 = 1.5 s), an enemy's
+  `capture_enemy_multiplier` (2.0) times as long; a capture that stops — the
+  key released, or the cell it grew from lost — starts over.
 - **Spawning is at the capital.** A `SpawnRequest` names only the faction: the
   body comes into the world at the centre of that faction's capital cell, the
   first time and after every death (until fortresses, GAME-029). `try_spawn()`
@@ -278,11 +288,12 @@ see [docs/ops.md](../docs/ops.md)); CI builds and unit-tests it too.
 
 The server reads its address, port, thread count, and the game rules (matching
 `game.v1.GameConfig`, plus the factions, their capitals and the abilities, and
-the server-only `capture_ticks`, `vision_radius` and the connection `limits`) from
-the config file, and the `log` section below; invalid abilities, a faction
-without exactly one capital (or a capital off the map, or two whose zones may
-overlap), a zero vision radius, a zero or missing limit, an unknown log level or
-a zero metrics interval stop the server at startup.
+the server-only `capture_ticks`, `capture_enemy_multiplier`, `vision_radius` and
+the connection `limits`) from the config file, and the `log` section below;
+invalid abilities, a faction without exactly one capital (or a capital off the
+map, or two whose zones may overlap), a capture multiplier of 0 or less, a zero
+vision radius, a zero or missing limit, an unknown log level or a zero metrics
+interval stop the server at startup.
 
 ## Logs & metrics
 
@@ -370,10 +381,11 @@ script role, where its players spawn — laid over the shipped rules by
 
 The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`,
 `Combat`, `Ability`, `Ranged`, `Block`, `Capture`, `Fog`, `Resync`, `Errors`,
-`Limits`, `Metrics`, `Reconnect`, `Faction`) test the game end to end through a mock
+`Limits`, `Metrics`, `Reconnect`, `Faction`, `Capitals`) test the game end to end through a mock
 gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
 `Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits`,
-`CapitalSpawnPoint`, `SpawnAtCapital`, `SpawnFaction`, `SmokeMap`,
+`CapitalSpawnPoint`, `SpawnAtCapital`, `SpawnFaction`, `CapitalZone`,
+`SeedCapitals`, `ProtectCapitals`, `Capturable`, `UpdateCaptures`, `SmokeMap`,
 `FixedStep`, `Metrics`, `GameConfigParse`, `LogConfigParse`, `SessionToken` and
 `TSQueueTest` test those units directly; `Presence` covers characters and
 sessions (away, the grace, takeover, two sessions in a row driving one

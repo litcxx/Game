@@ -19,6 +19,7 @@ set(SOURCES
   game/spatial/geometry_tests.cpp
   game/spatial/spatial_index_tests.cpp
   game/systems/capital_system_tests.cpp
+  game/systems/capture_system_tests.cpp
   game/systems/combat_system_tests.cpp
   game/systems/damage_tests.cpp
   game/systems/input_system_tests.cpp

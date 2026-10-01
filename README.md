@@ -79,7 +79,8 @@ VPS, `sudo deploy/setup.sh <domain>` once, then `deploy/deploy.sh` for every
 release — the game at `https://<domain>/`, Caddy in front (HTTPS, the client,
 `/ws` to the server), the server as a systemd service that restarts by itself.
 
-**Controls:** WASD move · hold **E** capture the cell under you · hold **left
+**Controls:** WASD move · hold **E** capture the cell under you (one next to your
+faction's land; an enemy's takes twice as long) · hold **left
 mouse** to use the active ability (**1** melee area attack, **2** ranged shot
 toward the cursor, **3** block) · keys **1–5** pick the ability · click a faction
 card (once: it is yours until the season changes), then **«В бой»** — you come

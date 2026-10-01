@@ -39,6 +39,7 @@ lit::GameConfig test_config() {
     c.respawn_delay_ticks = 5;
     c.reconnect_grace_ms = 30000;
     c.capture_ticks = 5;  // small so capture tests flip quickly
+    c.capture_enemy_multiplier = 2.0;
     c.player_radius = 16;
     c.vision_radius = 1000;  // sees the whole 4x4 map: fog of war hides nothing here
                              //   (the WorldFog suite uses fog_config())
@@ -601,7 +602,8 @@ TEST(WorldMovement, IgnoresInputWhenNotSpawned) {
 TEST(WorldCapture, HoldingCaptureFlipsCellOwner) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    auto config = test_config();  // capture_ticks = 5
+    auto config = test_config();    // capture_ticks = 5
+    config.capitals = {{1, 4, 0}};  // Red holds cell 4, next to cell 5
     lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
@@ -614,16 +616,39 @@ TEST(WorldCapture, HoldingCaptureFlipsCellOwner) {
     EXPECT_EQ(cu->owner_faction_id(), 1u);  // cell now owned by faction 1
 }
 
+// Only land next to your own is taken (GAME-017): Red's capital is far away.
+TEST(WorldCapture, ACellAwayFromYourLandIsNotTaken) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    config.capitals = {{1, 15, 0}};  // Red: only the far corner (3, 3)
+    lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
+
+    incoming.push(hello_event(7, "p"));
+    incoming.push(spawn_event(7, /*faction=*/1));
+    incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 30, 0.016);  // six times the capture time
+
+    auto cu = last_cell_update(gw, 7, /*index=*/5);
+    ASSERT_TRUE(cu.has_value());
+    EXPECT_EQ(cu->owner_faction_id(), 0u);
+    EXPECT_EQ(cu->capture_progress(), 0u);
+}
+
 TEST(WorldCapture, ReleasingCaptureResetsProgress) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
+    config.capitals = {{1, 4, 0}};  // Red holds cell 4, next to cell 5
     lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
     incoming.push(spawn_event(7, /*faction=*/1));
     incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
     run_ticks(world, 3, 0.016);  // partial (~60%), not yet captured
+    const auto under_way = last_cell_update(gw, 7, /*index=*/5);
+    ASSERT_TRUE(under_way.has_value());
+    ASSERT_GT(under_way->capture_progress(), 0u);
     incoming.push(input_event(7, 0, 0, /*seq=*/2, /*capturing=*/false));  // release
     run_ticks(world, 3, 0.016);
 
@@ -637,6 +662,7 @@ TEST(WorldCapture, NoCaptureWithoutHoldingKey) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = test_config();
+    config.capitals = {{1, 4, 0}};  // Red holds cell 4, next to cell 5
     lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
@@ -1433,7 +1459,8 @@ TEST(WorldFog, MovingRevealsAheadAndHidesBehind) {
 TEST(WorldFog, ChangesInTheFogArriveOnlyOnceSeen) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
-    auto config = fog_config();  // capture_ticks = 5
+    auto config = fog_config();      // capture_ticks = 5
+    config.capitals = {{2, 19, 0}};  // Blue holds cell 19, next to cell 9
     lit::game::World world(incoming, gw, config,
                            placed({{"a", {0}}, {"enemy", {9}}, {"ally", {7}}}));
 
@@ -1459,6 +1486,7 @@ TEST(WorldFog, OwnedCellsKeepWatch) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
+    config.capitals = {{1, 1, 0}};  // Red holds cell 1, next to cell 0 (b is out of its sight)
     lit::game::World world(incoming, gw, config, placed({{"a", {0}}, {"b", {20}}}));
 
     incoming.push(hello_event(1, "a"));
@@ -1554,6 +1582,7 @@ TEST(WorldFog, AJoinerSeesNothing) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();
+    config.capitals = {{1, 1, 0}};  // Red holds cell 1, next to cell 0
     lit::game::World world(incoming, gw, config, placed({{"a", {0}}}));
 
     incoming.push(hello_event(1, "a"));
@@ -1689,6 +1718,7 @@ TEST(WorldResync, TheClientCatchesUpAfterDroppedSnapshots) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
     auto config = fog_config();           // capture_ticks = 5
+    config.capitals = {{2, 67, 0}};       // Blue holds cell 67, next to cell 57
     config.limits.resync_window_ms = 50;  // one snapshot period: back-to-back drops only resync
     lit::game::World world(
         incoming, gw, config,
@@ -2654,6 +2684,7 @@ TEST(WorldMetrics, CountsSpawnsDeathsAndCaptures) {
     lit::test::MockClientGateway gw;
     const LogCapture log;
     auto config = test_config();       // capture_ticks = 5
+    config.capitals = {{1, 4, 0}};     // Red holds cell 4, next to cell 5
     melee(config).cooldown_ticks = 1;  // swing every tick -> 3 swings kill 100 hp
     lit::game::World world(incoming, gw, config, placed({{"a", {5}}, {"b", {6, 6}}}),
                            std::chrono::seconds{1});
@@ -2798,4 +2829,30 @@ TEST(WorldCapitals, ACapitalsZoneIsItsFactionsFromTheStart) {
         ASSERT_TRUE(seen.has_value()) << "cell " << index;
         EXPECT_EQ(seen->owner_faction_id(), 0u) << "cell " << index;
     }
+}
+
+// A capital's zone is protected (GAME-017): Blue, next to it, takes the neutral
+// cell beside its own but never the zone's.
+TEST(WorldCapitals, AnEnemyCannotTakeACapitalsZone) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = capital_config();
+    config.capitals.push_back({2, 7, 0});  // Blue's capital: cell 7 (col 3, row 1)
+    lit::game::World world(incoming, gw, config, placed({{"raider", {6}}, {"settler", {11}}}));
+
+    incoming.push(hello_event(1, "raider"));
+    incoming.push(hello_event(2, "settler"));
+    incoming.push(spawn_event(1, /*faction=*/2));  // on cell 6: Red's zone, beside Blue's 7
+    incoming.push(spawn_event(2, /*faction=*/2));  // on cell 11: neutral, below Blue's 7
+    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(2, 0, 0, /*seq=*/1, /*capturing=*/true));
+    run_ticks(world, 30, kTick);  // three times an enemy cell's capture time
+
+    const auto zone = last_cell_update(gw, 1, /*index=*/6);
+    ASSERT_TRUE(zone.has_value());
+    EXPECT_EQ(zone->owner_faction_id(), 1u);
+    EXPECT_EQ(zone->capture_progress(), 0u);
+    const auto beside = last_cell_update(gw, 1, /*index=*/11);
+    ASSERT_TRUE(beside.has_value());
+    EXPECT_EQ(beside->owner_faction_id(), 2u);
 }
