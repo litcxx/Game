@@ -17,8 +17,8 @@ REVISION=1
 RELEASE=https://github.com/litcxx/Game/releases/download/gcc-$VERSION-r$REVISION
 ARCH=$(dpkg --print-architecture)
 case $ARCH in
-    amd64) SHA256=TODO ;;
-    arm64) SHA256=TODO ;;
+    amd64) SHA256=5502300f69f04582bf3ef215a3deb341447f53be480ecde24ccc9b281ca96aee ;;
+    arm64) SHA256=94681a2586cdbe13726ae4c2b0c6337c9f0dd1dcb235f9f5b365dab221222bdd ;;
     *)
         echo "$0: unsupported architecture $ARCH (amd64 or arm64)" >&2
         exit 1
