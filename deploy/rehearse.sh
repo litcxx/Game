@@ -6,7 +6,8 @@
 #   the page over https, the game over wss through Caddy (join, resume);
 #   the server reachable only through Caddy (it listens on 127.0.0.1);
 #   check.sh: kill -9 -> back within 10 s;
-#   a deploy with a player online: the player is back in the game by itself;
+#   a deploy with a player online: the player is back in the game by itself, as
+#   the same character (the world saved on the restart and loaded);
 #   the last 3 releases kept; rollback; setup.sh again changes nothing.
 # Needs Linux with Docker that runs privileged containers (systemd as PID 1). The
 # container shares the host's network: ports 80, 443 and 27998 must be free.
@@ -77,17 +78,20 @@ root 'ss -ltnH | grep -q "127.0.0.1:27998" && ! ss -ltnH | grep -qE "(0.0.0.0|\*
 step "check.sh: kill -9 -> back within 10 s"
 ops 'deploy/check.sh localhost'
 
-step "A deploy with a player online: the player is back by itself"
+step "A deploy with a player online: the player is back by itself, the same character"
 put /tmp/online.mts << 'EOF'
 // Joins over wss and stays; exits 0 once a second Welcome came (the server
-// restarted under it and the session reconnected), 1 after 5 minutes.
+// restarted under it and the session reconnected) for the same player_id (the
+// world was saved and loaded), 1 otherwise or after 5 minutes.
 import { SessionPlayer } from "/home/ops/Game/client/scripts/sessionPlayer.js";
 
 const player = new SessionPlayer("wss://localhost/ws");
 player.session.join(`online-${Math.random().toString(36).slice(2, 6)}`);
 const back = await player.until(() => player.welcomes()[1], 300_000);
-console.log(back ? "back in the game" : `not back: ${JSON.stringify(player.statuses)}`);
-process.exit(back ? 0 : 1);
+const first = player.welcomes()[0];
+const same = back !== undefined && back.playerId === first?.playerId;
+console.log(same ? "back in the game, the same character" : `not back as ${first?.playerId}: ${back?.playerId} ${JSON.stringify(player.statuses)}`);
+process.exit(same ? 0 : 1);
 EOF
 ops "$export_ca; cd client && exec npx tsx /tmp/online.mts" &
 online=$!

@@ -135,6 +135,24 @@ lives on the server; the browser client predicts, interpolates, and renders.
   `FactionScores` goes to a joiner right after the roster, then to everyone once
   a second: the real count over the whole map, not under fog. Each is whole, so
   a lost one needs no repair.
+- **The world is saved (GAME-019).** What outlives a restart is in
+  `proto/save.proto` (`WorldSave`, server-only): the season and when it began,
+  the next player id, every cell's owner and every character — id, name, token
+  hash, faction. Transient state (bodies, capture progress, projectiles,
+  sessions) is not. `src/game/persist`: `make_world_save()` / `restore_world()`
+  (state ↔ proto), `SaveStore` (the files), `SaveWriter` (a thread of its own:
+  no I/O in the tick). The World hands it a snapshot every `save.interval_s`
+  (60) and once more when its loop stops (SIGTERM); the writer serializes it
+  and writes `world-<n>.save` — framed with a header, the size and a SHA-256,
+  to a `.tmp`, fsync, rename, the directory fsync'ed — keeping the newest
+  `save.keep` (5). At startup the newest is loaded: every character comes back
+  out of the world, its faction kept for the season, until a session brings it
+  back by its token. A `game.season_id` other than the save's starts a new
+  season: the characters stay (id, name, token), their faction goes, the
+  territory starts again from the capitals. A save the server can't take — cut
+  short, damaged, a newer format, another map or an unknown faction in the same
+  season — stops it at startup with why; `--fresh` starts a new world instead,
+  leaving the files (the next save is numbered after them).
 - **Spawning is at the capital.** A `SpawnRequest` names only the faction: the
   body comes into the world at the centre of that faction's capital cell, the
   first time and after every death (until fortresses, GAME-029). `try_spawn()`
@@ -287,7 +305,8 @@ still overrides it.
 ```bash
 cmake --preset debug-asan      # or: debug-tsan | debug | release
 cmake --build build -j
-./build/bin/server config/config.json
+./build/bin/server config/config.json            # loads the newest save, if any
+./build/bin/server config/config.json --fresh    # a new world (the save files stay)
 ```
 
 Presets differ only in build type / sanitizer (`debug-asan` enables
@@ -298,10 +317,12 @@ The server reads its address, port, thread count, and the game rules (matching
 `game.v1.GameConfig`, plus the factions, their capitals and the abilities, and
 the server-only `capture_ticks`, `capture_enemy_multiplier`, `vision_radius` and
 the connection `limits`) from the config file, and the `log` section below;
+the `save` section (where, how often, how many files) and `game.season_id`;
 invalid abilities, a faction without exactly one capital (or a capital off the
 map, or two whose zones may overlap), a capture multiplier of 0 or less, a zero
-vision radius, a zero or missing limit, an unknown log level or a zero metrics
-interval stop the server at startup.
+vision radius, a zero or missing limit, a season 0, an empty save directory or a
+zero save interval or keep, an unknown log level or a zero metrics interval stop
+the server at startup.
 
 ## Logs & metrics
 
@@ -315,7 +336,7 @@ Every `metrics_interval_s` the game thread logs one line at `info` (so none at
 `warn` and above): `metrics ` and a JSON object.
 
 ```
-[2026-09-29 15:30:14.974] [info] metrics {"period_s":60,"ccu":2,"ticks":3600,"tick_us":{"avg":113,"p99":1269,"max":2070},"snapshot_ticks":1200,"snapshot_tick_us":{"avg":183,"p99":2024,"max":2070},"snapshots":2400,"snapshot_bytes_avg":35,"drops":0,"resyncs":0,"closed_behind":0,"joins":3,"leaves":1,"resumes":2,"rtt_ms":{"p50":48,"p95":95,"max":131},"corrections":{"count":14,"max":22},"spawns":5,"deaths":3,"captures":7,"errors":{"RATE_LIMITED":1}}
+[2026-09-29 15:30:14.974] [info] metrics {"period_s":60,"ccu":2,"ticks":3600,"tick_us":{"avg":113,"p99":1269,"max":2070},"snapshot_ticks":1200,"snapshot_tick_us":{"avg":183,"p99":2024,"max":2070},"snapshots":2400,"snapshot_bytes_avg":35,"drops":0,"resyncs":0,"closed_behind":0,"joins":3,"leaves":1,"resumes":2,"rtt_ms":{"p50":48,"p95":95,"max":131},"corrections":{"count":14,"max":22},"spawns":5,"deaths":3,"captures":7,"errors":{"RATE_LIMITED":1},"save":{"snapshots":1,"snapshot_us_max":412,"written":12,"failed":0,"bytes":10184,"write_ms":3}}
 ```
 
 | Field | Over the period |
@@ -335,6 +356,7 @@ Every `metrics_interval_s` the game thread logs one line at `info` (so none at
 | `corrections` | prediction corrections the clients reported — reconciliations that moved the local player by more than 4 units: `count`, and the largest, `max` (units) |
 | `spawns`, `deaths`, `captures` | spawns and respawns, characters killed, cells that changed owner |
 | `errors` | `ServerError`s sent, by code: `RATE_LIMITED`, `IDLE_TIMEOUT`, … |
+| `save` | the world save: `snapshots` handed to the writer this period and the longest one on the game thread (`snapshot_us_max`); the writer's `written` and `failed` since the start, the last file's `bytes` and `write_ms` |
 
 **Export.** The lines turn into JSON Lines with the log's timestamp as `time`:
 
@@ -389,12 +411,13 @@ script role, where its players spawn — laid over the shipped rules by
 
 The `World*` suites (`Hello`, `Roster`, `Spawn`, `Movement`, `Input`, `Snapshot`,
 `Combat`, `Ability`, `Ranged`, `Block`, `Capture`, `Fog`, `Resync`, `Errors`,
-`Limits`, `Metrics`, `Reconnect`, `Faction`, `Capitals`, `Scores`) test the game end to end through a mock
+`Limits`, `Metrics`, `Reconnect`, `Faction`, `Capitals`, `Scores`, `Save`) test the game end to end through a mock
 gateway; `Damage`, `SpatialIndex`, `SegmentCircle`, `Projectiles`, `Vision`,
 `Delivery`, `HelloRules`, `PlayerName`, `ConnectionLimits`, `InputLimits`,
 `CapitalSpawnPoint`, `SpawnAtCapital`, `SpawnFaction`, `CapitalZone`,
 `SeedCapitals`, `ProtectCapitals`, `Capturable`, `UpdateCaptures`, `TerritoryCounts`,
-`FactionScoresMessage`, `SmokeMap`,
+`FactionScoresMessage`, `WorldSaveRoundTrip`, `WorldSaveFormat`, `WorldSaveNewSeason`,
+`WorldSaveRefused`, `SaveStore`, `SaveWriter`, `SaveConfigParse`, `SmokeMap`,
 `FixedStep`, `Metrics`, `GameConfigParse`, `LogConfigParse`, `SessionToken` and
 `TSQueueTest` test those units directly; `Presence` covers characters and
 sessions (away, the grace, takeover, two sessions in a row driving one

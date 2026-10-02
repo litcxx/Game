@@ -21,26 +21,26 @@ if(NOT Protobuf_FOUND OR Protobuf_VERSION VERSION_LESS PROTOBUF_MIN_VERSION)
 endif()
 message(STATUS "protobuf ${Protobuf_VERSION}: ${Protobuf_DIR}")
 
-# The .proto sources live at the repository root, outside the server tree.
-# CMAKE_SOURCE_DIR points at server/, so its parent is the repo root.
-set(PROTO_DIR ${CMAKE_SOURCE_DIR}/../protocol)
-set(PROTO_FILES ${PROTO_DIR}/game/v1/protocol.proto)
-
-# <build>/proto/<path under protocol/>.pb.{h,cc}, e.g. game/v1/protocol.pb.h.
+# Two schemas: the wire protocol, shared with the client at the repository root
+# (CMAKE_SOURCE_DIR points at server/, so its parent is the repo root), and the
+# server-only world save next to this file.
 set(PROTO_SRCS)
-foreach(proto ${PROTO_FILES})
-    file(RELATIVE_PATH rel ${PROTO_DIR} ${proto})
+# <build>/proto/<path under dir>.pb.{h,cc}, e.g. game/v1/protocol.pb.h, save.pb.h.
+function(add_proto dir proto)
+    file(RELATIVE_PATH rel ${dir} ${proto})
     string(REGEX REPLACE "\\.proto$" "" stem ${rel})
     set(cc ${CMAKE_CURRENT_BINARY_DIR}/${stem}.pb.cc)
     set(h ${CMAKE_CURRENT_BINARY_DIR}/${stem}.pb.h)
     add_custom_command(
         OUTPUT ${cc} ${h}
-        COMMAND protobuf::protoc --cpp_out=${CMAKE_CURRENT_BINARY_DIR} -I${PROTO_DIR} ${proto}
+        COMMAND protobuf::protoc --cpp_out=${CMAKE_CURRENT_BINARY_DIR} -I${dir} ${proto}
         DEPENDS ${proto} protobuf::protoc
         COMMENT "protoc ${rel}"
         VERBATIM)
-    list(APPEND PROTO_SRCS ${cc} ${h})
-endforeach()
+    set(PROTO_SRCS ${PROTO_SRCS} ${cc} ${h} PARENT_SCOPE)
+endfunction()
+add_proto(${CMAKE_SOURCE_DIR}/../protocol ${CMAKE_SOURCE_DIR}/../protocol/game/v1/protocol.proto)
+add_proto(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/save.proto)
 
 add_library(proto STATIC ${PROTO_SRCS})
 

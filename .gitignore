@@ -13,3 +13,6 @@ build
 /.cache
 *.key
 /Testing/Temporary
+
+# The world save of a server run from server/ (save.dir "saves")
+server/saves/

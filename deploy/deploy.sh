@@ -8,8 +8,8 @@
 #   git pull && deploy/deploy.sh    build and deploy this checkout
 #   deploy/deploy.sh rollback       back to the release before the current one
 #
-# Until the world is saved (GAME-019) a restart starts a new world: players
-# reconnect by themselves, as new characters under their names.
+# The world is saved on the restart (GAME-019, /var/lib/territory) and loaded by
+# the new release: players reconnect by themselves, as the same characters.
 set -euo pipefail
 
 ROOT=/opt/territory
@@ -67,7 +67,8 @@ stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 install -D -m 755 "$REPO/server/build/bin/server" "$stage/bin/server"
 # The repo's config, with the server on 127.0.0.1: players reach it through Caddy only.
-jq '.server.ip = "127.0.0.1"' "$REPO/server/config/config.json" > "$stage/config.json"
+jq '.server.ip = "127.0.0.1" | .save.dir = "/var/lib/territory"' \
+    "$REPO/server/config/config.json" > "$stage/config.json"
 cp -r "$REPO/client/dist" "$stage/client"
 chmod -R a+rX "$stage"
 sudo cp -r "$stage" "$ROOT/releases/$name"

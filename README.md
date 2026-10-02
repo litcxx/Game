@@ -66,7 +66,7 @@ Needs GCC 13+ / CMake 3.21+ with Boost, OpenSSL and protobuf 36 (exact versions 
 cd server
 scripts/install-protobuf.sh    # once: protobuf 36.2 into /usr/local, from source
 cmake --preset debug-asan && cmake --build build -j
-./build/bin/server config/config.json
+./build/bin/server config/config.json   # saves the world to server/saves; --fresh: a new one
 
 # 2) client (in another terminal)
 cd client

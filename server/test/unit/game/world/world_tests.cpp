@@ -14,6 +14,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -21,6 +22,9 @@
 #include "game/mock_client_gateway.hpp"
 #include "game/v1/protocol.pb.h"
 #include "net/client_event.hpp"
+#include "persist/save_sink.hpp"
+#include "persist/world_save.hpp"
+#include "save.pb.h"
 #include "state/world_state.hpp"
 #include "systems/spawn_system.hpp"
 #include "utils/ts_queue.hpp"
@@ -2929,4 +2933,108 @@ TEST(WorldScores, ACaptureCountsWhereverItIs) {
     EXPECT_EQ(score_of(scores.back(), 1).cells(), 6u);  // the zone and cell 2
     EXPECT_EQ(score_of(scores.back(), 1).online(), 1u);
     EXPECT_EQ(score_of(scores.back(), 2).online(), 1u);
+}
+
+// --- Saving the world: snapshots, and a restart brings it back (GAME-019) ------
+
+namespace {
+
+// Keeps every snapshot the World hands it; reports `fixed` as its stats.
+struct FakeSaveSink final : lit::game::ISaveSink {
+    std::vector<lit::save::WorldSave> saves;
+    lit::game::SaveStats fixed;
+    void submit(lit::save::WorldSave save) override { saves.push_back(std::move(save)); }
+    lit::game::SaveStats stats() const override { return fixed; }
+};
+
+}  // namespace
+
+TEST(WorldSave, ASnapshotEveryInterval) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, capital_config());  // tick_rate 60
+    FakeSaveSink sink;
+    world.save_to(sink, std::chrono::seconds{1});
+
+    run_ticks(world, 130, kTick);
+
+    EXPECT_EQ(sink.saves.size(), 2u);  // at 1 s and at 2 s
+}
+
+// SIGTERM stops the loop: the world as it stops is saved, whenever the last one was.
+TEST(WorldSave, StoppingSavesOnceMore) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World world(incoming, gw, capital_config());
+    FakeSaveSink sink;
+    world.save_to(sink, std::chrono::seconds{60});
+    incoming.push(hello_event(1, "ann"));
+
+    {
+        std::jthread loop([&world](std::stop_token stop) { world.run(stop); });
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});  // a few ticks: ann joins
+    }
+
+    ASSERT_EQ(sink.saves.size(), 1u);
+    EXPECT_EQ(sink.saves.back().characters_size(), 1);
+}
+
+TEST(WorldSave, ARestartBringsTheCharacterBackWithItsFaction) {
+    const auto config = capital_config();  // Red's capital in cell 5
+    FakeSaveSink sink;
+    lit::TSQueue<lit::ClientEvent> in_before;
+    lit::test::MockClientGateway gw_before;
+    lit::game::World before(in_before, gw_before, config, placed({{"ann", {5}}}));
+    before.save_to(sink, std::chrono::seconds{60});
+    in_before.push(hello_event(1, "ann"));
+    in_before.push(spawn_event(1, /*faction=*/1));  // Red, for the season
+    before.tick(kTick);
+    const auto first = welcome_to(gw_before, 1);
+    ASSERT_TRUE(first.has_value());
+    before.save_now();
+    ASSERT_EQ(sink.saves.size(), 1u);
+
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World after(incoming, gw, config, placed({{"ann", {5}}}));
+    ASSERT_EQ(after.restore(sink.saves.back()), lit::game::SeasonLoad::Continued);
+    incoming.push(hello_with_token(7, "ann", first->session_token()));
+    incoming.push(spawn_event(7, /*faction=*/2));  // another faction: refused
+    after.tick(kTick);
+
+    const auto again = welcome_to(gw, 7);
+    ASSERT_TRUE(again.has_value());
+    EXPECT_EQ(again->player_id(), first->player_id());  // the same character
+    EXPECT_FALSE(again->resumed());                     // back without a body
+    std::uint32_t faction = 0;
+    for (const auto& m : messages_to(gw, 7))
+        if (m.has_roster())
+            for (const auto& p : m.roster().upsert())
+                if (p.id() == first->player_id()) faction = p.faction_id();
+    EXPECT_EQ(faction, 1u);
+    const auto errors = errors_to(gw, 7);
+    ASSERT_EQ(errors.size(), 1u);
+    EXPECT_EQ(errors[0].code(), ::game::v1::ERROR_CODE_INVALID_FACTION);
+}
+
+TEST(WorldMetrics, ReportTheSaving) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    const LogCapture log;
+    lit::game::World world(incoming, gw, test_config(), std::chrono::seconds{1});
+    FakeSaveSink sink;
+    sink.fixed = {.written = 3, .failed = 1, .last_bytes = 1234, .last_write_ms = 5};
+    world.save_to(sink, std::chrono::seconds{1});
+
+    run_ticks(world, 60, kTick);
+
+    const auto lines = log.metrics();
+    ASSERT_EQ(lines.size(), 1u);
+    const auto& save = lines[0].at("save");
+    EXPECT_EQ(save.at("snapshots"), 1);  // this period's
+    EXPECT_TRUE(save.contains("snapshot_us_max"));
+    EXPECT_EQ(save.at("written"), 3);  // the writer's, since the start
+    EXPECT_EQ(save.at("failed"), 1);
+    EXPECT_EQ(save.at("bytes"), 1234);
+    EXPECT_EQ(save.at("write_ms"), 5);
 }

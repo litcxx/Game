@@ -2,7 +2,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <expected>
 #include <stop_token>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -11,6 +13,9 @@
 #include "game/v1/protocol.pb.h"
 #include "net/client_event.hpp"
 #include "net/i_client_gateway.hpp"
+#include "persist/save_sink.hpp"
+#include "persist/world_save.hpp"
+#include "save.pb.h"
 #include "spatial/spatial_index.hpp"
 #include "state/world_state.hpp"
 #include "systems/spawn_system.hpp"
@@ -23,6 +28,8 @@ namespace lit::game {
 // Authoritative game loop. Drains net→game events each tick, updates state, and
 // replies through the gateway. Runs on a single (game) thread — no locking.
 // Every `metrics_interval` it logs what it did as one `metrics {json}` line.
+// With a save sink it hands it a snapshot of the world every save interval and
+// once more when the loop stops (GAME-019).
 class World {
   public:
     // Characters spawn at their faction's capital (capital_spawn_point).
@@ -35,7 +42,18 @@ class World {
     World& operator=(const World&) = delete;
     ~World() = default;
 
+    // Ticks at the fixed rate until `stop`; then hands the save sink the world as
+    // it stops (SIGTERM).
     void run(std::stop_token stop);
+
+    // Before the first tick: the saved world comes back (restore_world). A save
+    // this server can't take is refused with why, the world left new.
+    std::expected<SeasonLoad, std::string> restore(const ::lit::save::WorldSave& save);
+    // From now on a snapshot of the world goes to `sink` every `interval`
+    // (rounded to ticks, at least one); `sink` outlives the World.
+    void save_to(ISaveSink& sink, std::chrono::seconds interval);
+    // A snapshot to the save sink now (none attached: nothing). Exposed for tests.
+    void save_now();
 
     // Advances one tick: drains and processes queued events. Exposed for tests.
     void tick(double dt);
@@ -98,6 +116,8 @@ class World {
     const SpawnPoint spawn_point_;  // where characters come into the world
 
     std::uint32_t snapshot_interval_{1};      // ticks between snapshots (tick_rate / snapshot_rate)
+    ISaveSink* save_sink_{nullptr};           // where world snapshots go; none: not saved
+    std::uint32_t save_interval_ticks_{1};    // ticks between world snapshots
     std::uint32_t scores_interval_ticks_{1};  // ticks between faction scores: a second
     std::uint32_t resync_window_ticks_{1};    // config.limits.resync_window_ms in ticks
     std::uint32_t grace_ticks_{0};            // config.reconnect_grace_ms in ticks
