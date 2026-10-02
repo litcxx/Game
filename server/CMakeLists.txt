@@ -2,6 +2,16 @@ cmake_minimum_required(VERSION 3.20...4.0)
 
 project(server LANGUAGES CXX)
 
+# One compiler builds and tests the server everywhere: GCC 16.2 (g++-16 in the
+# presets; scripts/install-gcc.sh). Its warnings, which -Werror makes errors, and
+# its sanitizers are the ones CI checks.
+if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 16.2)
+    message(FATAL_ERROR
+        "The server is built with GCC 16.2 or newer, not ${CMAKE_CXX_COMPILER_ID} "
+        "${CMAKE_CXX_COMPILER_VERSION} (${CMAKE_CXX_COMPILER}): scripts/install-gcc.sh "
+        "installs it as g++-16.")
+endif()
+
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)

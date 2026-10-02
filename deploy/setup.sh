@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Prepares a fresh Ubuntu 24.04 VPS for the game, once — running it again keeps
-# what is in place. Installs the build tools, protobuf, Node.js and Caddy (pinned
-# versions, checked by hash); creates the service user and /opt/territory;
+# what is in place. Installs the build tools, GCC 16.2, protobuf, Node.js and Caddy
+# (pinned versions, checked by hash); creates the service user and /opt/territory;
 # installs the game's systemd service and the Caddy site for DOMAIN. Then
 # deploy/deploy.sh builds and starts the game. See docs/ops.md.
 #
@@ -41,7 +41,11 @@ trap 'rm -rf "$work"' EXIT
 step "Packages: the build tools and libraries"
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    g++ cmake ninja-build libboost-dev libssl-dev git curl ca-certificates jq xz-utils
+    binutils libc6-dev cmake ninja-build libboost-dev libssl-dev git curl ca-certificates jq xz-utils
+
+GCC_VERSION=$(sed -n 's/^VERSION=//p' "$REPO/server/scripts/install-gcc.sh")
+step "GCC $GCC_VERSION (the server's compiler, prebuilt for Ubuntu 24.04)"
+"$REPO/server/scripts/install-gcc.sh"
 
 step "Swap: the build needs about 2 GB of memory"
 if [ "$(awk '/^MemTotal/ { print $2 }' /proc/meminfo)" -lt 3000000 ] && [ -z "$(swapon --show --noheadings)" ]; then

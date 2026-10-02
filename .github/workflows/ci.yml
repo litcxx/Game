@@ -1,6 +1,7 @@
 # CI (GAME-005): every PR and every push to main builds and tests both halves.
 #   client — protobuf codegen, typecheck, pure checks (npm run check)
-#   server — against protobuf 36 (server/scripts/install-protobuf.sh, cached):
+#   server — with GCC 16.2 (server/scripts/install-gcc.sh) against protobuf 36
+#            (server/scripts/install-protobuf.sh, built with it and cached):
 #            Debug + ASan/UBSan build, unit tests, then the e2e smoke suite
 #            (npm run smoke) against that server on the smoke map
 #            (scripts/smoke-config.sh), which must also shut down clean;
@@ -56,15 +57,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            g++ cmake ninja-build libboost-dev libssl-dev
-      # protobuf 36 is built from source (about 5 minutes) only when the install
-      # script — and so the version — changes; otherwise it comes from the cache.
+            cmake ninja-build libboost-dev libssl-dev
+      - name: Install GCC 16.2
+        run: scripts/install-gcc.sh
+      # protobuf 36 is built from source (about 5 minutes) only when its install
+      # script or the compiler's changes; otherwise it comes from the cache.
       - name: Cache protobuf
         id: protobuf
         uses: actions/cache@v4
         with:
           path: .protobuf
-          key: protobuf-ubuntu-24.04-${{ hashFiles('server/scripts/install-protobuf.sh') }}
+          key: protobuf-ubuntu-24.04-${{ hashFiles('server/scripts/install-protobuf.sh', 'server/scripts/install-gcc.sh') }}
       - name: Build protobuf
         if: steps.protobuf.outputs.cache-hit != 'true'
         run: scripts/install-protobuf.sh "$CMAKE_PREFIX_PATH"
@@ -127,13 +130,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            g++ cmake ninja-build libboost-dev libssl-dev
+            cmake ninja-build libboost-dev libssl-dev
+      - name: Install GCC 16.2
+        run: scripts/install-gcc.sh
       - name: Cache protobuf
         id: protobuf
         uses: actions/cache@v4
         with:
           path: .protobuf
-          key: protobuf-ubuntu-24.04-${{ hashFiles('server/scripts/install-protobuf.sh') }}
+          key: protobuf-ubuntu-24.04-${{ hashFiles('server/scripts/install-protobuf.sh', 'server/scripts/install-gcc.sh') }}
       - name: Build protobuf
         if: steps.protobuf.outputs.cache-hit != 'true'
         run: scripts/install-protobuf.sh "$CMAKE_PREFIX_PATH"

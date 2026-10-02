@@ -272,7 +272,7 @@ The versions CI builds and tests with (Ubuntu 24.04):
 
 | Dependency | Version | Where from |
 |---|---|---|
-| GCC (C++23) | 13.3 | `g++` |
+| GCC (C++23) | 16.2 | `scripts/install-gcc.sh` (prebuilt for Ubuntu 24.04, see below) |
 | CMake | 3.28 (≥ 3.21 for the presets) | `cmake` |
 | Ninja | 1.11 | `ninja-build` (optional; any generator works) |
 | Protobuf (`protoc` + `libprotobuf`, with abseil) | 36.2 | `scripts/install-protobuf.sh` (from source) |
@@ -280,10 +280,34 @@ The versions CI builds and tests with (Ubuntu 24.04):
 | OpenSSL (libcrypto) | 3.0.13 | `libssl-dev` |
 
 ```bash
-sudo apt-get install g++ cmake ninja-build libboost-dev libssl-dev
-scripts/install-protobuf.sh            # protobuf 36.2 into /usr/local (about 5 minutes)
+sudo apt-get install binutils libc6-dev cmake ninja-build libboost-dev libssl-dev
+scripts/install-gcc.sh                 # GCC 16.2 into /opt/gcc-16.2.0, as gcc-16 and g++-16
+scripts/install-protobuf.sh            # protobuf 36.2 into /usr/local, with it (about 5 minutes)
 scripts/install-protobuf.sh ~/protobuf # ... or anywhere, then cmake -DCMAKE_PREFIX_PATH=~/protobuf
 ```
+
+**GCC 16.2.** One compiler builds and tests the server everywhere: its warnings
+(errors under `-Werror`) and its sanitizers are the ones CI checks. The presets
+use `g++-16`, and configuring with another compiler, or a GCC older than 16.2,
+stops with a hint. Ubuntu 24.04 has no package of it, so CI builds one: the
+toolchain workflow (`.github/workflows/toolchain.yml`) runs
+`scripts/build-gcc.sh`, which builds GCC from the GNU release (its signature
+checked against the GCC release managers' keys) for amd64 and arm64, and
+publishes it as the GitHub Release `gcc-16.2.0-r1`; `scripts/install-gcc.sh`
+installs that, checked by SHA-256, in CI, on the VPS and here. What it links
+finds this GCC's libstdc++ and sanitizer runtimes by a RUNPATH to
+`/opt/gcc-16.2.0/lib64`, so keep that directory while a server built with it
+runs. On another Linux, a GCC 16.2 or newer of its own will do:
+`CC=gcc CXX=g++ scripts/install-protobuf.sh`, then
+`cmake --preset debug-asan -DCMAKE_C_COMPILER=gcc -DCMAKE_CXX_COMPILER=g++`.
+
+To move to another GCC: set `VERSION` (and `REVISION` back to 1) in
+`build-gcc.sh` and push it; the workflow builds and publishes the release (about
+an hour and a half). Then set the same version, revision and the release's SHA-256
+sums in `install-gcc.sh`, and the minimum version in `CMakeLists.txt` (a new major
+version also renames `gcc-16`/`g++-16` in the presets and in `install-protobuf.sh`).
+CI rebuilds protobuf with the new compiler by itself; elsewhere run
+`scripts/install-protobuf.sh` again.
 
 **Protobuf 36 only.** The build takes protobuf from its own CMake package, at
 version 36 or newer, and stops with a hint otherwise: one version is tested, and
@@ -309,7 +333,7 @@ cmake --build build -j
 ./build/bin/server config/config.json --fresh    # a new world (the save files stay)
 ```
 
-Presets differ only in build type / sanitizer (`debug-asan` enables
+Presets (all with `g++-16`) differ only in build type / sanitizer (`debug-asan` enables
 Address+UB sanitizers). `release` is what goes to the VPS (`deploy/deploy.sh`,
 see [docs/ops.md](../docs/ops.md)); CI builds and unit-tests it too.
 

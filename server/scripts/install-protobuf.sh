@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Builds and installs the protobuf the server is built and tested with — the C++
 # runtime, protoc and the abseil they need — from the pinned release source,
-# checked by SHA-256. CI, local development and deployment all use this one.
+# checked by SHA-256, with the server's compiler (scripts/install-gcc.sh first).
+# CI, local development and deployment all use this one.
 #
 #   server/scripts/install-protobuf.sh [prefix]   # default /usr/local (sudo for the install)
 #
@@ -25,9 +26,11 @@ tar xzf protobuf.tar.gz
 
 generator=()
 if command -v ninja > /dev/null; then generator=(-G Ninja); fi
-# Release, without its tests. Abseil is fetched by protobuf's own configure, at
-# the version it pins.
+# Release, without its tests, by the server's compiler (CC and CXX pick another).
+# Abseil is fetched by protobuf's own configure, at the version it pins.
 cmake -S "protobuf-${VERSION}" -B build "${generator[@]}" \
+    -DCMAKE_C_COMPILER="${CC:-gcc-16}" \
+    -DCMAKE_CXX_COMPILER="${CXX:-g++-16}" \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX="$PREFIX" \
     -DCMAKE_CXX_STANDARD=17 \
