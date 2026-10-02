@@ -7,6 +7,8 @@
       "hidden": true,
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc-16",
+        "CMAKE_CXX_COMPILER": "g++-16",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     },

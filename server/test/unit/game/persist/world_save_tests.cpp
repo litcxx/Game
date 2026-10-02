@@ -96,8 +96,9 @@ TEST(WorldSaveRoundTrip, TheTerritoryComesBackCountedWithoutTheCaptures) {
     const auto before = played(config);
 
     auto after = fresh(config);
-    lit::game::restore_world(after, config,
-                             through_bytes(lit::game::make_world_save(before, config)));
+    ASSERT_EQ(lit::game::restore_world(after, config,
+                                       through_bytes(lit::game::make_world_save(before, config))),
+              lit::game::SeasonLoad::Continued);
 
     EXPECT_EQ(after.territory.owners, before.territory.owners);
     EXPECT_EQ(after.territory.owned(1), 6u);  // the zone and cell 2
@@ -112,8 +113,9 @@ TEST(WorldSaveRoundTrip, TheSeasonKeepsItsStart) {
     const auto before = played(config);  // started at 1'000'000
 
     auto after = fresh(config, 2'000'000);
-    lit::game::restore_world(after, config,
-                             through_bytes(lit::game::make_world_save(before, config)));
+    ASSERT_EQ(lit::game::restore_world(after, config,
+                                       through_bytes(lit::game::make_world_save(before, config))),
+              lit::game::SeasonLoad::Continued);
 
     EXPECT_EQ(after.season_started_at, 1'000'000);
 }
@@ -157,7 +159,7 @@ TEST(WorldSaveNewSeason, TheTerritoryStartsAgainFromTheCapitals) {
     save.set_season_id(2);
 
     auto after = fresh(config, 2'000'000);
-    lit::game::restore_world(after, config, save);
+    ASSERT_EQ(lit::game::restore_world(after, config, save), lit::game::SeasonLoad::New);
 
     EXPECT_EQ(after.territory.owners, fresh(config).territory.owners);
     EXPECT_EQ(after.territory.owned(1), 5u);

@@ -1,0 +1,99 @@
+# The GCC the server is built with (server/scripts/build-gcc.sh): built from the
+# GNU release on Ubuntu 24.04, for amd64 and arm64, and published as the GitHub
+# Release gcc-<version>-r<revision>, which server/scripts/install-gcc.sh installs
+# from: in CI, on the VPS (deploy/setup.sh) and for development. Runs when the
+# build script changes, or by hand. A published release is never rebuilt or
+# replaced: a new one needs a new VERSION or REVISION in the script.
+name: Toolchain
+
+on:
+  push:
+    paths:
+      - server/scripts/build-gcc.sh
+      - .github/workflows/toolchain.yml
+  workflow_dispatch:
+
+concurrency:
+  group: toolchain
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      published: ${{ steps.release.outputs.published }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Release name, and whether it is out already
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^VERSION=//p' server/scripts/build-gcc.sh)
+          tag=gcc-$version-r$(sed -n 's/^REVISION=//p' server/scripts/build-gcc.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if gh release view "$tag" > /dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$tag is published already; a new build needs a new REVISION in build-gcc.sh"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: release
+    if: needs.release.outputs.published == 'false'
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    # A full bootstrap of C and C++: about an hour and a half.
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ make curl gnupg bzip2 xz-utils
+      - name: Build GCC
+        run: server/scripts/build-gcc.sh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gcc-${{ matrix.runner }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: [release, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish ${{ needs.release.outputs.tag }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release.outputs.tag }}
+          VERSION: ${{ needs.release.outputs.version }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          sums=$(cd dist && cat *.sha256)
+          echo "$sums"
+          notes=$(printf '%s\n' \
+            "GCC $VERSION (C and C++) for Ubuntu 24.04, amd64 and arm64, in /opt/gcc-$VERSION: the compiler the server is built with." \
+            "Built from the GNU release, its signature checked, by server/scripts/build-gcc.sh in $RUN." \
+            "server/scripts/install-gcc.sh installs it and checks these SHA-256 sums:" \
+            '```' "$sums" '```')
+          gh release create "$TAG" dist/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --latest=false --title "GCC $VERSION for Ubuntu 24.04 ($TAG)" --notes "$notes"
