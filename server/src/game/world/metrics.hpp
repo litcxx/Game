@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -48,6 +49,13 @@ struct MetricsReport {
     std::uint32_t deaths{0};                      // characters killed
     std::uint32_t captures{0};                    // cells that changed owner
     std::map<std::string, std::uint32_t> errors;  // ServerErrors sent, by code name
+    // Saving the world (GAME-019).
+    std::uint32_t save_snapshots{0};        // snapshots handed to the writer this period
+    std::uint32_t save_snapshot_us_max{0};  // the longest, on the game thread
+    std::uint32_t saves_written{0};         // the writer's, since the start
+    std::uint32_t saves_failed{0};
+    std::uint64_t save_bytes{0};     // the last written file's size
+    std::uint32_t save_write_ms{0};  // how long writing it took
 };
 
 // Counts what the World does over one period. Game thread only.
@@ -68,6 +76,11 @@ class Metrics {
     void record_spawn() { ++current_.spawns; }
     void record_deaths(std::uint32_t n) { current_.deaths += n; }
     void record_captures(std::uint32_t n) { current_.captures += n; }
+    // A world snapshot taken for the save, `us` on the game thread.
+    void record_save_snapshot(std::uint32_t us) {
+        ++current_.save_snapshots;
+        current_.save_snapshot_us_max = std::max(current_.save_snapshot_us_max, us);
+    }
     // Counted under the code's name without its prefix: "RATE_LIMITED".
     void record_error(::game::v1::ErrorCode code);
 

@@ -19,6 +19,14 @@ struct LogConfig {
     std::uint32_t metrics_interval_s;  // seconds between `metrics` lines (60); logged at info
 };
 
+// The world save (GAME-019, server-only): where the files go, how often a
+// snapshot is written and how many files are kept.
+struct SaveConfig {
+    std::string dir;           // relative to the working directory, or absolute
+    std::uint32_t interval_s;  // seconds between snapshots (60); one more on SIGTERM
+    std::uint32_t keep;        // the newest files kept (5)
+};
+
 // A playable faction (colour). Server-defined; sent to clients in Welcome.
 struct FactionConfig {
     std::uint32_t id;  // 1..255; 0 = neutral / not chosen
@@ -86,6 +94,8 @@ struct GameConfig {
     std::uint32_t player_radius;           // body hit radius for projectiles, units (16)
     std::uint32_t vision_radius;           // fog of war: sight range of players and owned cells,
                                            //   units (300 = 3 cells); server-only, like capture
+    std::uint32_t season_id;               // >= 1; a save of another season starts a new one
+                                           //   (GAME-019); server-only
     LimitsConfig limits;                   // per-connection limits (server-only)
     std::vector<FactionConfig> factions;   // selectable factions (colours)
     std::vector<CapitalConfig> capitals;   // one per faction
@@ -94,8 +104,13 @@ struct GameConfig {
 
 // Parses the "game" section of a config document. Throws on a missing or invalid
 // value (unknown ability kind, no abilities, bad ids, a projectile that can't fly,
-// a block without a duration, a zero vision radius or limit, a capture multiplier <= 0).
+// a block without a duration, a zero vision radius or limit, a capture multiplier <= 0,
+// a season 0).
 GameConfig parse_game_config(const std::string& config_json);
+
+// Parses the "save" section of a config document. Throws on a missing value, an
+// empty directory or a zero interval or keep.
+SaveConfig parse_save_config(const std::string& config_json);
 
 // Parses the "log" section of a config document. Throws on a missing value, an
 // unknown level or a zero metrics interval.
@@ -118,14 +133,18 @@ class Config {
 
     const LogConfig& log_config() const noexcept { return log_config_; }
 
+    const SaveConfig& save_config() const noexcept { return save_config_; }
+
   private:
     explicit Config(const std::string& filename);
     void init_net_config(const std::string& filename);
     void init_game_config(const std::string& filename);
     void init_log_config(const std::string& filename);
+    void init_save_config(const std::string& filename);
 
     NetConfig net_config_{};
     GameConfig game_config_{};
     LogConfig log_config_{};
+    SaveConfig save_config_{};
 };
 }  // namespace lit

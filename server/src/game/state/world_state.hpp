@@ -16,6 +16,7 @@ namespace lit::game {
 // World orchestrates the tick and owns the network side.
 struct WorldState {
     std::uint32_t tick{0};
+    std::int64_t season_started_at{0};   // unix seconds: when this season's world began
     std::uint32_t next_character_id{1};  // player ids: never reused
     std::uint32_t next_projectile_id{1};
     // Who plays (identity), what fights (bodies in the world) and who is

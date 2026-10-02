@@ -16,6 +16,9 @@ set(SOURCES
   shared/config_tests.cpp
   shared/session_token_tests.cpp
   shared/ts_queue_tests.cpp
+  game/persist/save_store_tests.cpp
+  game/persist/save_writer_tests.cpp
+  game/persist/world_save_tests.cpp
   game/spatial/geometry_tests.cpp
   game/spatial/spatial_index_tests.cpp
   game/systems/capital_system_tests.cpp

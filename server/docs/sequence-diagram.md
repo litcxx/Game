@@ -223,8 +223,32 @@ flowchart LR
     scores["send_faction_scores()<br/>раз в секунду: FactionScores всем, не под туманом"]
     snap["send_snapshots()<br/>compute_vision(фракция) → build_snapshot(state, получатель, vision)"]
     close["close_released_sessions()<br/>отпущенные сессии уходят из мира"]
+    save["save_now() раз в save.interval_s<br/>снимок WorldSave → SaveWriter (фоновый поток пишет файл)"]
     metrics["finish_tick_metrics()<br/>время тика → Metrics, раз в период — строка metrics"]
-    drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> timeouts --> scores --> snap --> close --> metrics
+    drain --> consume --> move --> index --> blocks --> combat --> proj --> cap --> timeouts --> scores --> snap --> close --> save --> metrics
+```
+
+**Сохранение мира** (GAME-019). Снимок `WorldSave` (сезон и его начало,
+следующий id, владельцы клеток, персонажи) собирается на игровом потоке: это
+копия без ввода-вывода. Пишет его `SaveWriter` в своём потоке. Если новый снимок
+пришёл, пока старый ещё ждёт записи, старый отбрасывается.
+
+```mermaid
+sequenceDiagram
+    participant main
+    participant store as SaveStore
+    participant world as World
+    participant writer as SaveWriter (поток)
+    main->>store: load_latest(): новейший world-N.save, проверка SHA-256
+    store-->>main: WorldSave или ошибка (без --fresh сервер не стартует)
+    main->>world: restore(save): персонажи вне мира, владельцы, сезон
+    loop каждые save.interval_s
+        world->>writer: submit(make_world_save(state))
+        writer->>store: write: tmp, fsync, rename, fsync папки, оставить keep
+    end
+    main->>world: SIGTERM: request_stop
+    world->>writer: последний снимок, run() возвращается
+    writer->>store: дописать ожидающий снимок, затем поток останавливается
 ```
 
 **Метрики** (GAME-012). `World` меряет каждый тик (`steady_clock`) и копит в

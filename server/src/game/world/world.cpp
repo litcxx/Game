@@ -51,9 +51,13 @@ World::World(TSQueue<ClientEvent>& incoming, IClientGateway& gateway, const Game
       metrics_interval_s_{
           static_cast<std::uint32_t>(std::max<std::int64_t>(metrics_interval.count(), 1))},
       metrics_interval_ticks_{std::max<std::uint32_t>(metrics_interval_s_ * config.tick_rate, 1)} {
+    // A new world, a new season — unless restore() brings a saved one back.
     state_.territory.reset(config_.map_width, config_.map_height);
-    seed_capitals(state_.territory, config_.capitals);  // every start is a season's, until saves
+    seed_capitals(state_.territory, config_.capitals);
     protect_capitals(state_.territory, config_.capitals);
+    state_.season_started_at = std::chrono::duration_cast<std::chrono::seconds>(
+                                   std::chrono::system_clock::now().time_since_epoch())
+                                   .count();
 
     const std::uint32_t rate = config_.snapshot_rate == 0 ? 1 : config_.snapshot_rate;
     snapshot_interval_ = config_.tick_rate / rate;
@@ -87,6 +91,28 @@ void World::run(std::stop_token stop) {
         }
         std::this_thread::sleep_until(now + step_duration);
     }
+    save_now();  // the world as it stops
+}
+
+std::expected<SeasonLoad, std::string> World::restore(const ::lit::save::WorldSave& save) {
+    return restore_world(state_, config_, save);
+}
+
+void World::save_to(ISaveSink& sink, std::chrono::seconds interval) {
+    save_sink_ = &sink;
+    save_interval_ticks_ =
+        static_cast<std::uint32_t>(std::max<std::int64_t>(interval.count() * config_.tick_rate, 1));
+}
+
+void World::save_now() {
+    if (save_sink_ == nullptr) return;
+    const auto started = std::chrono::steady_clock::now();
+    auto save = make_world_save(state_, config_);  // a copy: the writer serializes it
+    metrics_.record_save_snapshot(
+        static_cast<std::uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                       std::chrono::steady_clock::now() - started)
+                                       .count()));
+    save_sink_->submit(std::move(save));
 }
 
 void World::tick(double dt) {
@@ -115,6 +141,7 @@ void World::tick(double dt) {
     send_faction_scores();
     send_snapshots();
     close_released_sessions();
+    if (save_sink_ != nullptr && state_.tick % save_interval_ticks_ == 0) save_now();
     finish_tick_metrics(started);
 }
 
@@ -124,7 +151,15 @@ void World::finish_tick_metrics(std::chrono::steady_clock::time_point started) {
     metrics_.record_tick(static_cast<std::uint32_t>(took.count()), is_snapshot_tick());
     if (state_.tick % metrics_interval_ticks_ != 0) return;
     const auto ccu = static_cast<std::uint32_t>(state_.sessions.size());
-    spdlog::info("metrics {}", to_json(metrics_.report(metrics_interval_s_, ccu)));
+    auto report = metrics_.report(metrics_interval_s_, ccu);
+    if (save_sink_ != nullptr) {
+        const SaveStats saving = save_sink_->stats();
+        report.saves_written = saving.written;
+        report.saves_failed = saving.failed;
+        report.save_bytes = saving.last_bytes;
+        report.save_write_ms = saving.last_write_ms;
+    }
+    spdlog::info("metrics {}", to_json(report));
 }
 
 void World::index_alive_units() {

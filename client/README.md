@@ -294,14 +294,15 @@ script role (`combat-attacker`, `fog-scout`, …), its capital where that role's
 players come into the world, since a body spawns only at its faction's capital.
 A script finds its spot with `spot("role")` (`scripts/smokeMap.ts`) and spawns in
 that faction; a script that captures steps off its capital onto a neutral
-neighbour first. Start the server as CI does, freshly (the territory persists
-for its lifetime, so e.g. `capture_smoke` fails where its cell is already
+neighbour first. Start the server as CI does, on a new world (`--fresh`: the
+territory persists, so e.g. `capture_smoke` fails where its cell is already
 taken), with its log at `../server/server.log` (`close_reason_smoke` reads it;
-or point `SERVER_LOG` at it):
+or point `SERVER_LOG` at it). `persistence_smoke` runs a server of its own on
+port 27999 (`SERVER_BIN`, default `../server/build/bin/server`):
 
 ```bash
 cd ../server && ./scripts/smoke-config.sh > build/smoke-config.json
-./build/bin/server build/smoke-config.json > server.log 2>&1 &
+./build/bin/server build/smoke-config.json --fresh > server.log 2>&1 &
 ```
 
 A new script is picked up by its name, no list to edit; a new role is a faction
@@ -344,6 +345,7 @@ npx tsx scripts/capture_smoke.ts    # hold E -> capture a cell
 npx tsx scripts/takeover_smoke.ts   # capture an enemy-owned cell
 npx tsx scripts/front_smoke.ts      # only next to your land: a far cell won't go, then does once the one between is yours
 npx tsx scripts/scores_smoke.ts     # FactionScores right after the roster, every faction counted unseen; online after a spawn; once a second
+npx tsx scripts/persistence_smoke.ts # its own server: SIGTERM saves; restarted, the same player by token, faction and cells kept; a damaged save refused, --fresh starts
 npx tsx scripts/combat_smoke.ts     # area attack -> hit -> death
 npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
 npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit (fails on no damage)

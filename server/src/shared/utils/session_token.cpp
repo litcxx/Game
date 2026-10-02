@@ -1,6 +1,5 @@
 #include "utils/session_token.hpp"
 
-#include <openssl/evp.h>
 #include <openssl/rand.h>
 
 #include <array>
@@ -29,13 +28,5 @@ std::string new_session_token() {
     return token;
 }
 
-TokenHash hash_token(std::string_view token) {
-    TokenHash hash{};
-    unsigned int size = 0;
-    if (EVP_Digest(token.data(), token.size(), hash.data(), &size, EVP_sha256(), nullptr) != 1 ||
-        size != hash.size()) {
-        throw std::runtime_error("EVP_Digest(SHA-256) failed");
-    }
-    return hash;
-}
+TokenHash hash_token(std::string_view token) { return sha256(token); }
 }  // namespace lit

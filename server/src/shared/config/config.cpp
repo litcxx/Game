@@ -19,6 +19,7 @@ Config::Config(const std::string& filename) {
     init_net_config(filename);
     init_game_config(filename);
     init_log_config(filename);
+    init_save_config(filename);
 }
 
 void Config::init_net_config(const std::string& filename) {
@@ -154,6 +155,10 @@ GameConfig parse_game_config(const std::string& config_json) {
     }
     config.player_radius = game.at("player_radius");
     config.vision_radius = game.at("vision_radius");
+    config.season_id = game.at("season_id");
+    if (config.season_id == 0) {
+        throw std::runtime_error("config: season_id must be >= 1");
+    }
     if (config.vision_radius == 0) {
         throw std::runtime_error("config: vision_radius must be > 0");
     }
@@ -227,5 +232,24 @@ void Config::init_log_config(const std::string& filename) {
 
     spdlog::info("Log level={} metrics_interval_s={}", log_config_.level,
                  log_config_.metrics_interval_s);
+}
+
+SaveConfig parse_save_config(const std::string& config_json) {
+    const nlohmann::json doc = nlohmann::json::parse(config_json);
+    const auto& save = doc.at("save");
+    SaveConfig config{save.at("dir"), save.at("interval_s"), save.at("keep")};
+    if (config.dir.empty()) throw std::runtime_error("config: save.dir must not be empty");
+    if (config.interval_s == 0) throw std::runtime_error("config: save.interval_s must be > 0");
+    if (config.keep == 0) throw std::runtime_error("config: save.keep must be > 0");
+    return config;
+}
+
+void Config::init_save_config(const std::string& filename) {
+    std::ifstream file(filename);
+    const std::string text{std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    save_config_ = parse_save_config(text);
+
+    spdlog::info("Save dir={} interval_s={} keep={} season_id={}", save_config_.dir,
+                 save_config_.interval_s, save_config_.keep, game_config_.season_id);
 }
 }  // namespace lit

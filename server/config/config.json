@@ -8,6 +8,11 @@
     "level": "info",
     "metrics_interval_s": 60
   },
+  "save": {
+    "dir": "saves",
+    "interval_s": 60,
+    "keep": 5
+  },
   "game": {
     "tick_rate": 60,
     "snapshot_rate": 20,
@@ -21,6 +26,7 @@
     "capture_enemy_multiplier": 2.0,
     "player_radius": 16,
     "vision_radius": 300,
+    "season_id": 1,
     "limits": {
       "max_input_frames": 8,
       "input_queue": 32,

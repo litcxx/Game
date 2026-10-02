@@ -4,6 +4,7 @@ find_package(OpenSSL REQUIRED COMPONENTS Crypto)
 add_library(shared
   config/config.cpp
   utils/session_token.cpp
+  utils/sha256.cpp
 )
 
 target_include_directories(shared PUBLIC

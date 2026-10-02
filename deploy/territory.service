@@ -18,13 +18,15 @@ WorkingDirectory=/opt/territory/current
 ExecStart=/opt/territory/current/bin/server /opt/territory/current/config.json
 Restart=always
 RestartSec=1
-# SIGTERM: the server says SERVER_SHUTDOWN to everyone and closes (the clients
-# reconnect by themselves).
+# SIGTERM: the server says SERVER_SHUTDOWN to everyone, saves the world and
+# closes (the clients reconnect by themselves, as the same characters).
 TimeoutStopSec=15
+StateDirectory=territory
 LimitNOFILE=65536
 
-# It needs nothing but its port (unprivileged) and stdout: no capabilities, no
-# writable files, the system calls of an ordinary service.
+# It needs nothing but its port (unprivileged), stdout and its world save
+# (StateDirectory: /var/lib/territory, the only place it may write; config.json's
+# save.dir points there): no capabilities, the system calls of an ordinary service.
 CapabilityBoundingSet=
 NoNewPrivileges=yes
 PrivateUsers=yes

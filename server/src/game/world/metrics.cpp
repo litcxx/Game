@@ -105,6 +105,13 @@ std::string to_json(const MetricsReport& report) {
         {"deaths", report.deaths},
         {"captures", report.captures},
         {"errors", nlohmann::ordered_json(report.errors)},
+        {"save",
+         {{"snapshots", report.save_snapshots},
+          {"snapshot_us_max", report.save_snapshot_us_max},
+          {"written", report.saves_written},
+          {"failed", report.saves_failed},
+          {"bytes", report.save_bytes},
+          {"write_ms", report.save_write_ms}}},
     };
     return j.dump();
 }

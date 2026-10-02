@@ -33,6 +33,7 @@ std::string config_json(const std::string& abilities, const std::string& vision_
         "tick_rate": 60, "snapshot_rate": 20, "map_width": 100, "map_height": 100,
         "move_speed": 300, "max_hp": 100, "respawn_delay_ticks": 300,
         "reconnect_grace_ms": 30000, "capture_ticks": 60, "capture_enemy_multiplier": 2.0,
+        "season_id": 1,
         "player_radius": 16,
         "vision_radius": )" +
            vision_radius + R"(, "limits": )" + limits + R"(,
@@ -215,6 +216,20 @@ TEST(GameConfigParse, RejectsAZeroOrMissingEnemyCaptureMultiplier) {
     }
 }
 
+TEST(GameConfigParse, ReadsTheSeason) {
+    const std::string config = config_json("[" + kMelee + "]");
+
+    EXPECT_EQ(lit::parse_game_config(with_game_key(config, "season_id", 7)).season_id, 7u);
+}
+
+// The season is what a save is checked against (GAME-019): it must be stated, from 1.
+TEST(GameConfigParse, RejectsAZeroOrMissingSeason) {
+    const std::string config = config_json("[" + kMelee + "]");
+    EXPECT_THROW(lit::parse_game_config(with_game_key(config, "season_id", 0)), std::exception);
+    EXPECT_THROW(lit::parse_game_config(with_game_key(config, "season_id", nlohmann::json())),
+                 std::exception);
+}
+
 TEST(GameConfigParse, RejectsZeroVisionRadius) {
     // Nobody would see anything, not even their own cell: a broken config.
     EXPECT_THROW(lit::parse_game_config(config_json("[" + kMelee + "]", "0")), std::exception);
@@ -270,6 +285,40 @@ std::string with_log(const std::string& log) {
 }
 
 }  // namespace
+
+namespace {
+
+// A config document whose "save" section is `save` (omitted when empty).
+std::string with_save(const std::string& save) {
+    return R"({ "server": { "ip": "0.0.0.0", "port": 27998, "io_threads": 1 })" +
+           (save.empty() ? std::string{} : R"(, "save": )" + save) + " }";
+}
+
+}  // namespace
+
+TEST(SaveConfigParse, ReadsTheDirectoryTheIntervalAndHowManyToKeep) {
+    const auto c = lit::parse_save_config(
+        with_save(R"({ "dir": "/var/lib/territory", "interval_s": 60, "keep": 5 })"));
+
+    EXPECT_EQ(c.dir, "/var/lib/territory");
+    EXPECT_EQ(c.interval_s, 60u);
+    EXPECT_EQ(c.keep, 5u);
+}
+
+TEST(SaveConfigParse, RejectsAnEmptyDirectoryOrAZeroIntervalOrKeep) {
+    EXPECT_THROW(lit::parse_save_config(with_save(R"({ "dir": "", "interval_s": 60, "keep": 5 })")),
+                 std::exception);
+    EXPECT_THROW(
+        lit::parse_save_config(with_save(R"({ "dir": "saves", "interval_s": 0, "keep": 5 })")),
+        std::exception);
+    EXPECT_THROW(
+        lit::parse_save_config(with_save(R"({ "dir": "saves", "interval_s": 60, "keep": 0 })")),
+        std::exception);
+}
+
+TEST(SaveConfigParse, RequiresTheSection) {
+    EXPECT_THROW(lit::parse_save_config(with_save("")), std::exception);
+}
 
 TEST(LogConfigParse, ReadsTheLevelAndTheMetricsInterval) {
     const auto c =
@@ -376,6 +425,17 @@ TEST(ShippedConfig, EveryCapitalZoneIsWholeOnTheMap) {
 // A front holds: taking a cell from an enemy is slower than taking a neutral one.
 TEST(ShippedConfig, AnEnemyCellTakesLongerThanANeutralOne) {
     EXPECT_GT(shipped_config().capture_enemy_multiplier, 1.0);
+}
+
+// A crash loses at most a minute of the world; a broken newest save leaves older
+// ones to go back to.
+TEST(ShippedConfig, SavesEveryMinuteAndKeepsBackups) {
+    const std::ifstream file(LIT_SHIPPED_CONFIG);
+    std::stringstream text;
+    text << file.rdbuf();
+    const auto save = lit::parse_save_config(text.str());
+    EXPECT_LE(save.interval_s, 60u);
+    EXPECT_GE(save.keep, 3u);
 }
 
 // Ranged alone isn't the whole fight: at least five hits to kill.

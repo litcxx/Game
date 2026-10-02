@@ -1,0 +1,30 @@
+// The world as the server saves it (GAME-019, GDD 11.2): what outlives a restart.
+// Server-only — never sent to a client. Fields are only added (new systems
+// append theirs; a removed one becomes `reserved`); `version` changes only when
+// an older server could no longer read a file right.
+//
+// Transient state is not saved: bodies (position, hp, cooldowns), capture
+// progress, projectiles, sessions. After a restart every character is out of the
+// world, its faction kept for the season, until a session brings it back.
+
+syntax = "proto3";
+
+package lit.save;
+
+message WorldSave {
+  uint32 version = 1;             // the format: 1; a newer one is refused
+  uint32 season_id = 2;           // game.season_id when saved; another one starts a new season
+  int64 season_started_at = 3;    // unix seconds: when this season's world began
+  uint32 next_player_id = 4;      // ids are never reused
+  uint32 map_width = 5;           // cells
+  uint32 map_height = 6;
+  bytes owner_faction_ids = 7;    // map_width * map_height bytes by rows; byte = faction id
+  repeated SavedCharacter characters = 8;  // by id
+}
+
+message SavedCharacter {
+  uint32 id = 1;          // its player_id
+  string name = 2;
+  bytes token_hash = 3;   // SHA-256 of its session token (32 bytes); never the token
+  uint32 faction_id = 4;  // locked for the season; 0 = not chosen yet
+}

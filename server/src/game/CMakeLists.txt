@@ -1,4 +1,7 @@
 add_library(game
+  persist/save_store.cpp
+  persist/save_writer.cpp
+  persist/world_save.cpp
   spatial/spatial_index.cpp
   systems/capital_system.cpp
   systems/capture_system.cpp
