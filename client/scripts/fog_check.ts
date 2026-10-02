@@ -87,6 +87,20 @@ const fresh = () => {
   fog.reset(2, 2);
   check("reset starts a new map, all unexplored", fog.sightAt(0) === "unexplored");
 }
+{
+  // MapState.explored: the faction's explored cells, a bit per cell, lowest bit first.
+  const fog = fresh();
+  fog.apply([2], []);
+  const changed = fog.explore(new Uint8Array([0b0000_0101, 0b0000_0010])); // cells 0, 2, 9
+  check("explored bits mark their cells explored", changed && fog.sightAt(0) === "explored" && fog.sightAt(9) === "explored");
+  check("... the rest stays unexplored", fog.sightAt(1) === "unexplored" && fog.sightAt(8) === "unexplored");
+  check("... a visible cell stays visible", fog.sightAt(2) === "visible");
+  check("nothing new: no change", !fog.explore(new Uint8Array([0b0000_0101, 0b0000_0010])));
+  check("no bits: nothing explored, no change", !fresh().explore(new Uint8Array(0)));
+  const wide = fresh();
+  wide.explore(new Uint8Array([0, 0xff])); // bits 8..15: cells 12..15 are off the 4x3 map
+  check("bits past the map are ignored", wide.sightAt(11) === "explored" && wide.sightAt(12) === "unexplored");
+}
 
 console.log(failures === 0 ? "VERDICT: PASS" : `VERDICT: FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);

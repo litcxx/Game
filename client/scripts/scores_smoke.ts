@@ -31,7 +31,8 @@ ws.onopen = () => send({ case: "hello", value: { protocolVersion: ProtocolVersio
 ws.onmessage = (ev: MessageEvent) => {
   const m = fromBinary(ServerMessageSchema, new Uint8Array(ev.data as ArrayBuffer));
   if (m.payload.case) order.push(m.payload.case);
-  if (m.payload.case === "mapState") {
+  if (m.payload.case === "mapState" && order.filter((k) => k === "mapState").length === 1) {
+    // The joiner's, before any faction (the first spawn's brings the faction's map).
     mapBlank = m.payload.value.ownerFactionIds.every((b) => b === 0);
   } else if (m.payload.case === "factionScores") {
     const scores = m.payload.value.scores;

@@ -67,7 +67,7 @@ function onWelcome(state: GameState, w: Welcome): void {
   state.activeSlot = 0;
   if (w.config) {
     state.territory.resize(w.config.mapWidth, w.config.mapHeight);
-    state.fog.reset(state.territory.cols, state.territory.rows); // a new map: nothing explored yet
+    state.fog.reset(state.territory.cols, state.territory.rows); // MapState brings what is explored
     state.worldRevision++;
   }
   const predictor = new Predictor(w.config?.moveSpeed ?? 300, FIXED_DT, {
@@ -78,8 +78,11 @@ function onWelcome(state: GameState, w: Welcome): void {
   state.predictor = predictor;
 }
 
+// The map as the faction knows it: the owners (as last seen where explored), the
+// explored cells under their fog; what is seen now, the next snapshot reveals.
 function onMapState(state: GameState, m: MapState): void {
   state.territory.setMapState(m.ownerFactionIds, m.captures);
+  state.fog.explore(m.explored);
   state.worldRevision++;
 }
 

@@ -121,6 +121,7 @@ const joined = (nowMs = 1000): GameState => {
   check("MapState: a capture in progress", same(state.territory.cell(2, 0), { index: 2, owner: 0, captureFaction: 2, captureProgress: 40 }));
   check("MapState: the world is redrawn", state.worldRevision > before);
   check("a cell off the map reads as nothing", same(state.territory.cell(4, 0), { index: 4, owner: 0, captureFaction: 0, captureProgress: 0 }));
+  check("MapState without explored cells: the fog stays", state.fog.sightAt(0) === "unexplored");
 
   const mid = state.worldRevision;
   routeMessage(state, snapshot({ tick: 5, cells: [{ index: 2, ownerFactionId: 2, captureFactionId: 0, captureProgress: 0 }, { index: 0, ownerFactionId: 0 }] }), 1000);
@@ -378,6 +379,22 @@ const joined = (nowMs = 1000): GameState => {
   check("hint: alive, no cell captured yet -> how to capture (next to your land)", usualHint(state, false) === "Встаньте на чужую или ничью клетку рядом со своей и держите E — захват");
   state.captureLearned = true; // see onboarding_check.ts
   check("hint: none while alive once you have captured", usualHint(state, false) === "");
+}
+
+// --- MapState: the faction's map (GAME-020) ----------------------------------------
+// On joining, and again on the first spawn: the cells the faction has explored, as
+// it last saw them, under the explored fog; what is seen now, the snapshot reveals.
+{
+  const state = joined();
+  const owners = new Uint8Array([1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0]);
+  const before = state.worldRevision;
+  routeMessage(state, msg({ case: "mapState", value: { ownerFactionIds: owners, captures: [], explored: new Uint8Array([0b0010_0011]) } } as never), 1000);
+  check("MapState: the faction's explored cells are explored", state.fog.sightAt(0) === "explored" && state.fog.sightAt(1) === "explored" && state.fog.sightAt(5) === "explored");
+  check("MapState: ... with their owners as last seen", state.territory.cell(0, 0).owner === 1 && state.territory.cell(1, 1).owner === 2);
+  check("MapState: the rest stays unexplored", state.fog.sightAt(2) === "unexplored");
+  check("MapState: the world is redrawn", state.worldRevision > before);
+  routeMessage(state, snapshot({ tick: 10, revealed: [1, 2], cells: [{ index: 1, ownerFactionId: 0, captureFactionId: 0, captureProgress: 0 }] }), 1000);
+  check("then the snapshot reveals what is seen now", state.fog.sightAt(1) === "visible" && state.fog.sightAt(2) === "visible" && state.fog.sightAt(0) === "explored");
 }
 
 // --- The cell under you --------------------------------------------------------------
