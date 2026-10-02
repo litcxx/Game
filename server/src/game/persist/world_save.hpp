@@ -17,20 +17,23 @@ inline constexpr std::uint32_t kWorldSaveVersion = 1;
 enum class SeasonLoad : std::uint8_t { Continued, New };
 
 // The world's persistent part (GAME-019): the season, the next player id, every
-// cell's owner and every character — id, name, token hash, faction — by id.
-// Transient state (bodies, capture progress, projectiles, sessions) is not in it.
+// cell's owner, every character — id, name, token hash, faction — by id, and
+// each faction's memory of the map (GAME-020) by faction id. Transient state
+// (bodies, capture progress, projectiles, sessions) is not in it.
 ::lit::save::WorldSave make_world_save(const WorldState& state, const GameConfig& config);
 
 // Brings a save back into `state`, a world as the World makes it before anyone
 // joins (the map, the capitals' zones seeded and protected). Every character
 // comes back out of the world.
-//   - The config's season: the owners, the factions and the season's start too.
+//   - The config's season: the owners, the factions, the factions' memory of
+//     the map and the season's start too. A save from before GAME-020 has no
+//     memory: nothing is explored.
 //   - Another season: a new one begins — the characters stay (id, name, token),
 //     their season's data goes (the faction), the territory starts again from
-//     the capitals and the season starts with this world.
+//     the capitals, nothing is explored and the season starts with this world.
 // A save this server can't take — a newer format, another map or an unknown
-// faction in the same season, bad ids or token hashes — is refused with why,
-// and `state` is left as it was.
+// faction in the same season, a memory that doesn't fit the map, bad ids or
+// token hashes — is refused with why, and `state` is left as it was.
 std::expected<SeasonLoad, std::string> restore_world(WorldState& state, const GameConfig& config,
                                                      const ::lit::save::WorldSave& save);
 }  // namespace lit::game

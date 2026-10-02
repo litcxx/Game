@@ -295,10 +295,12 @@ void World::resume(std::uint64_t session_id, std::uint32_t character_id,
 
 void World::greet(std::uint64_t session_id, const Character& character,
                   std::string_view session_token, bool resumed) {
-    // Welcome, then the map (as far as it sees: nothing yet — snapshots reveal
-    // the rest), the full roster and the faction scores (else the next second's).
+    // Welcome, then the map as its faction knows it (what it has explored; what
+    // it sees now, the next snapshot reveals), the full roster and the faction
+    // scores (else the next second's).
     send(session_id, make_welcome(state_, config_, character, session_token, resumed));
-    send(session_id, make_map_state(state_, state_.sessions.at(session_id).sync.vision));
+    send(session_id,
+         make_map_state(state_, character.faction_id, state_.sessions.at(session_id).sync.vision));
     send(session_id, make_full_roster(state_));
     send(session_id, make_faction_scores(state_, config_));
 }
@@ -311,6 +313,7 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
     }
     ClientSession& session = it->second;
     const std::uint32_t character_id = session.character_id;
+    const bool first = faction_of(state_, character_id) == 0;  // its first spawn picks the faction
     if (auto spawned = try_spawn(state_, config_, character_id, spawn.faction_id(), spawn_point_);
         !spawned) {
         send_error(session_id, spawned.error(), request_id, "spawn refused");
@@ -319,6 +322,11 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
     // Drop stale pre-spawn commands (last_enqueued_seq stays monotonic).
     session.input.commands.clear();
     metrics_.record_spawn();
+    if (first) {
+        // The faction's map — what it has explored, as it last saw it — before the
+        // snapshot that shows what the newcomer sees itself (GAME-020).
+        send(session_id, make_map_state(state_, spawn.faction_id(), session.sync.vision));
+    }
 
     // Faction (colour) chosen -> tell everyone else.
     broadcast_except(session_id, make_roster_upsert(state_, state_.characters.at(character_id)));
@@ -370,24 +378,31 @@ void World::send_snapshots() {
     if (!is_snapshot_tick()) {
         return;
     }
-    // Every session gets a Snapshot — even before spawning — filtered by fog of
-    // war: what its character's faction sees, computed once per faction.
+    // Fog of war: what each faction sees now, computed once per faction. Its
+    // memory of the map grows with it, whoever of it is online (GAME-020).
     std::unordered_map<std::uint32_t, Vision> sight;  // faction id -> its vision
+    for (const FactionConfig& faction : config_.factions) {
+        const Vision& vision =
+            sight.emplace(faction.id, compute_vision(state_, config_, faction.id)).first->second;
+        state_.memory[faction.id].see(state_.territory, vision);
+    }
+    const Vision nothing;  // no faction chosen yet: no sight
+    // Every session gets a Snapshot — even before spawning — filtered by what its
+    // character's faction sees.
     for (auto& [session_id, recipient] : state_.sessions) {
         if (closing_.contains(session_id)) continue;
         const std::uint32_t faction = faction_of(state_, recipient.character_id);
-        if (!sight.contains(faction)) {
-            sight.emplace(faction, compute_vision(state_, config_, faction));
-        }
-        const Vision& vision = sight.at(faction);
+        const auto seen = sight.find(faction);
+        const Vision& vision = seen == sight.end() ? nothing : seen->second;
         // A frame to it was lost: resend what it may have missed — the roster in
-        // full, then a snapshot revealing its whole sight anew. A drop now marks
-        // it again (or closes it).
+        // full, the map as its faction knows it, then a snapshot revealing its
+        // whole sight anew. A drop now marks it again (or closes it).
         const bool resync = recipient.sync.resync;
         recipient.sync.resync = false;
         if (resync) {
             metrics_.record_resync();
             send(session_id, make_full_roster(state_));
+            send(session_id, make_map_state(state_, faction, nothing));
         }
         const auto snapshot = build_snapshot(state_, recipient, vision, resync);
         metrics_.record_snapshot(snapshot.ByteSizeLong());

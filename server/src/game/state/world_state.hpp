@@ -7,6 +7,7 @@
 #include "game/v1/protocol.pb.h"
 #include "state/character.hpp"
 #include "state/client_session.hpp"
+#include "state/faction_memory.hpp"
 #include "state/projectile.hpp"
 #include "state/territory.hpp"
 #include "state/unit.hpp"
@@ -26,7 +27,9 @@ struct WorldState {
     std::unordered_map<std::uint32_t, Unit> units;              // key: unit id
     std::unordered_map<std::uint64_t, ClientSession> sessions;  // key: session_id
     Territory territory;
-    std::vector<Projectile> projectiles;  // in flight, in launch order
+    // What each faction has seen of the map this season (one sight, one memory).
+    std::unordered_map<std::uint32_t, FactionMemory> memory;  // key: faction id
+    std::vector<Projectile> projectiles;                      // in flight, in launch order
     // Combat events (hits/deaths/ability uses) since the last snapshot; flushed to
     // each recipient's Snapshot.events as far as it sees them, then cleared.
     std::vector<::game::v1::GameEvent> events;

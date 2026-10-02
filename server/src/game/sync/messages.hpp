@@ -17,9 +17,13 @@ namespace lit::game {
 ::game::v1::ServerMessage make_welcome(const WorldState& state, const GameConfig& config,
                                        const Character& character, std::string_view session_token,
                                        bool resumed);
-// The whole territory for a joiner as far as `vision` shows it: the owners and
-// in-progress captures of visible cells; every other cell reads as 0 (unknown).
-::game::v1::ServerMessage make_map_state(const WorldState& state, const Vision& vision);
+// The whole territory as faction `faction_id` knows it, for a client that sees
+// `vision` (GDD 7.4, F-3): the cells the faction has explored, each with its owner
+// as the faction last saw it; the owners and in-progress captures of visible
+// cells as they are now; every other cell reads as 0 (unknown). Faction 0 (none
+// chosen yet) knows nothing.
+::game::v1::ServerMessage make_map_state(const WorldState& state, std::uint32_t faction_id,
+                                         const Vision& vision);
 // Every character in the world (id, name, faction), marked full: it replaces the
 // client's roster (on join and on resync).
 ::game::v1::ServerMessage make_full_roster(const WorldState& state);

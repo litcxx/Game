@@ -5,9 +5,11 @@
 #include <format>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
+#include "utils/bits.hpp"
 #include "utils/session_token.hpp"
 
 namespace lit::game {
@@ -15,6 +17,19 @@ namespace {
 bool is_faction(const GameConfig& config, std::uint32_t id) {
     return std::ranges::any_of(config.factions,
                                [id](const FactionConfig& faction) { return faction.id == id; });
+}
+
+// Every owner in `owners` (a byte per cell) is a faction of the config, or 0.
+std::expected<void, std::string> check_owners(const GameConfig& config, const std::string& owners,
+                                              std::string_view what) {
+    for (const char owner : owners) {
+        const auto faction = static_cast<unsigned char>(owner);
+        if (faction != 0 && !is_faction(config, faction)) {
+            return std::unexpected(
+                std::format("{} of faction {}, which the config does not have", what, faction));
+        }
+    }
+    return {};
 }
 
 // Everything restore_world() needs from the save, checked before anything changes.
@@ -38,11 +53,27 @@ std::expected<void, std::string> check(const GameConfig& config, const ::lit::sa
             return std::unexpected(std::format("{} cell owners for a map of {} cells",
                                                save.owner_faction_ids().size(), cells));
         }
-        for (const char owner : save.owner_faction_ids()) {
-            const auto faction = static_cast<unsigned char>(owner);
-            if (faction != 0 && !is_faction(config, faction)) {
+        if (auto owners = check_owners(config, save.owner_faction_ids(), "a cell"); !owners) {
+            return owners;
+        }
+        std::unordered_set<std::uint32_t> remembering;
+        for (const auto& m : save.faction_memory()) {
+            if (!is_faction(config, m.faction_id())) {
+                return std::unexpected(std::format(
+                    "a memory of faction {}, which the config does not have", m.faction_id()));
+            }
+            if (!remembering.insert(m.faction_id()).second) {
                 return std::unexpected(
-                    std::format("a cell of faction {}, which the config does not have", faction));
+                    std::format("faction {}'s memory is there twice", m.faction_id()));
+            }
+            if (m.explored().size() != packed_size(cells) || m.owners().size() != cells) {
+                return std::unexpected(std::format(
+                    "faction {}'s memory has {} bytes of explored cells and {} owners for a map "
+                    "of {} cells",
+                    m.faction_id(), m.explored().size(), m.owners().size(), cells));
+            }
+            if (auto owners = check_owners(config, m.owners(), "a remembered cell"); !owners) {
+                return owners;
             }
         }
     }
@@ -93,6 +124,18 @@ std::expected<void, std::string> check(const GameConfig& config, const ::lit::sa
                             character->token_hash.size());
         out->set_faction_id(character->faction_id);
     }
+
+    std::vector<std::uint32_t> factions;  // by id, as the characters
+    factions.reserve(state.memory.size());
+    for (const auto& [faction, memory] : state.memory) factions.push_back(faction);
+    std::ranges::sort(factions);
+    for (const std::uint32_t faction : factions) {
+        const FactionMemory& memory = state.memory.at(faction);
+        auto* out = save.add_faction_memory();
+        out->set_faction_id(faction);
+        out->set_explored(pack_bits(memory.explored));
+        out->set_owners(std::string(memory.owners.begin(), memory.owners.end()));
+    }
     return save;
 }
 
@@ -109,6 +152,12 @@ std::expected<SeasonLoad, std::string> restore_world(WorldState& state, const Ga
             state.territory.set_owner(index, static_cast<std::uint8_t>(owners[index]));
         }
         state.season_started_at = save.season_started_at();
+        const std::size_t cells = owners.size();
+        for (const auto& m : save.faction_memory()) {
+            FactionMemory& memory = state.memory[m.faction_id()];
+            memory.explored = unpack_bits(m.explored(), cells);
+            memory.owners.assign(m.owners().begin(), m.owners().end());
+        }
     }
     for (const auto& c : save.characters()) {
         Character character;
