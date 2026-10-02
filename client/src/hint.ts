@@ -2,8 +2,9 @@ import { LifeState } from "./gen/game/v1/protocol_pb.js";
 import type { GameState } from "./state/gameState.js";
 
 // Until the player has captured a cell (onboarding.ts): nobody found E unaided
-// at playtest #0. Only a cell next to your faction's land can be taken (GAME-017).
-export const CAPTURE_HINT = "Встаньте на чужую или ничью клетку рядом со своей и держите E — захват";
+// at playtest #0. Only a cell next to your faction's land can be taken (GAME-017);
+// those in sight are marked by a thin line of your colour (GAME-021).
+export const CAPTURE_HINT = "Встаньте на подсвеченную клетку и держите E — захват";
 
 // Over the map while the faction is still to be chosen (FactionPicker): the choice
 // is once a season (the server refuses another faction).

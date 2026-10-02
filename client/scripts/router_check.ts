@@ -376,9 +376,30 @@ const joined = (nowMs = 1000): GameState => {
   check("... may respawn", state.maySpawn);
   routeMessage(state, snapshot({ tick: 300, you: { life: LifeState.ALIVE } }), 1000);
   check("may not spawn while alive", !state.maySpawn);
-  check("hint: alive, no cell captured yet -> how to capture (next to your land)", usualHint(state, false) === "Встаньте на чужую или ничью клетку рядом со своей и держите E — захват");
+  check("hint: alive, no cell captured yet -> how to capture (a marked cell)", usualHint(state, false) === "Встаньте на подсвеченную клетку и держите E — захват");
   state.captureLearned = true; // see onboarding_check.ts
   check("hint: none while alive once you have captured", usualHint(state, false) === "");
+}
+
+// --- The cells to capture, marked (GAME-021) ----------------------------------------
+// Red's capital at cell 5 (1,1), radius 1: its zone 1, 4, 5, 6, 9 is Red's and
+// protected. The cells next to it that Red may take: 0, 2, 7, 8, 10 — marked while
+// you play Red, alive, and only where you see now.
+{
+  const state = new GameState();
+  routeMessage(state, welcome({ map: { capitals: [{ factionId: 1, cell: 5, protectedRadius: 1 }] } }), 1000);
+  const owners = new Uint8Array([0, 1, 0, 0, 1, 1, 1, 0, 0, 1, 0, 0]);
+  routeMessage(state, msg({ case: "mapState", value: { ownerFactionIds: owners, captures: [] } } as never), 1000);
+  routeMessage(state, snapshot({ tick: 10, revealed: [...Array(12).keys()] }), 1000);
+  const marked = () => [...Array(12).keys()].filter((i) => state.mayCapture(i));
+  check("not alive: nothing marked", same(marked(), []));
+  state.myFaction = 1;
+  routeMessage(state, snapshot({ tick: 20, you: { life: LifeState.ALIVE } }), 1000);
+  check("alive in Red: the cells next to Red's zone", same(marked(), [0, 2, 7, 8, 10]));
+  routeMessage(state, snapshot({ tick: 30, you: { life: LifeState.ALIVE }, hidden: [0, 2] }), 1000);
+  check("only where you see now", same(marked(), [7, 8, 10]));
+  state.myFaction = 2;
+  check("Green, without land: nothing", same(marked(), []));
 }
 
 // --- MapState: the faction's map (GAME-020) ----------------------------------------

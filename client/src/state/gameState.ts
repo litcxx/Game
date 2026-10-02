@@ -1,4 +1,5 @@
 import { cooldownProgress, type AbilityInfo } from "../abilities.js";
+import { capturable, protectedCells } from "../capture.js";
 import type { Effect } from "../effects.js";
 import { Notices } from "../errors.js";
 import { FogOfWar } from "../fog.js";
@@ -97,6 +98,7 @@ export class GameState {
   tickRate = 60;
   factions: readonly Faction[] = []; // in Welcome order (the picker's cards); see setFactions
   capitals: readonly Capital[] = []; // one per faction: always drawn, fog or not
+  guarded: Uint8Array = new Uint8Array(0); // per cell: 1 = in a capital's zone (see setCapitals)
   abilities: AbilityInfo[] = []; // the ability bar, slot 1 first
   projectileRadius = 0; // units, of the projectile ability
   predictor: Predictor | undefined; // the local player's movement, predicted
@@ -191,6 +193,19 @@ export class GameState {
   }
 
   // The cell under the local player (at the predicted position); none unless alive.
+  // The capitals (Welcome.map) and their zones, which no other faction can take.
+  setCapitals(capitals: readonly Capital[]): void {
+    this.capitals = capitals;
+    this.guarded = protectedCells(capitals, this.territory.cols, this.territory.rows);
+  }
+
+  // Whether to mark the cell as one to capture (GAME-021): you are alive with a
+  // faction, you see the cell now, and the rules allow it as far as the client
+  // knows (capture.ts). The server decides.
+  mayCapture(index: number): boolean {
+    return this.alive && this.fog.sightAt(index) === "visible" && capturable(this.territory, this.guarded, index, this.myFaction);
+  }
+
   cellUnderMe(): CellState | undefined {
     if (!this.alive || !this.predictor) return undefined;
     const { x, y } = this.predictor.position;

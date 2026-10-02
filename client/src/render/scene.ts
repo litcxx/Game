@@ -5,7 +5,8 @@ import type { Effect } from "../effects.js";
 import type { GameState } from "../state/gameState.js";
 import { UNITS_PER_CELL } from "../state/territory.js";
 import { Camera } from "./camera.js";
-import { CapitalsView } from "./capitals.js";
+import { capitalCentre, CapitalsView, drawCapitalMarker } from "./capitals.js";
+import { CaptureHintView } from "./captureHint.js";
 import { EffectsView } from "./effects.js";
 import { FogView } from "./fog.js";
 import { nameplate } from "./nameplate.js";
@@ -39,6 +40,7 @@ export class Scene {
   private readonly grid = new Graphics();
   private readonly coordsLayer = new Container();
   private readonly fogView = new FogView();
+  private readonly captureHintView = new CaptureHintView();
   private readonly capitalsView = new CapitalsView();
   private readonly playersLayer = new Container();
   private readonly projectileView = new ProjectileView();
@@ -78,6 +80,7 @@ export class Scene {
     app.stage.addChild(this.grid);
     app.stage.addChild(this.coordsLayer);
     app.stage.addChild(this.fogView.gfx); // over the territory, under the players
+    app.stage.addChild(this.captureHintView.gfx); // the cells you may capture
     app.stage.addChild(this.capitalsView.gfx); // over the fog: known from the start
     app.stage.addChild(this.playersLayer);
     app.stage.addChild(this.projectileView.gfx); // shots fly over the tokens
@@ -162,6 +165,7 @@ export class Scene {
       this.lastWorld = { scale: cam.scale, cx: cam.centerX, cy: cam.centerY };
       this.worldDirty = false;
     }
+    this.drawCaptureHint();
     this.drawPlayers();
     this.projectileView.draw(
       this.projectiles,
@@ -250,6 +254,32 @@ export class Scene {
       (x, y) => cam.worldToScreen(x, y),
       cellPx,
       (id) => this.state.factionColor(id) ?? 0xd8d8d0,
+    );
+  }
+
+  // The on-screen cells you may capture, each frame (you move; it is a few hundred
+  // cells at most, most of them not). None looked for when too small to mark: the
+  // full map is the whole grid.
+  private drawCaptureHint(): void {
+    const cam = this.camera;
+    const cols = this.state.territory.cols;
+    const cellPx = UNITS_PER_CELL * cam.scale;
+    const cells: number[] = [];
+    if (this.state.alive && CaptureHintView.marks(cellPx)) {
+      const [c0, c1] = cam.visibleCols();
+      const [r0, r1] = cam.visibleRows();
+      for (let row = r0; row <= r1; row++) {
+        for (let col = c0; col <= c1; col++) {
+          if (this.state.mayCapture(row * cols + col)) cells.push(row * cols + col);
+        }
+      }
+    }
+    this.captureHintView.draw(
+      cells,
+      cols,
+      (x, y) => cam.worldToScreen(x, y),
+      cellPx,
+      this.state.factionColor(this.state.myFaction) ?? 0xd8d8d0,
     );
   }
 
@@ -496,11 +526,18 @@ export class Scene {
     }
     t.stroke({ width: 1, color: 0x33333f, alpha: 0.4 });
 
-    // Viewport rect + player dots.
+    // Viewport rect, the capitals' markers (known through the fog), player dots.
     const g = this.minimapOverlay;
     g.clear();
     g.rect(toX(cam.centerX - viewW / 2), toY(cam.centerY - viewH / 2), viewW * mm, viewH * mm)
       .stroke({ width: 1, color: 0xffffff, alpha: 0.7 });
+    for (const c of this.state.capitals) {
+      const [wx, wy] = capitalCentre(c.cell, this.state.territory.cols);
+      const x = toX(wx);
+      const y = toY(wy);
+      if (x < 0 || y < 0 || x > this.minimapW || y > this.minimapH) continue;
+      drawCapitalMarker(g, x, y, 3.5, this.state.factionColor(c.factionId) ?? 0xd8d8d0, 1);
+    }
     for (const [id, mp] of this.state.players) {
       if (mp.hp <= 0) continue;
       const isSelf = id === this.state.myId;
