@@ -273,15 +273,16 @@ The versions CI builds and tests with (Ubuntu 24.04):
 | Dependency | Version | Where from |
 |---|---|---|
 | GCC (C++23) | 16.2 | `scripts/install-gcc.sh` (prebuilt for Ubuntu 24.04, see below) |
-| CMake | 3.28 (≥ 3.21 for the presets) | `cmake` |
+| CMake | 4.4.3 | `scripts/install-cmake.sh` (Kitware's build) |
 | Ninja | 1.11 | `ninja-build` (optional; any generator works) |
 | Protobuf (`protoc` + `libprotobuf`, with abseil) | 36.2 | `scripts/install-protobuf.sh` (from source) |
 | Boost (Asio + Beast, header-only) | 1.83 | `libboost-dev` |
 | OpenSSL (libcrypto) | 3.0.13 | `libssl-dev` |
 
 ```bash
-sudo apt-get install binutils libc6-dev cmake ninja-build libboost-dev libssl-dev
+sudo apt-get install binutils libc6-dev ninja-build libboost-dev libssl-dev
 scripts/install-gcc.sh                 # GCC 16.2 into /opt/gcc-16.2.0, as gcc-16 and g++-16
+scripts/install-cmake.sh               # CMake 4.4.3 into /opt/cmake-4.4.3, as cmake, ctest, cpack
 scripts/install-protobuf.sh            # protobuf 36.2 into /usr/local, with it (about 5 minutes)
 scripts/install-protobuf.sh ~/protobuf # ... or anywhere, then cmake -DCMAKE_PREFIX_PATH=~/protobuf
 ```
@@ -309,12 +310,18 @@ version also renames `gcc-16`/`g++-16` in the presets and in `install-protobuf.s
 CI rebuilds protobuf with the new compiler by itself; elsewhere run
 `scripts/install-protobuf.sh` again.
 
+**CMake 4.4.** The build and the presets require CMake 4.4 and take its
+policies, the behaviour CI checks; Ubuntu 24.04's `cmake` 3.28 stops at once.
+`scripts/install-cmake.sh` installs Kitware's own build for Linux (amd64 or
+arm64), checked by SHA-256, in CI, on the VPS and here; another version is a new
+`VERSION` and its sums from the release's `cmake-<version>-SHA-256.txt`.
+
 **Protobuf 36 only.** The build takes protobuf from its own CMake package, at
 version 36 or newer, and stops with a hint otherwise: one version is tested, and
 distro packages such as Ubuntu 24.04's 3.21 are too old (and ship no CMake
 package). The script builds the pinned release, checked by SHA-256, the same way
 CI does. A build directory once configured against another protobuf keeps it in
-its cache: delete the directory, or reconfigure with `-UProtobuf_DIR`. `spdlog` 1.15.3, `nlohmann/json` 3.11.0 and `GoogleTest` 1.15.0 are
+its cache: delete the directory, or reconfigure with `-UProtobuf_DIR`. `spdlog` 1.15.3, `nlohmann/json` 3.12.0 and `GoogleTest` 1.15.0 are
 fetched (pinned by hash) via `FetchContent`.
 
 **ASan and prebuilt libraries.** libprotobuf is not built with ASan, while its

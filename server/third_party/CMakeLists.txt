@@ -1,16 +1,14 @@
 include(FetchContent)
 
-# Some pinned dependencies (e.g. nlohmann/json v3.11.0) still declare
-# cmake_minimum_required(VERSION < 3.5), which CMake >= 4.0 rejects. Provide the
-# documented compatibility floor so these third-party projects still configure.
-set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-
 # SYSTEM marks the dependencies' headers as system includes, so our strict
 # warnings (-Wall -Wextra -Werror ...) never fire on third-party code.
+
+# json.tar.xz: the release's own archive for FetchContent (the library and its
+# CMake files, without the tests and docs).
 FetchContent_Declare(
     nlohmann_json
-    URL https://github.com/nlohmann/json/archive/refs/tags/v3.11.0.tar.gz
-    URL_HASH SHA256=e0c4fbd03c0bb7e99b40791e0276be61e5f531106e1486e8f0d771a7ed6d754a
+    URL https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz
+    URL_HASH SHA256=42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa
     DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     SYSTEM
 )

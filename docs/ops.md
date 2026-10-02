@@ -45,17 +45,18 @@ sudo deploy/setup.sh game.example.ru
 
 Что делает `setup.sh` (15–20 минут, почти всё время уходит на сборку protobuf):
 
-1. Ставит пакеты для сборки: `binutils`, `libc6-dev`, `cmake`, `ninja`, Boost, OpenSSL, `git`, `jq`.
+1. Ставит пакеты для сборки: `binutils`, `libc6-dev`, `ninja`, Boost, OpenSSL, `git`, `jq`.
 2. Ставит компилятор сервера GCC 16.2 тем же скриптом, что и CI (`server/scripts/install-gcc.sh`), в `/opt/gcc-16.2.0`, с командами `gcc-16` и `g++-16`. Пакета GCC 16.2 для Ubuntu 24.04 нет, поэтому скрипт берёт сборку из GitHub Release `gcc-16.2.0-r1` этого репозитория (её собирает из исходников GNU workflow `toolchain.yml`, подробнее в `server/README.md`) и проверяет SHA-256.
-3. При памяти меньше 3 ГБ без swap добавляет 2 ГБ swap в `/swapfile`.
-4. Собирает этим компилятором protobuf 36.2 из исходников тем же скриптом, что и CI (`server/scripts/install-protobuf.sh`), в `/usr/local`.
-5. Ставит Node.js 22 (архив с nodejs.org, проверка SHA-256) в `/usr/local/lib/nodejs`.
-6. Ставит Caddy (`.deb` из релизов Caddy на GitHub, проверка SHA-512). Он приходит со своим systemd-сервисом `caddy`.
-7. Создаёт системного пользователя `territory` без входа и без домашней папки и папку `/opt/territory`.
-8. Ставит сервис `/etc/systemd/system/territory.service` (из `deploy/territory.service`) и включает автозапуск при загрузке.
-9. Ставит сайт `/etc/caddy/Caddyfile` (из `deploy/Caddyfile`, с вашим доменом) и перезагружает Caddy.
+3. Ставит CMake 4.4.3 тем же скриптом, что и CI (`server/scripts/install-cmake.sh`): официальную сборку Kitware с GitHub, с проверкой SHA-256, в `/opt/cmake-4.4.3`, с командами `cmake`, `ctest`, `cpack` в `/usr/local/bin`.
+4. При памяти меньше 3 ГБ без swap добавляет 2 ГБ swap в `/swapfile`.
+5. Собирает этим компилятором и CMake protobuf 36.2 из исходников тем же скриптом, что и CI (`server/scripts/install-protobuf.sh`), в `/usr/local`.
+6. Ставит Node.js 22 (архив с nodejs.org, проверка SHA-256) в `/usr/local/lib/nodejs`.
+7. Ставит Caddy (`.deb` из релизов Caddy на GitHub, проверка SHA-512). Он приходит со своим systemd-сервисом `caddy`.
+8. Создаёт системного пользователя `territory` без входа и без домашней папки и папку `/opt/territory`.
+9. Ставит сервис `/etc/systemd/system/territory.service` (из `deploy/territory.service`) и включает автозапуск при загрузке.
+10. Ставит сайт `/etc/caddy/Caddyfile` (из `deploy/Caddyfile`, с вашим доменом) и перезагружает Caddy.
 
-Запускать повторно безопасно: уже поставленное пропускается, а сервис и сайт обновляются, только если их файлы в репозитории изменились. Так же обновляются версии: поменяйте версию и хэш в `setup.sh` (Node, Caddy), в `install-gcc.sh` или в `install-protobuf.sh` и запустите `setup.sh` снова.
+Запускать повторно безопасно: уже поставленное пропускается, а сервис и сайт обновляются, только если их файлы в репозитории изменились. Так же обновляются версии: поменяйте версию и хэш в `setup.sh` (Node, Caddy), в `install-gcc.sh`, `install-cmake.sh` или `install-protobuf.sh` и запустите `setup.sh` снова.
 
 Собранный сервер берёт libstdc++ из `/opt/gcc-16.2.0` (RUNPATH), поэтому эту папку не удаляйте, пока работают сборки с этим компилятором. VPS, подготовленный до перехода на GCC 16.2: `setup.sh` поставит компилятор, но protobuf, собранный старым GCC, оставит. Он совместим, но чтобы всё было собрано одним компилятором, пересоберите его один раз: `sudo server/scripts/install-protobuf.sh /usr/local`.
 
@@ -198,7 +199,7 @@ sudo systemctl stop territory       # до start или до перезагру�
   ```
 
   У многих провайдеров есть и свой файрвол в панели.
-- Обновления безопасности Ubuntu ставятся сами (`unattended-upgrades` включён по умолчанию). Caddy, Node, GCC и protobuf закреплены в скриптах и обновляются вручную, см. раздел 2.
+- Обновления безопасности Ubuntu ставятся сами (`unattended-upgrades` включён по умолчанию). Caddy, Node, GCC, CMake и protobuf закреплены в скриптах и обновляются вручную, см. раздел 2.
 
 ## Репетиция
 
