@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <initializer_list>
 #include <string>
 
 #include "config/config.hpp"
@@ -10,6 +11,7 @@
 #include "systems/capital_system.hpp"
 #include "systems/join_system.hpp"
 #include "systems/presence_system.hpp"
+#include "utils/bits.hpp"
 #include "utils/session_token.hpp"
 
 namespace {
@@ -37,9 +39,18 @@ lit::game::WorldState fresh(const lit::GameConfig& config, std::int64_t started_
     return s;
 }
 
+// The sight of a faction that sees exactly `cells` of the 4x4 map.
+lit::game::Vision sees(std::initializer_list<std::uint32_t> cells) {
+    lit::game::Vision v;
+    v.cells.assign(16, 0);
+    for (std::uint32_t index : cells) v.cells[index] = 1;
+    return v;
+}
+
 // A season under way: Ann (Red) in the world with a body, Bob who hasn't chosen,
 // Cid (Blue) gone from the world; Red took cell 2, Blue cell 14; a capture of
-// cell 3 is half done.
+// cell 3 is half done. Red has seen the top two rows (cell 2 still neutral then),
+// Blue its corner.
 lit::game::WorldState played(const lit::GameConfig& config) {
     auto s = fresh(config, 1'000'000);
     lit::game::create_character(s, "Ann", lit::hash_token("ann-token")).faction_id = 1;
@@ -48,8 +59,10 @@ lit::game::WorldState played(const lit::GameConfig& config) {
     cid.faction_id = 2;
     cid.in_world = false;
     s.units[1] = lit::game::Unit{};
+    s.memory[1].see(s.territory, sees({0, 1, 2, 3, 4, 5, 6, 7}));
     s.territory.set_owner(2, 1);
     s.territory.set_owner(14, 2);
+    s.memory[2].see(s.territory, sees({10, 11, 14, 15}));
     s.territory.capture_faction[3] = 1;
     s.territory.capture_progress[3] = 50.0;
     return s;
@@ -120,6 +133,40 @@ TEST(WorldSaveRoundTrip, TheSeasonKeepsItsStart) {
     EXPECT_EQ(after.season_started_at, 1'000'000);
 }
 
+// GAME-020: one sight per faction, one memory, which outlives a restart.
+TEST(WorldSaveRoundTrip, EachFactionKeepsWhatItHasSeen) {
+    const auto config = season_config();
+    const auto before = played(config);
+
+    auto after = fresh(config);
+    ASSERT_EQ(lit::game::restore_world(after, config,
+                                       through_bytes(lit::game::make_world_save(before, config))),
+              lit::game::SeasonLoad::Continued);
+
+    ASSERT_EQ(after.memory.size(), 2u);
+    for (const std::uint32_t faction : {1u, 2u}) {
+        EXPECT_EQ(after.memory.at(faction).explored, before.memory.at(faction).explored);
+        EXPECT_EQ(after.memory.at(faction).owners, before.memory.at(faction).owners);
+    }
+    EXPECT_TRUE(after.memory.at(1).knows(7));
+    EXPECT_FALSE(after.memory.at(1).knows(8));
+    EXPECT_EQ(after.memory.at(1).owners[2], 0);  // as Red last saw it: neutral
+    EXPECT_EQ(after.memory.at(2).owners[14], 2);
+}
+
+// A save from before GAME-020 has no memory: nothing explored, the rest as saved.
+TEST(WorldSaveRoundTrip, ASaveWithoutMemoryHasNothingExplored) {
+    const auto config = season_config();
+    auto save = lit::game::make_world_save(played(config), config);
+    save.clear_faction_memory();
+
+    auto after = fresh(config);
+    ASSERT_EQ(lit::game::restore_world(after, config, save), lit::game::SeasonLoad::Continued);
+
+    EXPECT_TRUE(after.memory.empty());
+    EXPECT_EQ(after.characters.size(), 3u);
+}
+
 TEST(WorldSaveFormat, SaysWhatItIs) {
     const auto config = season_config();
     const auto save = lit::game::make_world_save(played(config), config);
@@ -131,6 +178,11 @@ TEST(WorldSaveFormat, SaysWhatItIs) {
     ASSERT_EQ(save.characters_size(), 3);
     EXPECT_EQ(save.characters(0).id(), 1u);  // by id: the same world, the same file
     EXPECT_EQ(save.characters(2).id(), 3u);
+    ASSERT_EQ(save.faction_memory_size(), 2);
+    EXPECT_EQ(save.faction_memory(0).faction_id(), 1u);  // by faction id
+    EXPECT_EQ(save.faction_memory(1).faction_id(), 2u);
+    EXPECT_EQ(save.faction_memory(0).explored(), std::string("\xFF\x00", 2));  // a bit per cell
+    EXPECT_EQ(save.faction_memory(0).owners().size(), 16u);                    // a byte per cell
 }
 
 // --- A new season: the characters stay, the season's own data goes --------------
@@ -166,6 +218,17 @@ TEST(WorldSaveNewSeason, TheTerritoryStartsAgainFromTheCapitals) {
     EXPECT_EQ(after.season_started_at, 2'000'000);  // this world's start
 }
 
+TEST(WorldSaveNewSeason, TheFactionsForgetTheMap) {
+    const auto config = season_config();
+    auto save = lit::game::make_world_save(played(config), config);
+    save.set_season_id(2);
+
+    auto after = fresh(config);
+    ASSERT_EQ(lit::game::restore_world(after, config, save), lit::game::SeasonLoad::New);
+
+    EXPECT_TRUE(after.memory.empty());
+}
+
 // A new season may come with a new map.
 TEST(WorldSaveNewSeason, TakesAnotherMap) {
     const auto config = season_config();
@@ -191,6 +254,7 @@ std::string refused(const lit::GameConfig& config, const lit::save::WorldSave& s
     EXPECT_TRUE(state.characters.empty());
     EXPECT_EQ(state.territory.owners, untouched);
     EXPECT_EQ(state.next_character_id, 1u);
+    EXPECT_TRUE(state.memory.empty());
     return result ? std::string{} : result.error();
 }
 
@@ -260,4 +324,41 @@ TEST(WorldSaveRefused, BadIds) {
     auto ahead = good;  // an id the next character would get again
     ahead.set_next_player_id(3);
     refused(config, ahead);
+}
+
+TEST(WorldSaveRefused, AMemoryOfAFactionNotInTheConfig) {
+    const auto config = season_config();
+    auto save = lit::game::make_world_save(played(config), config);
+    save.mutable_faction_memory(1)->set_faction_id(9);
+
+    EXPECT_NE(refused(config, save).find("faction 9"), std::string::npos);
+}
+
+TEST(WorldSaveRefused, AFactionsMemoryTwice) {
+    const auto config = season_config();
+    auto save = lit::game::make_world_save(played(config), config);
+    save.mutable_faction_memory(1)->set_faction_id(1);
+
+    refused(config, save);
+}
+
+TEST(WorldSaveRefused, AMemoryThatDoesntFitTheMap) {
+    const auto config = season_config();
+    const auto good = lit::game::make_world_save(played(config), config);
+
+    auto short_bits = good;
+    short_bits.mutable_faction_memory(0)->mutable_explored()->pop_back();
+    refused(config, short_bits);
+
+    auto short_owners = good;
+    short_owners.mutable_faction_memory(0)->mutable_owners()->pop_back();
+    refused(config, short_owners);
+}
+
+TEST(WorldSaveRefused, AMemoryOfAnOwnerNotInTheConfig) {
+    const auto config = season_config();
+    auto save = lit::game::make_world_save(played(config), config);
+    (*save.mutable_faction_memory(0)->mutable_owners())[0] = 9;
+
+    EXPECT_NE(refused(config, save).find("faction 9"), std::string::npos);
 }

@@ -68,8 +68,9 @@ let scoutSawNear = false;
 let farSawScout = false;
 
 const scout = open("scout", "fog-scout", (m) => {
-  if (m.payload.case === "mapState") {
-    mapStateBlank = m.payload.value.ownerFactionIds.every((b) => b === 0);
+  if (m.payload.case === "mapState" && mapStateBlank === undefined) {
+    // The joiner's, before any faction (the first spawn's brings the faction's map).
+    mapStateBlank = m.payload.value.ownerFactionIds.every((b) => b === 0) && m.payload.value.explored.length === 0;
   } else if (m.payload.case === "snapshot") {
     const s = m.payload.value;
     if (revealedOnSpawn.length === 0) revealedOnSpawn = [...s.revealed];

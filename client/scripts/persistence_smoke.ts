@@ -4,8 +4,9 @@
 // "persistence" faction takes the cell next to its capital; SIGTERM saves the
 // world (exit 0). Restarted, the server knows the player by its session token —
 // the same player_id, its faction still locked (another is refused), its cells
-// still its own. Then the newest save is damaged: the server refuses to start
-// on it, and starts a new world with --fresh.
+// still its own, and the map its faction had explored (GAME-020) comes with the
+// greeting. Then the newest save is damaged: the server refuses to start on it,
+// and starts a new world with --fresh.
 //   SERVER_BIN: the server binary (default ../server/build/bin/server)
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -132,6 +133,7 @@ async function main(): Promise<void> {
   first.send({ case: "input", value: { frames: [{ seq: ++seq, moveX: 0, moveY: 0, capturing: true }] } });
   const taken = await until(() => last(first, "snapshot")?.cells.some((c) => c.index === NEAR && c.ownerFactionId === HOME.factionId) || undefined);
   check("the cell next to the capital is taken", taken === true);
+  const seen = new Set(all(first, "snapshot").flatMap((s) => s.revealed)); // the faction's map
   first.close();
   bystander.close();
 
@@ -156,6 +158,12 @@ async function main(): Promise<void> {
   check("its faction is still locked", mine?.factionId === HOME.factionId);
   const cells = await until(() => myCells(back));
   check("its faction's cells: the capital and the one taken", cells === 2, `cells=${cells}`);
+  const map = all(back, "mapState")[0];
+  const bits = map?.explored ?? new Uint8Array();
+  const known = (i: number) => ((bits[i >> 3] ?? 0) >> (i & 7)) & 1;
+  const lost = [...seen].filter((i) => !known(i));
+  check("the map its faction had explored", seen.size > 0 && lost.length === 0, `seen=${seen.size} missing=${lost.length}`);
+  check("... the taken cell as last seen: its own", map?.ownerFactionIds[NEAR] === HOME.factionId);
   back.send({ case: "spawn", value: { factionId: OTHER_FACTION } });
   const refused = await until(() => last(back, "error"));
   check("another faction is refused", refused?.code === ErrorCode.INVALID_FACTION);

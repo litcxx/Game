@@ -13,6 +13,7 @@ FetchContent_MakeAvailable(googletest)
 set(SOURCES
   main.cpp
   ${CMAKE_SOURCE_DIR}/src/asan_default_options.cpp
+  shared/bits_tests.cpp
   shared/config_tests.cpp
   shared/session_token_tests.cpp
   shared/ts_queue_tests.cpp
@@ -31,6 +32,7 @@ set(SOURCES
   game/systems/projectile_system_tests.cpp
   game/systems/spawn_system_tests.cpp
   game/systems/vision_system_tests.cpp
+  game/state/faction_memory_tests.cpp
   game/state/territory_tests.cpp
   game/sync/delivery_tests.cpp
   game/sync/messages_tests.cpp

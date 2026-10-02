@@ -21,7 +21,8 @@
     {"id": 18, "name": "takeover-b", "color": 4259648},
     {"id": 19, "name": "front", "color": 12632256},
     {"id": 20, "name": "scores", "color": 8421631},
-    {"id": 21, "name": "persistence", "color": 12615808}
+    {"id": 21, "name": "persistence", "color": 12615808},
+    {"id": 22, "name": "explored", "color": 8437952}
   ],
   "capitals": [
     {"faction_id": 1, "cell": 6565, "protected_radius": 0},
@@ -44,6 +45,7 @@
     {"faction_id": 18, "cell": 3032, "protected_radius": 0},
     {"faction_id": 19, "cell": 7070, "protected_radius": 0},
     {"faction_id": 20, "cell": 8020, "protected_radius": 0},
-    {"faction_id": 21, "cell": 2080, "protected_radius": 0}
+    {"faction_id": 21, "cell": 2080, "protected_radius": 0},
+    {"faction_id": 22, "cell": 9010, "protected_radius": 0}
   ]
 }

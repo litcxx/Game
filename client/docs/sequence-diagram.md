@@ -43,7 +43,7 @@ sequenceDiagram
     net->>ses: onMessage(Welcome / MapState / Roster / FactionScores)
     ses->>ses: Welcome: сохранить ник и session_token в localStorage, status playing → экран ника скрыт
     ses->>main: onMessage
-    main->>main: routeMessage → GameState: новая сессия (старое состояние сброшено), конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта, ростер
+    main->>main: routeMessage → GameState: новая сессия (старое состояние сброшено), конфиг, фракции, способности, new Predictor(speed, fixedDt, bounds), карта фракции (MapState: владельцы, исследованное → fog.explore), ростер
     main->>main: showWelcome: карточки фракций, панель способностей
     Note over ses,srv: сервер отверг ник (INVALID_NAME, закрытие 4007) → status needName с причиной: экран ника снова
     world->>srv: send_to(id): Pong{client_time_ms}

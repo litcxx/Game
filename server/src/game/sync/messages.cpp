@@ -1,9 +1,14 @@
 #include "sync/messages.hpp"
 
+#include <algorithm>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
+
+#include "utils/bits.hpp"
 
 namespace lit::game {
 namespace {
@@ -75,16 +80,29 @@ void fill_player_info(::game::v1::PlayerInfo* info, const WorldState& state,
     return msg;
 }
 
-::game::v1::ServerMessage make_map_state(const WorldState& state, const Vision& vision) {
+::game::v1::ServerMessage make_map_state(const WorldState& state, std::uint32_t faction_id,
+                                         const Vision& vision) {
     const Territory& t = state.territory;
+    const auto known = faction_id == 0 ? state.memory.end() : state.memory.find(faction_id);
+    const FactionMemory* memory = known == state.memory.end() ? nullptr : &known->second;
     ::game::v1::ServerMessage msg;
     auto* map = msg.mutable_map_state();
     map->set_tick(state.tick);
     std::string owners(t.owners.size(), '\0');
+    std::vector<std::uint8_t> explored(t.owners.size(), 0);
     for (std::uint32_t index = 0; index < owners.size(); ++index) {
-        if (vision.sees(index)) owners[index] = static_cast<char>(t.owners[index]);
+        if (vision.sees(index)) {
+            owners[index] = static_cast<char>(t.owners[index]);  // as it is now
+            explored[index] = 1;
+        } else if (memory != nullptr && memory->knows(index)) {
+            owners[index] = static_cast<char>(memory->owners[index]);  // as last seen
+            explored[index] = 1;
+        }
     }
     map->set_owner_faction_ids(std::move(owners));
+    if (std::ranges::any_of(explored, [](std::uint8_t e) { return e != 0; })) {
+        map->set_explored(pack_bits(explored));
+    }
     for (std::uint32_t index : t.active) {
         if (vision.sees(index)) fill_cell_update(map->add_captures(), t, index);
     }

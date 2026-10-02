@@ -3,7 +3,9 @@
 //   explored   — seen before but not now: the last known state, dimmed;
 //   visible    — seen now: kept current by the server.
 // The server decides what is visible (Snapshot.revealed / hidden); the client
-// only remembers what it has ever seen — through deaths and respawns alike.
+// remembers what it has seen since — through deaths and respawns alike. What the
+// faction explored before (another tab, before a reload or a restart, a newcomer's
+// faction) comes with MapState.explored (GAME-020).
 export type CellSight = "unexplored" | "explored" | "visible";
 
 // A stretch of equal sight along one row: the renderer draws it as one rect.
@@ -38,6 +40,20 @@ export class FogOfWar {
     };
     for (const i of revealed) set(i, VISIBLE);
     for (const i of hidden) set(i, EXPLORED);
+    return changed;
+  }
+
+  // MapState.explored: the cells the faction has explored, a bit per cell (bit
+  // i % 8 of byte i / 8). An unexplored one turns explored; a visible one stays
+  // as it is. Returns whether any cell changed.
+  explore(bits: Uint8Array): boolean {
+    let changed = false;
+    const cells = Math.min(this.sight.length, bits.length * 8);
+    for (let i = 0; i < cells; i++) {
+      if (this.sight[i] !== 0 || ((bits[i >> 3]! >> (i & 7)) & 1) === 0) continue;
+      this.sight[i] = EXPLORED;
+      changed = true;
+    }
     return changed;
   }
 

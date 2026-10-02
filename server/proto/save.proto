@@ -20,6 +20,7 @@ message WorldSave {
   uint32 map_height = 6;
   bytes owner_faction_ids = 7;    // map_width * map_height bytes by rows; byte = faction id
   repeated SavedCharacter characters = 8;  // by id
+  repeated SavedFactionMemory faction_memory = 9;  // by faction id; this season's only
 }
 
 message SavedCharacter {
@@ -27,4 +28,13 @@ message SavedCharacter {
   string name = 2;
   bytes token_hash = 3;   // SHA-256 of its session token (32 bytes); never the token
   uint32 faction_id = 4;  // locked for the season; 0 = not chosen yet
+}
+
+// What one faction has seen of the map this season (GAME-020, GDD 7.4, F-3): one
+// sight per faction, so one memory, which every member gets on joining it.
+message SavedFactionMemory {
+  uint32 faction_id = 1;
+  bytes explored = 2;  // a bit per cell, as MapState.explored: bit i % 8 of byte i / 8
+  bytes owners = 3;    // map_width * map_height bytes: each cell's owner when last seen
+                       //   (0 where never seen)
 }

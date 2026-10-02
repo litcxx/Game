@@ -96,8 +96,8 @@ lives on the server; the browser client predicts, interpolates, and renders.
   body in the same state (`Welcome.resumed`), which no one else notices; after
   the grace it comes back `NOT_SPAWNED`, with the same id (and joins the
   others' rosters again). The session is new either way, so it gets the full
-  greeting — `MapState`, the full roster — and its first snapshot reveals all
-  it sees. A second connection with the token takes the character over: the
+  greeting — `MapState` (its faction's map), the full roster — and its first
+  snapshot reveals all it sees. A second connection with the token takes the character over: the
   one driving it gets `SESSION_REPLACED` (fatal). An unknown token (e.g. from
   before a restart) is no token: a new character.
 - **Faction lock.** A character's faction is its own, not its body's:
@@ -137,8 +137,8 @@ lives on the server; the browser client predicts, interpolates, and renders.
   a lost one needs no repair.
 - **The world is saved (GAME-019).** What outlives a restart is in
   `proto/save.proto` (`WorldSave`, server-only): the season and when it began,
-  the next player id, every cell's owner and every character — id, name, token
-  hash, faction. Transient state (bodies, capture progress, projectiles,
+  the next player id, every cell's owner, every character — id, name, token
+  hash, faction — and each faction's memory of the map (GAME-020). Transient state (bodies, capture progress, projectiles,
   sessions) is not. `src/game/persist`: `make_world_save()` / `restore_world()`
   (state ↔ proto), `SaveStore` (the files), `SaveWriter` (a thread of its own:
   no I/O in the tick). The World hands it a snapshot every `save.interval_s`
@@ -149,9 +149,10 @@ lives on the server; the browser client predicts, interpolates, and renders.
   out of the world, its faction kept for the season, until a session brings it
   back by its token. A `game.season_id` other than the save's starts a new
   season: the characters stay (id, name, token), their faction goes, the
-  territory starts again from the capitals. A save the server can't take — cut
-  short, damaged, a newer format, another map or an unknown faction in the same
-  season — stops it at startup with why; `--fresh` starts a new world instead,
+  territory starts again from the capitals and nothing is explored. A save the
+  server can't take — cut short, damaged, a newer format, another map, an
+  unknown faction or a memory that doesn't fit the map in the same season —
+  stops it at startup with why; `--fresh` starts a new world instead,
   leaving the files (the next save is numbered after them).
 - **Spawning is at the capital.** A `SpawnRequest` names only the faction: the
   body comes into the world at the centre of that faction's capital cell, the
@@ -171,13 +172,24 @@ lives on the server; the browser client predicts, interpolates, and renders.
   always), events whose named units are all visible (a hit from the fog tells
   the victim nothing), and the visible cells that changed plus every newly
   revealed cell with its current state. The difference from what the client was
-  told last time (`ClientSession::sync.vision`) goes out as `revealed` / `hidden`; the
-  client remembers explored cells. A joiner's `MapState` reveals nothing.
+  told last time (`ClientSession::sync.vision`) goes out as `revealed` / `hidden`.
+- **A faction remembers the map (GAME-020).** One sight per faction, so one
+  memory: `FactionMemory` (`WorldState::memory`) keeps the cells the faction
+  has ever seen and each one's owner as it last saw it. Every snapshot tick
+  `see()` adds the faction's current sight, whoever of it is online (its land
+  watches too), and the world save keeps it for the season. `make_map_state()`
+  hands it over: `MapState.explored` (a bit per cell, `utils/bits.hpp`) and,
+  for those cells, the owners as last seen; captures only where the client sees
+  now. It goes with the greeting (a reload, a reconnect, a restart: the map at
+  once), after the first spawn — the faction is chosen, so a newcomer gets the
+  faction's map — and with a resync, so a lost one costs nothing for long.
+  A joiner without a faction knows nothing. From there the client extends the
+  map with the snapshots' `revealed` / `hidden`, which are the same sight.
 - **Delivery is checked.** The protocol is delta-based (cells, sight, roster),
   so a lost frame would leave the client out of step for good.
   `IClientGateway::send_to` reports whether the frame was queued; on a refusal
   `note_drop()` marks the client for a **resync**: its next snapshot goes out
-  after a `Roster{full}` and starts its deltas from nothing (every visible cell
+  after a `Roster{full}` and its faction's `MapState`, and starts its deltas from nothing (every visible cell
   revealed with its state, `Snapshot.resync` set — the client first turns what
   it held as visible to explored). Another refusal on a later tick within
   `limits.resync_window_ms` (5 s) means it can't keep up: `World` closes the

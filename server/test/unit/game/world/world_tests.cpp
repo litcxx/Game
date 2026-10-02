@@ -27,6 +27,7 @@
 #include "save.pb.h"
 #include "state/world_state.hpp"
 #include "systems/spawn_system.hpp"
+#include "utils/bits.hpp"
 #include "utils/ts_queue.hpp"
 #include "world/world.hpp"
 
@@ -1601,7 +1602,8 @@ TEST(WorldFog, AJoinerSeesNothing) {
         if (m.has_map_state()) map = m.map_state();
     ASSERT_TRUE(map.has_value());
     for (char owner : map->owner_faction_ids())
-        EXPECT_EQ(owner, 0);  // the owned cell stays unknown
+        EXPECT_EQ(owner, 0);               // the owned cell stays unknown
+    EXPECT_TRUE(map->explored().empty());  // no faction yet: nothing explored
     auto snap = last_snapshot_to(gw, 2);
     ASSERT_TRUE(snap.has_value());
     EXPECT_EQ(snap->players_size(), 0);
@@ -3015,6 +3017,211 @@ TEST(WorldSave, ARestartBringsTheCharacterBackWithItsFaction) {
     const auto errors = errors_to(gw, 7);
     ASSERT_EQ(errors.size(), 1u);
     EXPECT_EQ(errors[0].code(), ::game::v1::ERROR_CODE_INVALID_FACTION);
+}
+
+// --- The faction's memory of the map (GAME-020) -------------------------------
+// One sight per faction, so one memory: the cells it has explored, each with the
+// owner it last saw. A MapState hands it to whoever plays the faction — on
+// joining (a reload, a reconnect, a restart) and on the first spawn, when the
+// faction is chosen; snapshots extend it from there.
+
+namespace {
+
+std::vector<::game::v1::MapState> map_states_to(const lit::test::MockClientGateway& gw,
+                                                std::uint64_t session_id) {
+    std::vector<::game::v1::MapState> out;
+    for (const auto& m : messages_to(gw, session_id))
+        if (m.has_map_state()) out.push_back(m.map_state());
+    return out;
+}
+
+// The cells a MapState of fog_config()'s 10x10 map marks explored.
+std::set<std::uint32_t> explored_cells(const ::game::v1::MapState& map) {
+    std::set<std::uint32_t> out;
+    const auto flags = lit::unpack_bits(map.explored(), 100);
+    for (std::uint32_t index = 0; index < flags.size(); ++index)
+        if (flags[index] != 0) out.insert(index);
+    return out;
+}
+
+std::set<std::uint32_t> as_set(const std::vector<std::uint32_t>& cells) {
+    return {cells.begin(), cells.end()};
+}
+
+// Where cell (0,0) sees from at fog_config()'s sight of 200: (0..2, 0), (0..1, 1), (0, 2).
+const std::set<std::uint32_t> kCornerSight{0, 1, 2, 10, 11, 20};
+
+}  // namespace
+
+// A reload: the new tab knows at once what the faction has explored — before its
+// first snapshot shows what it sees now.
+TEST(WorldMemory, AReturningPlayerGetsWhatItsFactionHasSeen) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}}));
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(input_event(1, 0, 0, /*seq=*/1));
+    run_ticks(world, 3, 0.05);
+    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*seq=*/2));
+    run_ticks(world, 12, 0.05);  // walks off: the corner's cells go into the fog
+    const auto seen = as_set(all_revealed(gw, 1));
+    ASSERT_TRUE(has(all_hidden(gw, 1), 20));
+    const auto first = welcome_to(gw, 1);
+    ASSERT_TRUE(first.has_value());
+
+    incoming.push(disconnect_event(1));
+    incoming.push(hello_with_token(2, "a", first->session_token()));
+    run_ticks(world, 1, 0.05);
+
+    const auto maps = map_states_to(gw, 2);
+    ASSERT_EQ(maps.size(), 1u);
+    EXPECT_EQ(explored_cells(maps[0]), seen);  // all it has ever seen, the corner too
+}
+
+// A faction's map is everyone's in it: a newcomer gets it as it chooses the
+// faction, before the snapshot that shows what it sees itself.
+TEST(WorldMemory, ANewcomerGetsTheFactionsMapOnItsFirstSpawn) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}, {"b", {99}}}));
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    run_ticks(world, 3, 0.05);
+    incoming.push(hello_event(2, "b"));
+    run_ticks(world, 1, 0.05);
+    ASSERT_EQ(map_states_to(gw, 2).size(), 1u);
+    EXPECT_TRUE(map_states_to(gw, 2)[0].explored().empty());  // no faction yet
+
+    incoming.push(spawn_event(2, /*faction=*/1));  // far from a, in the other corner
+    run_ticks(world, 1, 0.05);
+
+    const auto maps = map_states_to(gw, 2);
+    ASSERT_EQ(maps.size(), 2u);
+    const auto explored = explored_cells(maps[1]);
+    for (std::uint32_t cell : kCornerSight) EXPECT_TRUE(explored.contains(cell)) << cell;
+    // It comes before the snapshot that reveals b's own corner.
+    const auto msgs = messages_to(gw, 2);
+    std::size_t last_map = 0;
+    std::size_t first_reveal = msgs.size();
+    for (std::size_t i = 0; i < msgs.size(); ++i) {
+        if (msgs[i].has_map_state()) last_map = i;
+        if (first_reveal == msgs.size() && msgs[i].has_snapshot() &&
+            contains(msgs[i].snapshot().revealed(), 99))
+            first_reveal = i;
+    }
+    EXPECT_LT(last_map, first_reveal);
+}
+
+// Spawning again changes no faction: no more MapState after the first spawn's.
+TEST(WorldMemory, ARespawnSendsNoMoreMapState) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    melee(config).cooldown_ticks = 1;
+    config.respawn_delay_ticks = 5;
+    lit::game::World world(incoming, gw, config, placed({{"a", {0, 99}}, {"killer", {1}}}));
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "killer"));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    incoming.push(spawn_event(2, /*faction=*/2));
+    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));  // a dies on tick 3
+    run_ticks(world, 3, 0.016);
+    incoming.push(input_event(2, 0, 0, /*seq=*/2));
+    run_ticks(world, 6, 0.016);
+    incoming.push(spawn_event(1, /*faction=*/1));
+    run_ticks(world, 3, 0.016);
+    ASSERT_EQ(last_snapshot_to(gw, 1)->you().life(), ::game::v1::LIFE_STATE_ALIVE);
+
+    EXPECT_EQ(map_states_to(gw, 1).size(), 2u);  // on joining and on the first spawn
+}
+
+// The faction sees through its land whoever is online: its memory grows all the same.
+TEST(WorldMemory, AFactionRemembersWithNobodyOnline) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    config.capitals = {{1, 0, 0}};  // Red's land: cell 0; no one plays Red yet
+    lit::game::World world(incoming, gw, config, placed({{"b", {99}}}));
+
+    run_ticks(world, 3, 0.05);  // nobody connected
+    incoming.push(hello_event(1, "b"));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    run_ticks(world, 1, 0.05);
+
+    const auto maps = map_states_to(gw, 1);
+    ASSERT_EQ(maps.size(), 2u);
+    const auto explored = explored_cells(maps[1]);
+    for (std::uint32_t cell : kCornerSight) EXPECT_TRUE(explored.contains(cell)) << cell;
+    EXPECT_EQ(maps[1].owner_faction_ids()[0], 1);  // Red's capital, as seen
+}
+
+// A lost frame is resynced: the faction's map comes again before the resync
+// snapshot, so a dropped MapState costs nothing for long.
+TEST(WorldMemory, AResyncSendsTheFactionsMapAgain) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = fog_config();
+    lit::game::World world(incoming, gw, config, placed({{"a", {0}}, {"b", {99}}}));
+    bool dropped = false;
+    gw.accept = [&dropped](std::uint64_t sid, const std::vector<std::byte>& bytes) {
+        const auto m = parse(bytes);
+        if (sid != 2 || dropped || !m.has_map_state() || m.map_state().explored().empty())
+            return true;
+        dropped = true;  // the first-spawn MapState is lost
+        return false;
+    };
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(spawn_event(1, /*faction=*/1));
+    run_ticks(world, 3, 0.05);
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(2, /*faction=*/1));
+    run_ticks(world, 3, 0.05);  // up to the next snapshot
+
+    ASSERT_TRUE(dropped);
+    const auto maps = map_states_to(gw, 2);
+    ASSERT_EQ(maps.size(), 2u);  // on joining, and again with the resync
+    const auto explored = explored_cells(maps[1]);
+    for (std::uint32_t cell : kCornerSight) EXPECT_TRUE(explored.contains(cell)) << cell;
+    EXPECT_EQ(resyncs_to(gw, 2), 1);
+}
+
+// A restart: the faction's memory is in the save; the returning player gets it.
+TEST(WorldMemory, ARestartKeepsWhatTheFactionHasSeen) {
+    auto config = fog_config();
+    config.capitals = {{1, 0, 0}};
+    FakeSaveSink sink;
+    lit::TSQueue<lit::ClientEvent> in_before;
+    lit::test::MockClientGateway gw_before;
+    lit::game::World before(in_before, gw_before, config, placed({{"ann", {0}}}));
+    before.save_to(sink, std::chrono::seconds{60});
+    in_before.push(hello_event(1, "ann"));
+    in_before.push(spawn_event(1, /*faction=*/1));
+    in_before.push(input_event(1, /*move_x=*/0, /*move_y=*/1, /*seq=*/1));
+    run_ticks(before, 12, 0.05);  // walks down the left edge
+    const auto seen = as_set(all_revealed(gw_before, 1));
+    const auto first = welcome_to(gw_before, 1);
+    ASSERT_TRUE(first.has_value());
+    before.save_now();
+    ASSERT_EQ(sink.saves.size(), 1u);
+
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    lit::game::World after(incoming, gw, config, placed({{"ann", {0}}}));
+    ASSERT_EQ(after.restore(sink.saves.back()), lit::game::SeasonLoad::Continued);
+    incoming.push(hello_with_token(7, "ann", first->session_token()));
+    after.tick(kTick);
+
+    const auto maps = map_states_to(gw, 7);
+    ASSERT_EQ(maps.size(), 1u);
+    EXPECT_EQ(explored_cells(maps[0]), seen);
+    EXPECT_EQ(maps[0].owner_faction_ids()[0], 1);
 }
 
 TEST(WorldMetrics, ReportTheSaving) {

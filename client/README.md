@@ -14,7 +14,8 @@ PixiJS + protobuf-es** over a WebSocket.
 > prediction + reconciliation (local player) and interpolation (remotes and
 > their projectiles; your own shot runs on from the latest snapshot, so it leaves
 > your token along the aim line). Fog of war: the server sends only what your faction sees; cells
-> seen before stay dimmed with their last known state, unexplored ones are
+> your faction has seen stay dimmed with their last known state — through a reload or a server
+> restart too, and a newcomer gets its faction's map —, unexplored ones are
 > covered — on the map and the minimap. Rendering follows the design concept: a tinted,
 > coordinate-labelled territory grid; glowing player tokens with grounding
 > shadow, name pill and hp bar; the active ability's range ring with a cooldown
@@ -136,8 +137,12 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   with a rising "БЛОК", a white-and-red flash with the damage ("−20") rising.
 - **`src/fog.ts`** — `FogOfWar`: each cell's sight — unexplored / explored /
   visible — from `Snapshot.revealed` / `hidden` (the server decides what is
-  visible; the client only remembers what it has ever seen, through deaths and
-  respawns), and per-row runs of equal sight for drawing. On `Snapshot.resync`
+  visible; the client remembers what it has seen since, through deaths and
+  respawns), and per-row runs of equal sight for drawing. What the faction
+  explored before comes with `MapState.explored` (GAME-020: on joining — a
+  reload, a reconnect, a restart — and with the first spawn, when the faction is
+  chosen): `explore()` marks those cells explored, the `MapState` owners being
+  their last known state. On `Snapshot.resync`
   (the server lost a frame to us) `forgetSight()` first turns every visible cell
   to explored; the snapshot then re-reveals the whole sight. A `Roster{full}`
   replaces the roster.
@@ -345,7 +350,7 @@ npx tsx scripts/capture_smoke.ts    # hold E -> capture a cell
 npx tsx scripts/takeover_smoke.ts   # capture an enemy-owned cell
 npx tsx scripts/front_smoke.ts      # only next to your land: a far cell won't go, then does once the one between is yours
 npx tsx scripts/scores_smoke.ts     # FactionScores right after the roster, every faction counted unseen; online after a spawn; once a second
-npx tsx scripts/persistence_smoke.ts # its own server: SIGTERM saves; restarted, the same player by token, faction and cells kept; a damaged save refused, --fresh starts
+npx tsx scripts/persistence_smoke.ts # its own server: SIGTERM saves; restarted, the same player by token, faction, cells and explored map kept; a damaged save refused, --fresh starts
 npx tsx scripts/combat_smoke.ts     # area attack -> hit -> death
 npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
 npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit (fails on no damage)
@@ -360,6 +365,7 @@ SERVER_LOG=../server/server.log npx tsx scripts/close_reason_smoke.ts
                                    # a client's close (4900 + a reason) shows up in the server's log;
                                    #   SERVER_LOG: the running server's log (that path is CI's and the default)
 npx tsx scripts/fog_smoke.ts       # fog of war: far enemies unseen, near ones seen
+npx tsx scripts/explored_smoke.ts  # the faction's map: a reload gets all it has seen; a newcomer gets it on its first spawn
                                    #   (VISION_CELLS = server vision_radius in cells, default 3)
 ```
 
