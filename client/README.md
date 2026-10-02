@@ -16,7 +16,9 @@ PixiJS + protobuf-es** over a WebSocket.
 > your token along the aim line). Fog of war: the server sends only what your faction sees; cells
 > your faction has seen stay dimmed with their last known state — through a reload or a server
 > restart too, and a newcomer gets its faction's map —, unexplored ones are
-> covered — on the map and the minimap. Rendering follows the design concept: a tinted,
+> covered — on the map and the minimap. The cells you may capture now glow softly
+> at their borders, in your faction's colour; capitals are marked on the map and
+> the minimap. Rendering follows the design concept: a tinted,
 > coordinate-labelled territory grid; glowing player tokens with grounding
 > shadow, name pill and hp bar; the active ability's range ring with a cooldown
 > arc (plus an aim line for the ranged attack); a follow camera (with a full-map
@@ -151,8 +153,17 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   known state, visible untouched; one rect per run, the map border on top.
   **`src/render/capitals.ts`** (`CapitalsView`) draws over it the capitals'
   markers (`GameState.capitals`, from `Welcome.map`): where they are is known from
-  the start, fog or not; who owns their zones only under sight. The minimap's
-  markers come with GAME-021.
+  the start, fog or not; who owns their zones only under sight; the minimap
+  shows them too.
+- **`src/capture.ts`** — which cells a faction may capture as far as the client
+  knows (GAME-017 rules: next to its land by a side, not in a capital's zone —
+  `protectedCells`, set with the capitals by `GameState.setCapitals`; the server
+  decides). `GameState.mayCapture` adds being alive and the cell being in sight.
+  **`src/render/captureHint.ts`** (`CaptureHintView`, GAME-021) marks those on
+  screen: their borders glow softly in your faction's colour, on the gridlines,
+  a border between two of them once (`cellBorders` in `src/render/borders.ts`).
+  The glow is a blur, kept as a texture and redrawn only when the cells, the
+  zoom or the colour change; the camera only moves it.
 - **`src/errors.ts`** — server errors as the player sees them: a text per
   `ErrorCode` (`ServerError.detail` is only for logs), the error a close code
   4000 + code carries, and `Notices`: the hint line shows a fatal error until
@@ -168,7 +179,7 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   everyone), the self ring showing the **active ability's** range with the
   shared-cooldown arc (and an aim line for the ranged attack), projectiles, the
   fog of war, and the local **minimap** (~1.5× the view, gridded and fogged,
-  viewport rect + player dots).
+  viewport rect, player dots, capital markers).
 - **`src/render/projectiles.ts`** — `ProjectileView`: each projectile as a glowing
   dot in the shooter's faction colour at its real radius, with a short trail;
   one flying out of sight fades out.
@@ -376,6 +387,7 @@ npx tsx scripts/explored_smoke.ts  # the faction's map: a reload gets all it has
 src/abilities.ts  ability model, slot keys, aim vector, cooldown progress
 src/effects.ts    snapshot events -> timed visual effects
 src/fog.ts        fog of war: cell sight (unexplored / explored / visible)
+src/capture.ts    which cells a faction may capture (as far as the client knows)
 src/errors.ts     server errors: texts, close codes, what the hint line shows
 src/hint.ts       the hint line's usual text
 src/onboarding.ts the first-capture lesson: the capture hint until the first capture
@@ -386,7 +398,7 @@ src/net/       GameClient (transport), Session (join, token, reconnect),
                InterpolationBuffer
 src/render/    PixiJS views of GameState: Camera, Scene (world + minimap), Hud,
                AbilityBar, FactionPicker, SpawnButton, ProjectileView, EffectsView,
-               FogView, CapitalsView;
+               FogView, CapitalsView, CaptureHintView;
                status (HUD / bar / picker from the state)
 src/ui/        DOM overlay over the canvas: Overlay, Modal, Toasts,
                NicknameScreen, ConnectionDialogs
