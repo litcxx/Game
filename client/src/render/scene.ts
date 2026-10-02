@@ -258,12 +258,14 @@ export class Scene {
   }
 
   // The on-screen cells you may capture, each frame (you move; it is a few hundred
-  // cells at most, most of them not).
+  // cells at most, most of them not). None looked for when too small to mark: the
+  // full map is the whole grid.
   private drawCaptureHint(): void {
     const cam = this.camera;
     const cols = this.state.territory.cols;
+    const cellPx = UNITS_PER_CELL * cam.scale;
     const cells: number[] = [];
-    if (this.state.alive) {
+    if (this.state.alive && CaptureHintView.marks(cellPx)) {
       const [c0, c1] = cam.visibleCols();
       const [r0, r1] = cam.visibleRows();
       for (let row = r0; row <= r1; row++) {
@@ -276,7 +278,7 @@ export class Scene {
       cells,
       cols,
       (x, y) => cam.worldToScreen(x, y),
-      UNITS_PER_CELL * cam.scale,
+      cellPx,
       this.state.factionColor(this.state.myFaction) ?? 0xd8d8d0,
     );
   }

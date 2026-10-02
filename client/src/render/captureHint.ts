@@ -30,6 +30,11 @@ export class CaptureHintView {
     this.gfx.addChild(this.glowLayer, this.line);
   }
 
+  // Whether cells this size on screen are marked at all.
+  static marks(cellPx: number): boolean {
+    return cellPx >= MIN_CELL_PX;
+  }
+
   // `cols`: the map width in cells; `cellPx`: a cell's size on screen.
   draw(
     cells: readonly number[],
@@ -38,7 +43,7 @@ export class CaptureHintView {
     cellPx: number,
     color: number,
   ): void {
-    this.gfx.visible = cells.length > 0 && cellPx >= MIN_CELL_PX;
+    this.gfx.visible = cells.length > 0 && CaptureHintView.marks(cellPx);
     if (!this.gfx.visible) return;
     // Drawn from the map's corner, where the camera puts it.
     const [x, y] = toScreen(0, 0);
