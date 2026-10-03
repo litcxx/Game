@@ -1,8 +1,12 @@
 // Ranged e2e: a shooter and a target of another faction spawn 3 cells apart. The
 // shooter uses the projectile ability (from Welcome.abilities) aimed at the
-// target. Verify a projectile shows up in snapshots, then a HitEvent with the
-// ability's damage, and the target's hp drops by exactly one shot (the shooter
-// lets go of the attack after the first hit).
+// target, in one input frame (FIRE) holding attack, and sends no more. Verify a
+// projectile shows up in snapshots, then a HitEvent with the ability's damage,
+// and the target's hp drops by exactly one shot, though the attack is held past
+// the cooldown: an attack comes from a frame, not from a repeat (LTC-89). The
+// shooter's own shot names that frame (ProjectileState.input_seq) and so does
+// its last attack (SelfState.last_attack_input_seq); the target sees the shot
+// naming none.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
 import {
@@ -32,6 +36,12 @@ let targetSpawned = false;
 let firing = false;
 
 let projectileSeen = false;
+const FIRE = 7; // the input_seq of the shooter's one frame
+const ownShots = new Set<number>(); // projectile ids the shooter saw as its own
+let ownShotsName = true; // ...each with input_seq FIRE
+let lastAttackInputSeq = -1;
+let targetSawShot = false;
+let targetSawNoName = true; // the shot as the target sees it: input_seq 0, not mine
 let hitDamage = -1;
 let targetHp = -1;
 
@@ -62,7 +72,7 @@ const fireMsg = (inputSeq: number, attack: boolean) =>
 function maybeFire(): void {
   if (!firing && shooterSpawned && targetSpawned && targetId >= 1 && shotAbility >= 1) {
     firing = true;
-    send(shooter, fireMsg(1, true)); // held until the first hit
+    send(shooter, fireMsg(FIRE, true)); // held: no frame lets go
   }
 }
 
@@ -85,11 +95,15 @@ shooter.onmessage = (ev: MessageEvent) => {
   } else if (m.payload.case === "snapshot") {
     const s = m.payload.value;
     if (s.projectiles.some((p) => p.factionId === shooterFaction && p.vx > 0 && p.vy === 0)) projectileSeen = true;
+    for (const p of s.projectiles.filter((p) => p.mine)) {
+      ownShots.add(p.id);
+      if (p.inputSeq !== FIRE) ownShotsName = false;
+    }
+    lastAttackInputSeq = s.you?.lastAttackInputSeq ?? lastAttackInputSeq;
     const body = s.players.find((p) => p.id === targetId);
     if (body) targetHp = body.hp;
     for (const e of s.events) {
       if (e.kind.case === "hit" && e.kind.value.attackerId === shooterId && e.kind.value.targetId === targetId) {
-        if (hitDamage < 0) send(shooter, fireMsg(2, false)); // one shot is enough
         hitDamage = e.kind.value.damage;
       }
     }
@@ -103,6 +117,11 @@ target.onmessage = (ev: MessageEvent) => {
     send(target, spawnMsg(TARGET.factionId)); // not the shooter's faction
     targetSpawned = true;
     maybeFire();
+  } else if (m.payload.case === "snapshot") {
+    for (const p of m.payload.value.projectiles.filter((p) => p.factionId === SHOOTER.factionId)) {
+      targetSawShot = true;
+      if (p.mine || p.inputSeq !== 0) targetSawNoName = false;
+    }
   }
 };
 
@@ -112,16 +131,23 @@ target.onerror = () => console.error("[ranged] target socket error");
 setTimeout(() => {
   console.log(
     `[ranged] shooter=${shooterId} target=${targetId} ability=${shotAbility} projectileSeen=${projectileSeen} ` +
-      `hitDamage=${hitDamage} (expected ${shotDamage}) targetHp=${targetHp} (expected ${maxHp - shotDamage})`,
+      `hitDamage=${hitDamage} (expected ${shotDamage}) targetHp=${targetHp} (expected ${maxHp - shotDamage}) ` +
+      `ownShots=${ownShots.size} named=${ownShotsName} lastAttackInputSeq=${lastAttackInputSeq} (expected ${FIRE}) ` +
+      `targetSawShot=${targetSawShot} unnamed=${targetSawNoName}`,
   );
   const pass =
     shotAbility >= 1 &&
     shotDamage > 0 &&
     projectileSeen &&
     hitDamage === shotDamage &&
-    targetHp === maxHp - shotDamage;
+    targetHp === maxHp - shotDamage &&
+    ownShots.size === 1 &&
+    ownShotsName &&
+    lastAttackInputSeq === FIRE &&
+    targetSawShot &&
+    targetSawNoName;
   console.log("VERDICT:", pass ? "PASS" : "FAIL");
   shooter.close();
   target.close();
   process.exit(pass ? 0 : 1);
-}, 2500);
+}, 3500); // past the shot's cooldown (1.5 s): a repeat would have fired again

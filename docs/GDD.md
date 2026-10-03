@@ -145,8 +145,8 @@
 | WebSocket-транспорт, 1 кадр = 1 protobuf-сообщение | `server/src/net/session`, `server/src/net/server` | Корутины Asio, супервизор сессии (`do_read ‖ do_send`), безопасный teardown, graceful shutdown |
 | Протокол v1 | `protocol/game/v1/protocol.proto` | Единый источник правды, генерация для C++ (CMake) и TS (buf) |
 | Фиксированный шаг 60 Гц, снапшоты 20 Гц | `game/world/world.cpp`, `fixed_step.hpp` | Аккумулятор с защитой от spiral of death |
-| Ввод: одна команда за тик, `input_seq`/ack | `systems/input_system` | Детерминированный replay — основа клиентского предсказания |
-| Движение + предсказание | `systems/movement_system`, `client/src/net/prediction.ts` | Формула продублирована на клиенте и совпадает побайтно по смыслу |
+| Ввод: одна команда за тик, `input_seq`/ack | `systems/input_system` | Детерминированный replay — основа клиентского предсказания. Номер кадра ввода везде `input_seq`, поле со ссылкой на кадр — `<роль>_input_seq` (LTC-89). Без нового кадра повторяется то же намерение, но не атака: удар, выстрел и блок — ровно от одного кадра. Свой снаряд и последняя атака называют свой кадр (`ProjectileState.input_seq`, `SelfState.last_attack_input_seq`) — для предсказания выстрела (LTC-88) |
+| Движение + предсказание | `systems/movement_system`, `client/src/net/prediction.ts` | Формула продублирована на клиенте и совпадает до бита: общие примеры `protocol/sim/` проверяют обе стороны (сервер их пишет, клиент читает). Полёт снаряда — там же, для LTC-88 |
 | Интерполяция чужих игроков и снарядов | `client/src/net/interpolation.ts` | Задержка 100 мс |
 | Presence и roster | `World::on_hello` / `on_disconnect` | |
 | Спавн и респавн с задержкой | `systems/spawn_system` | |
