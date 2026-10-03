@@ -100,7 +100,7 @@ sequenceDiagram
 
     loop каждый фиксированный шаг (1/60)
         tick->>kb: sample()  (move / capture / attack + активная способность + прицел на курсор)
-        tick->>pred: step(input) → предсказать локально, вернуть кадр(seq)
+        tick->>pred: step(input) → предсказать локально, вернуть кадр(inputSeq)
         tick->>net: sendInputFrames(batch ≤ 8)
     end
     tick->>pred: decayError(dt)  (сглаживание коррекции)

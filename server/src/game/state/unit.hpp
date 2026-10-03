@@ -8,7 +8,8 @@ namespace lit::game {
 // What a unit is trying to do. A player's comes from its input, one command per
 // tick (consume_inputs); a monster's will come from its AI.
 struct Intent {
-    std::int32_t move_x{0};  // movement direction (any length; normalized when moving)
+    std::uint32_t input_seq{0};  // the InputFrame it came from (a player's); 0 = none
+    std::int32_t move_x{0};      // movement direction (any length; normalized when moving)
     std::int32_t move_y{0};
     bool capturing{false};        // holding capture: captures the cell under the centre
     bool attack{false};           // holding attack: use the selected ability when ready

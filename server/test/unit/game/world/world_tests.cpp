@@ -327,12 +327,12 @@ namespace {
 }
 
 lit::ClientEvent input_event(std::uint64_t session_id, std::int32_t move_x, std::int32_t move_y,
-                             std::uint32_t seq, bool capturing = false, bool attack = false) {
+                             std::uint32_t input_seq, bool capturing = false, bool attack = false) {
     lit::ClientEvent ev;
     ev.session_id = session_id;
     ev.kind = lit::ClientEvent::Kind::Message;
     auto* frame = ev.msg.mutable_input()->add_frames();
-    frame->set_seq(seq);
+    frame->set_input_seq(input_seq);
     frame->set_move_x(move_x);
     frame->set_move_y(move_y);
     frame->set_capturing(capturing);
@@ -342,9 +342,10 @@ lit::ClientEvent input_event(std::uint64_t session_id, std::int32_t move_x, std:
 
 // The last Snapshot delivered to a session (snapshots are periodic).
 // A held attack with the given ability (and aim, for projectiles).
-lit::ClientEvent attack_event(std::uint64_t session_id, std::uint32_t seq, std::uint32_t ability,
-                              std::int32_t aim_x = 0, std::int32_t aim_y = 0) {
-    auto ev = input_event(session_id, 0, 0, seq, /*capturing=*/false, /*attack=*/true);
+lit::ClientEvent attack_event(std::uint64_t session_id, std::uint32_t input_seq,
+                              std::uint32_t ability, std::int32_t aim_x = 0,
+                              std::int32_t aim_y = 0) {
+    auto ev = input_event(session_id, 0, 0, input_seq, /*capturing=*/false, /*attack=*/true);
     auto* frame = ev.msg.mutable_input()->mutable_frames(0);
     frame->set_ability_id(ability);
     frame->set_aim_x(aim_x);
@@ -500,13 +501,13 @@ TEST(WorldSpawn, BackAtTheCapitalAfterADeathElsewhere) {
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
     constexpr double dt = 1.0 / 60;
-    incoming.push(input_event(1, /*move_x=*/1, 0, /*seq=*/1));  // Red walks toward Blue
-    run_ticks(world, 20, dt);                                   // 100 units: x = 250
-    incoming.push(input_event(1, 0, 0, /*seq=*/2));
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    incoming.push(input_event(1, /*move_x=*/1, 0, /*input_seq=*/1));  // Red walks toward Blue
+    run_ticks(world, 20, dt);                                         // 100 units: x = 250
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/2));
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
     run_ticks(world, 6, dt);
     ASSERT_EQ(last_snapshot_to(gw, 1)->you().life(), ::game::v1::LIFE_STATE_DEAD);
-    incoming.push(input_event(2, 0, 0, /*seq=*/2));  // the killer stops
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));  // the killer stops
 
     incoming.push(spawn_event(1, /*faction=*/1));
     run_ticks(world, 3, dt);
@@ -560,7 +561,7 @@ TEST(WorldMovement, InputMovesAlivePlayer) {
 
     incoming.push(hello_event(7, "p"));
     incoming.push(spawn_event(7, /*faction=*/1));  // center (150,150)
-    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));
+    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*input_seq=*/1));
     run_ticks(world, 3, 0.1);  // move_speed 300 * 0.1 = 30 units/tick
 
     auto snap = last_snapshot_to(gw, 7);
@@ -595,7 +596,7 @@ TEST(WorldMovement, IgnoresInputWhenNotSpawned) {
     lit::game::World world(incoming, gw, config);
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));
+    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*input_seq=*/1));
     run_ticks(world, 3, 0.1);
 
     auto snap = last_snapshot_to(gw, 7);
@@ -613,7 +614,7 @@ TEST(WorldCapture, HoldingCaptureFlipsCellOwner) {
 
     incoming.push(hello_event(7, "p"));
     incoming.push(spawn_event(7, /*faction=*/1));  // center (150,150) -> cell 5
-    incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(7, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 6, 0.016);  // 5 ticks * 20% -> flips by tick 5
 
     auto cu = last_cell_update(gw, 7, /*index=*/5);
@@ -631,7 +632,7 @@ TEST(WorldCapture, ACellAwayFromYourLandIsNotTaken) {
 
     incoming.push(hello_event(7, "p"));
     incoming.push(spawn_event(7, /*faction=*/1));
-    incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(7, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 30, 0.016);  // six times the capture time
 
     auto cu = last_cell_update(gw, 7, /*index=*/5);
@@ -649,12 +650,12 @@ TEST(WorldCapture, ReleasingCaptureResetsProgress) {
 
     incoming.push(hello_event(7, "p"));
     incoming.push(spawn_event(7, /*faction=*/1));
-    incoming.push(input_event(7, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(7, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 3, 0.016);  // partial (~60%), not yet captured
     const auto under_way = last_cell_update(gw, 7, /*index=*/5);
     ASSERT_TRUE(under_way.has_value());
     ASSERT_GT(under_way->capture_progress(), 0u);
-    incoming.push(input_event(7, 0, 0, /*seq=*/2, /*capturing=*/false));  // release
+    incoming.push(input_event(7, 0, 0, /*input_seq=*/2, /*capturing=*/false));  // release
     run_ticks(world, 3, 0.016);
 
     auto cu = last_cell_update(gw, 7, /*index=*/5);
@@ -698,7 +699,7 @@ TEST(WorldCombat, AttackHitsEnemyInRange) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));
     run_ticks(world, 3, 0.016);
 
     auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
@@ -719,7 +720,7 @@ TEST(WorldCombat, AttackHitsAllEnemiesInArea) {
     incoming.push(spawn_event(1, /*faction=*/1));  // attacker (150,150)
     incoming.push(spawn_event(2, /*faction=*/2));  // enemy at (250,150)
     incoming.push(spawn_event(3, /*faction=*/2));  // enemy at (50,150)
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));
     run_ticks(world, 3, 0.016);
 
     auto b = player_state_in(gw, 2, 2);
@@ -741,7 +742,7 @@ TEST(WorldCombat, NoAttackWithoutKey) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));  // enemy in range
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/false));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/false));
     run_ticks(world, 3, 0.016);
 
     auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
@@ -760,7 +761,7 @@ TEST(WorldCombat, NoFriendlyFire) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/1));  // same faction
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));
     run_ticks(world, 3, 0.016);
 
     auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
@@ -779,7 +780,7 @@ TEST(WorldCombat, OutOfRangeNoDamage) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));  // (150,150)
     incoming.push(spawn_event(2, /*faction=*/2));  // (350,350) -> far
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));
     run_ticks(world, 3, 0.016);
 
     auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
@@ -798,7 +799,8 @@ TEST(WorldCombat, CooldownLimitsSwings) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
+    incoming.push(
+        input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
     run_ticks(world, 3, 0.016);
 
     auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
@@ -818,7 +820,8 @@ TEST(WorldCombat, KillsAndSetsDead) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
+    incoming.push(
+        input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
     run_ticks(world, 6, 0.016);
 
     auto snap = last_snapshot_to(gw, 2);
@@ -843,10 +846,11 @@ TEST(WorldCombat, RespawnAfterDelay) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
+    incoming.push(
+        input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
     run_ticks(world, 3, 0.016);  // b dies (~tick 3), respawn_tick = 3 + 5
     incoming.push(
-        input_event(1, 0, 0, /*seq=*/2, /*capturing=*/false, /*attack=*/false));  // a stops
+        input_event(1, 0, 0, /*input_seq=*/2, /*capturing=*/false, /*attack=*/false));  // a stops
     run_ticks(world, 6, 0.016);                    // wait past respawn_tick
     incoming.push(spawn_event(2, /*faction=*/2));  // respawn far from a
     run_ticks(world, 3, 0.016);
@@ -867,8 +871,8 @@ TEST(WorldInput, FixedStepMovementIsDeterministic) {
     lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*faction=*/1));                          // center (150,150)
-    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));  // then repeat-last
+    incoming.push(spawn_event(7, /*faction=*/1));                                // center (150,150)
+    incoming.push(input_event(7, /*move_x=*/1, /*move_y=*/0, /*input_seq=*/1));  // then repeat-last
     const double dt = 1.0 / config.tick_rate;
     run_ticks(world, 6, dt);  // tick1 consumes cmd, ticks 2..6 repeat it
 
@@ -889,14 +893,14 @@ TEST(WorldInput, ConsumesOneCommandPerTick) {
 
     incoming.push(hello_event(7, "p"));
     incoming.push(spawn_event(7, /*faction=*/1));
-    incoming.push(input_event(7, 0, 0, /*seq=*/1));
-    incoming.push(input_event(7, 0, 0, /*seq=*/2));
+    incoming.push(input_event(7, 0, 0, /*input_seq=*/1));
+    incoming.push(input_event(7, 0, 0, /*input_seq=*/2));
     const double dt = 1.0 / config.tick_rate;
 
     run_ticks(world, 1, dt);
-    EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 1u);  // consumed seq 1
+    EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 1u);  // consumed input_seq 1
     run_ticks(world, 1, dt);
-    EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // consumed seq 2
+    EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // consumed input_seq 2
     run_ticks(world, 1, dt);
     EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 2u);  // empty queue -> repeat
 }
@@ -909,8 +913,8 @@ TEST(WorldInput, EnqueuesAfterRespawnClear) {
     lit::game::World world(incoming, gw, config, placed({{"p", {5}}}));
 
     incoming.push(hello_event(7, "p"));
-    incoming.push(spawn_event(7, /*faction=*/1));     // clears any queued input
-    incoming.push(input_event(7, 1, 0, /*seq=*/10));  // seq keeps climbing
+    incoming.push(spawn_event(7, /*faction=*/1));           // clears any queued input
+    incoming.push(input_event(7, 1, 0, /*input_seq=*/10));  // input_seq keeps climbing
     const double dt = 1.0 / config.tick_rate;
     run_ticks(world, 1, dt);
     EXPECT_EQ(last_snapshot_to(gw, 7)->you().last_input_seq(), 10u);  // still enqueued & consumed
@@ -952,7 +956,7 @@ TEST(WorldAbility, UsesTheSelectedAbility) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/4));
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/4));
     run_ticks(world, 3, 0.016);
 
     auto victim = player_state_in(gw, 2, 2);
@@ -968,7 +972,7 @@ TEST(WorldAbility, SelfStateReportsCooldownLength) {
 
     incoming.push(hello_event(1, "a"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/1));
     run_ticks(world, 3, 0.016);
 
     auto snap = last_snapshot_to(gw, 1);
@@ -987,7 +991,7 @@ TEST(WorldAbility, UnknownAbilityDoesNothing) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/99));
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/99));
     run_ticks(world, 3, 0.016);
 
     auto victim = player_state_in(gw, 2, 2);
@@ -1012,7 +1016,7 @@ TEST(WorldRanged, FiresTowardTheAim) {
 
     incoming.push(hello_event(1, "a"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
     auto snap = last_snapshot_to(gw, 1);
@@ -1038,7 +1042,7 @@ TEST(WorldRanged, OnlyTheShooterSeesItsShotAsMine) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));  // (50,150)
     incoming.push(spawn_event(2, /*faction=*/2));  // (50,250): off the shot's path
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
     auto shooter = last_snapshot_to(gw, 1);
@@ -1061,7 +1065,7 @@ TEST(WorldRanged, HitsAnEnemyForTheRangedDamage) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 30, 0.016);  // contact near tick 19; the next shot is due on tick 31
 
     auto victim = player_state_in(gw, 2, 2);
@@ -1081,7 +1085,7 @@ TEST(WorldRanged, NoAimNoShot) {
 
     incoming.push(hello_event(1, "a"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/0));
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
     auto snap = last_snapshot_to(gw, 1);
@@ -1100,8 +1104,8 @@ TEST(WorldRanged, DodgedProjectileMisses) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
-    incoming.push(input_event(2, 0, 1, /*seq=*/1));  // the target runs out of the line
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    incoming.push(input_event(2, 0, 1, /*input_seq=*/1));  // the target runs out of the line
     run_ticks(world, 30, 0.016);
 
     auto victim = player_state_in(gw, 2, 2);
@@ -1120,8 +1124,8 @@ TEST(WorldRanged, SharedCooldownBlocksOtherAbilities) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));  // within melee range
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/-1000));
-    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/1));  // then hold melee
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/-1000));
+    incoming.push(attack_event(1, /*input_seq=*/2, /*ability=*/1));  // then hold melee
     run_ticks(world, 12, 0.016);
 
     auto snap = last_snapshot_to(gw, 1);
@@ -1151,9 +1155,9 @@ TEST(WorldBlock, BlockPressedWithASwingStopsIt) {
     incoming.push(hello_event(1, "atk"));
     incoming.push(hello_event(2, "def"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(spawn_event(2, /*faction=*/2));              // within melee range
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/3));  // block on tick 1...
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));  // ...the swing on tick 1 too
+    incoming.push(spawn_event(2, /*faction=*/2));                    // within melee range
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/3));  // block on tick 1...
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/1));  // ...the swing on tick 1 too
     run_ticks(world, 3, 0.016);
 
     auto def = player_state_in(gw, 2, 2);
@@ -1172,9 +1176,9 @@ TEST(WorldBlock, BlockExpires) {
     incoming.push(hello_event(2, "def"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/3));  // block once: ticks 1..9
-    incoming.push(input_event(2, 0, 0, /*seq=*/2));            // then let go
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));  // swings on ticks 1 and 11
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/3));  // block once: ticks 1..9
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));            // then let go
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/1));  // swings on ticks 1 and 11
     run_ticks(world, 12, 0.016);
 
     auto def = player_state_in(gw, 2, 2);
@@ -1193,11 +1197,12 @@ TEST(WorldBlock, BlockStopsAProjectile) {
     incoming.push(hello_event(2, "def"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     // The shot arrives on tick 19; block on tick 15 (active 15..23), idle before.
-    for (std::uint32_t seq = 1; seq <= 14; ++seq) incoming.push(input_event(2, 0, 0, seq));
-    incoming.push(attack_event(2, /*seq=*/15, /*ability=*/3));
-    incoming.push(input_event(2, 0, 0, /*seq=*/16));
+    for (std::uint32_t input_seq = 1; input_seq <= 14; ++input_seq)
+        incoming.push(input_event(2, 0, 0, input_seq));
+    incoming.push(attack_event(2, /*input_seq=*/15, /*ability=*/3));
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/16));
     run_ticks(world, 30, 0.016);
 
     auto def = player_state_in(gw, 2, 2);
@@ -1219,8 +1224,8 @@ TEST(WorldBlock, BlockHasItsOwnCooldown) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/3));  // block on tick 1
-    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/1));  // switch: swing on tick 2
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/3));  // block on tick 1
+    incoming.push(attack_event(1, /*input_seq=*/2, /*ability=*/1));  // switch: swing on tick 2
     run_ticks(world, 3, 0.016);
 
     auto enemy = player_state_in(gw, 2, 2);
@@ -1243,10 +1248,10 @@ TEST(WorldAbility, EveryUseIsAnnounced) {
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(spawn_event(2, /*faction=*/1));              // far away, an ally
-    incoming.push(attack_event(1, /*seq=*/1, /*ability=*/1));  // a swing that hits nobody
-    incoming.push(attack_event(1, /*seq=*/2, /*ability=*/3));  // a block
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    incoming.push(spawn_event(2, /*faction=*/1));                    // far away, an ally
+    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/1));  // a swing that hits nobody
+    incoming.push(attack_event(1, /*input_seq=*/2, /*ability=*/3));  // a block
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.016);
 
     auto seen = ability_events(gw, 1);
@@ -1379,8 +1384,8 @@ TEST(WorldFog, AnEnemyLeavingSightDisappears) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(input_event(2, /*move_x=*/1, /*move_y=*/0, /*seq=*/1));  // 15 units a tick
-    run_ticks(world, 3, 0.05);                                             // b at x = 295
+    incoming.push(input_event(2, /*move_x=*/1, /*move_y=*/0, /*input_seq=*/1));  // 15 units a tick
+    run_ticks(world, 3, 0.05);                                                   // b at x = 295
     auto before = last_snapshot_to(gw, 1);
     ASSERT_TRUE(before.has_value());
     EXPECT_TRUE(lists_player(*before, 2));
@@ -1402,7 +1407,7 @@ TEST(WorldFog, ADeadPlayerGivesNoSightButSeesItsBody) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));  // right next to it
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
     run_ticks(world, 6, 0.016);
 
     // Tick 3: the snapshot reporting the death still sees — who struck it, too.
@@ -1449,12 +1454,12 @@ TEST(WorldFog, MovingRevealsAheadAndHidesBehind) {
 
     incoming.push(hello_event(1, "a"));
     incoming.push(spawn_event(1, /*faction=*/1));  // (50,50)
-    incoming.push(input_event(1, 0, 0, /*seq=*/1));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1));
     run_ticks(world, 3, 0.05);  // sees cell 20 = (0,2), 200 away
     ASSERT_TRUE(has(all_revealed(gw, 1), 20));
     ASSERT_FALSE(has(all_revealed(gw, 1), 3));
 
-    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*seq=*/2));
+    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*input_seq=*/2));
     run_ticks(world, 12, 0.05);  // x = 230
 
     EXPECT_TRUE(has(all_hidden(gw, 1), 20));   // now 269 away
@@ -1474,7 +1479,7 @@ TEST(WorldFog, ChangesInTheFogArriveOnlyOnceSeen) {
     incoming.push(hello_event(3, "ally"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));  // far away
-    incoming.push(input_event(2, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 6, 0.016);  // the enemy takes cell 9 unseen
 
     EXPECT_FALSE(last_cell_update(gw, 1, /*index=*/9).has_value());
@@ -1497,9 +1502,9 @@ TEST(WorldFog, OwnedCellsKeepWatch) {
     incoming.push(hello_event(1, "a"));
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 6, 0.05);  // cell 0 is faction 1's
-    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*seq=*/2));
+    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*input_seq=*/2));
     run_ticks(world, 21, 0.05);                    // a walks off to x = 365
     incoming.push(spawn_event(2, /*faction=*/2));  // 200 from cell 0's centre
     run_ticks(world, 3, 0.05);
@@ -1521,9 +1526,9 @@ TEST(WorldFog, RespawningRevealsTheNewSpot) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));  // a dies on tick 3
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));  // a dies on tick 3
     run_ticks(world, 3, 0.016);
-    incoming.push(input_event(2, 0, 0, /*seq=*/2));
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));
     run_ticks(world, 6, 0.016);
     incoming.push(spawn_event(1, /*faction=*/1));  // the far corner
     run_ticks(world, 3, 0.016);
@@ -1547,7 +1552,7 @@ TEST(WorldFog, AShotFromTheFogLandsButTellsNothing) {
     incoming.push(hello_event(2, "shooter"));
     incoming.push(spawn_event(1, /*faction=*/1));  // (450,50)
     incoming.push(spawn_event(2, /*faction=*/2));  // (50,50): 400 away
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
     run_ticks(world, 21, 0.05);  // lands on tick 13; the next shot is due on tick 31
 
     auto self = player_state_in(gw, 1, 1);
@@ -1570,7 +1575,7 @@ TEST(WorldFog, ShotsAndAbilityUsesInTheFogAreNotSent) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/2, /*aim_x=*/-1000, /*aim_y=*/0));
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/-1000, /*aim_y=*/0));
     run_ticks(world, 3, 0.05);
 
     auto seen_by_a = last_snapshot_to(gw, 1);
@@ -1592,7 +1597,7 @@ TEST(WorldFog, AJoinerSeesNothing) {
 
     incoming.push(hello_event(1, "a"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 6, 0.016);  // cell 0 is faction 1's
     incoming.push(hello_event(2, "newcomer"));
     run_ticks(world, 3, 0.016);
@@ -1740,11 +1745,11 @@ TEST(WorldResync, TheClientCatchesUpAfterDroppedSnapshots) {
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/1));
     incoming.push(spawn_event(3, /*faction=*/1));  // (950,550)
-    incoming.push(input_event(3, /*move_x=*/-1, /*move_y=*/0, /*seq=*/1));
+    incoming.push(input_event(3, /*move_x=*/-1, /*move_y=*/0, /*input_seq=*/1));
     run_ticks(world, 7, 0.05);
     incoming.push(hello_event(4, "enemy"));
     incoming.push(spawn_event(4, /*faction=*/2));  // in the scout's sight
-    incoming.push(input_event(4, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(4, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 38, 0.05);  // through tick 45: the drops end on tick 30
 
     const auto watcher = model_of(gw, 1);
@@ -1992,7 +1997,7 @@ TEST(WorldErrors, AnythingBeforeHelloIsFatal) {
     auto config = test_config();
     lit::game::World world(incoming, gw, config);
 
-    incoming.push(with_request(input_event(1, 1, 0, /*seq=*/1), 4));
+    incoming.push(with_request(input_event(1, 1, 0, /*input_seq=*/1), 4));
     world.tick(0.016);
     expect_fatal(gw, 1, ::game::v1::ERROR_CODE_UNEXPECTED_MESSAGE, 4);
 
@@ -2017,7 +2022,7 @@ TEST(WorldErrors, AReleasedSessionIsIgnoredUntilItCloses) {
     world.tick(0.016);
     // Frames it sent before the close reached it are still on their way.
     incoming.push(hello_event(1, "retry"));
-    incoming.push(input_event(1, 1, 0, /*seq=*/1));
+    incoming.push(input_event(1, 1, 0, /*input_seq=*/1));
     incoming.push(ping_event(1));
     run_ticks(world, 3, 0.016);
 
@@ -2070,7 +2075,7 @@ TEST(WorldErrors, RespawningTooEarlyIsRefused) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
     run_ticks(world, 4, 0.016);
     incoming.push(with_request(spawn_event(1, /*faction=*/1), 14));
     world.tick(0.016);
@@ -2131,8 +2136,8 @@ TEST(WorldLimits, HelloInTimeStopsTheHandshakeClock) {
 
     incoming.push(connected_event(1));
     run_ticks(world, 5, kTick);
-    for (std::uint32_t seq = 1; seq <= 20; ++seq) {  // then keeps talking
-        incoming.push(seq == 1 ? hello_event(1, "late") : input_event(1, 0, 0, seq));
+    for (std::uint32_t input_seq = 1; input_seq <= 20; ++input_seq) {  // then keeps talking
+        incoming.push(input_seq == 1 ? hello_event(1, "late") : input_event(1, 0, 0, input_seq));
         world.tick(kTick);
     }
 
@@ -2222,10 +2227,10 @@ TEST(WorldLimits, InputBeyondTheLimitsIsDropped) {
 
     incoming.push(hello_event(1, "burst"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    auto burst = input_event(1, 1, 0, /*seq=*/1);
-    for (std::uint32_t seq = 2; seq <= 5; ++seq) {
+    auto burst = input_event(1, 1, 0, /*input_seq=*/1);
+    for (std::uint32_t input_seq = 2; input_seq <= 5; ++input_seq) {
         auto* frame = burst.msg.mutable_input()->add_frames();
-        frame->set_seq(seq);
+        frame->set_input_seq(input_seq);
         frame->set_move_x(1);
     }
     incoming.push(std::move(burst));
@@ -2376,9 +2381,9 @@ TEST(WorldReconnect, ADroppedPlayerStaysInTheWorldStandingStill) {
 
     incoming.push(hello_event(1, "ann"));
     incoming.push(hello_event(2, "bob"));
-    incoming.push(spawn_event(1, /*faction=*/1));               // x = 150
-    incoming.push(spawn_event(2, /*faction=*/2));               // to see it: the whole map
-    incoming.push(input_event(1, /*move_x=*/1, 0, /*seq=*/1));  // walking right
+    incoming.push(spawn_event(1, /*faction=*/1));                     // x = 150
+    incoming.push(spawn_event(2, /*faction=*/2));                     // to see it: the whole map
+    incoming.push(input_event(1, /*move_x=*/1, 0, /*input_seq=*/1));  // walking right
     run_ticks(world, 3, kTick);
     const std::uint32_t ann = welcome_to(gw, 1)->player_id();
 
@@ -2408,7 +2413,7 @@ TEST(WorldReconnect, AnAwayPlayerCanBeHurt) {
     const std::uint32_t ann = welcome_to(gw, 1)->player_id();
 
     incoming.push(disconnect_event(1));  // closing the tab does not save it
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
     run_ticks(world, 6, kTick);
 
     const auto seen = player_state_in(gw, 2, ann);
@@ -2425,10 +2430,10 @@ TEST(WorldReconnect, AResumeWithinTheGraceKeepsIdPositionAndHp) {
     incoming.push(hello_event(2, "bob"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(input_event(1, /*move_x=*/0, /*move_y=*/1, /*seq=*/1));  // ann walks down
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));              // bob swings once
+    incoming.push(input_event(1, /*move_x=*/0, /*move_y=*/1, /*input_seq=*/1));  // ann walks down
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));              // bob swings once
     world.tick(kTick);
-    incoming.push(input_event(2, 0, 0, /*seq=*/2));  // and stops
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));  // and stops
     run_ticks(world, 2, kTick);
     const auto first = welcome_to(gw, 1);
     ASSERT_TRUE(first.has_value());
@@ -2530,8 +2535,8 @@ TEST(WorldReconnect, ASecondConnectionWithTheTokenReplacesTheFirst) {
     EXPECT_EQ(again->player_id(), ann);
 
     // The new tab drives the body; whatever the old one still sends is ignored.
-    incoming.push(input_event(1, /*move_x=*/-1, 0, /*seq=*/1));
-    incoming.push(input_event(3, /*move_x=*/1, 0, /*seq=*/1));
+    incoming.push(input_event(1, /*move_x=*/-1, 0, /*input_seq=*/1));
+    incoming.push(input_event(3, /*move_x=*/1, 0, /*input_seq=*/1));
     run_ticks(world, 4, kTick);  // a snapshot on tick 6
     const auto seen = player_state_in(gw, 2, ann);
     ASSERT_TRUE(seen.has_value());
@@ -2701,7 +2706,7 @@ TEST(WorldMetrics, CountsSpawnsDeathsAndCaptures) {
     incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(spawn_event(2, /*faction=*/2));  // refused: already alive
     // a holds both: kills b next door and takes its own cell (once: then it is a's).
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true, /*attack=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/true, /*attack=*/true));
     run_ticks(world, 60, kTick);
 
     const auto lines = log.metrics();
@@ -2730,10 +2735,10 @@ TEST(WorldFaction, ChangingFactionAfterDeathIsRefused) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
     run_ticks(world, 4, kTick);
-    incoming.push(input_event(2, 0, 0, /*seq=*/2));  // the killer stops
-    run_ticks(world, 2, kTick);                      // past the respawn delay
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));  // the killer stops
+    run_ticks(world, 2, kTick);                            // past the respawn delay
     const std::uint32_t victim = welcome_to(gw, 1)->player_id();
     const int upserts = roster_news_about(gw, 2, victim).first;
 
@@ -2850,8 +2855,8 @@ TEST(WorldCapitals, AnEnemyCannotTakeACapitalsZone) {
     incoming.push(hello_event(2, "settler"));
     incoming.push(spawn_event(1, /*faction=*/2));  // on cell 6: Red's zone, beside Blue's 7
     incoming.push(spawn_event(2, /*faction=*/2));  // on cell 11: neutral, below Blue's 7
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
-    incoming.push(input_event(2, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 30, kTick);  // three times an enemy cell's capture time
 
     const auto zone = last_cell_update(gw, 1, /*index=*/6);
@@ -2926,7 +2931,7 @@ TEST(WorldScores, ACaptureCountsWhereverItIs) {
     incoming.push(hello_event(2, "blue"));
     incoming.push(spawn_event(1, /*faction=*/1));  // on cell 2, next to Red's zone
     incoming.push(spawn_event(2, /*faction=*/2));  // far away, in the corner
-    incoming.push(input_event(1, 0, 0, /*seq=*/1, /*capturing=*/true));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/true));
     run_ticks(world, 60, kTick);
 
     EXPECT_FALSE(last_cell_update(gw, 2, /*index=*/2).has_value());  // blue never saw it
@@ -3063,9 +3068,9 @@ TEST(WorldMemory, AReturningPlayerGetsWhatItsFactionHasSeen) {
 
     incoming.push(hello_event(1, "a"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(input_event(1, 0, 0, /*seq=*/1));
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/1));
     run_ticks(world, 3, 0.05);
-    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*seq=*/2));
+    incoming.push(input_event(1, /*move_x=*/1, /*move_y=*/0, /*input_seq=*/2));
     run_ticks(world, 12, 0.05);  // walks off: the corner's cells go into the fog
     const auto seen = as_set(all_revealed(gw, 1));
     ASSERT_TRUE(has(all_hidden(gw, 1), 20));
@@ -3130,9 +3135,9 @@ TEST(WorldMemory, ARespawnSendsNoMoreMapState) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*seq=*/1, /*ability=*/1));  // a dies on tick 3
+    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));  // a dies on tick 3
     run_ticks(world, 3, 0.016);
-    incoming.push(input_event(2, 0, 0, /*seq=*/2));
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));
     run_ticks(world, 6, 0.016);
     incoming.push(spawn_event(1, /*faction=*/1));
     run_ticks(world, 3, 0.016);
@@ -3203,7 +3208,7 @@ TEST(WorldMemory, ARestartKeepsWhatTheFactionHasSeen) {
     before.save_to(sink, std::chrono::seconds{60});
     in_before.push(hello_event(1, "ann"));
     in_before.push(spawn_event(1, /*faction=*/1));
-    in_before.push(input_event(1, /*move_x=*/0, /*move_y=*/1, /*seq=*/1));
+    in_before.push(input_event(1, /*move_x=*/0, /*move_y=*/1, /*input_seq=*/1));
     run_ticks(before, 12, 0.05);  // walks down the left edge
     const auto seen = as_set(all_revealed(gw_before, 1));
     const auto first = welcome_to(gw_before, 1);

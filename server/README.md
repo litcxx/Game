@@ -74,7 +74,7 @@ lives on the server; the browser client predicts, interpolates, and renders.
 - **Characters, sessions and units.** A *character* is a player's identity: its
   `id` is the public `player_id` (never reused) and it has a name. A *session*
   (`ClientSession`, one per connection) drives one character; the input it sends
-  (queue, seqs, ack) and what it has been told (`ClientSync`) belong to the
+  (queue, input seqs, ack) and what it has been told (`ClientSync`) belong to the
   connection, so another session taking the character over starts both afresh.
   The character's *body* is a `Unit` with the same id — position, hp, life,
   faction, cooldowns and the current `Intent` — from its spawn on (a dead body

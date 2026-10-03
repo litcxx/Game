@@ -20,7 +20,7 @@ ws.binaryType = "arraybuffer";
 
 const faction = HOME.factionId;
 let myId = 0;
-let seq = 0;
+let inputSeq = 0;
 type Phase = "spawning" | "toFar" | "holdFar" | "toNear" | "holdNear" | "backToFar" | "takeFar" | "done";
 let phase: Phase = "spawning";
 let heldOnFar = false; // stood on FAR holding E for HOLD_FAR_MS
@@ -32,7 +32,7 @@ function send(payload: Parameters<typeof create<typeof ClientMessageSchema>>[1][
   ws.send(toBinary(ClientMessageSchema, create(ClientMessageSchema, { payload })));
 }
 const input = (moveX: number, capturing: boolean) =>
-  send({ case: "input", value: { frames: [{ seq: ++seq, moveX, moveY: 0, capturing }] } });
+  send({ case: "input", value: { frames: [{ inputSeq: ++inputSeq, moveX, moveY: 0, capturing }] } });
 
 function finish(): void {
   console.log(

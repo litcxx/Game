@@ -87,7 +87,7 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   for 6 s — counted from `connect()`, so one that never opens too — is closed and
   reported as lost (`STALE_CLOSE_CODE`, 4900, sent with the reason «no word from
   the server» for the server's log): a dropped network often closes nothing. `sendInputFrames` ships a batch of per-tick input
-  frames (each with its `seq`); `sendSpawn(faction)` requests spawn/respawn — the
+  frames (each with its `inputSeq`, given out by the `Predictor` alone); `sendSpawn(faction)` requests spawn/respawn — the
   server puts the body at the faction's capital. A `Ping`
   goes out right after `Hello` and then every 2 s while the socket is open: its
   `Pong` gives the round trip (`roundTripMs`, shown as the HUD's ping), and it

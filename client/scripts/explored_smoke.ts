@@ -72,10 +72,10 @@ async function main(): Promise<void> {
   check("joined", welcome !== undefined);
   scout.send({ case: "spawn", value: { factionId: HOME.factionId } });
   await until(() => last(scout, "snapshot")?.you?.life === LifeState.ALIVE || undefined);
-  scout.send({ case: "input", value: { frames: [{ seq: 1, moveX: 0, moveY: -1 }] } });
+  scout.send({ case: "input", value: { frames: [{ inputSeq: 1, moveX: 0, moveY: -1 }] } });
   const me = () => last(scout, "snapshot")?.players.find((p) => p.id === welcome?.playerId);
   await until(() => ((me()?.y ?? Infinity) <= HOME.y - 500 ? true : undefined));
-  scout.send({ case: "input", value: { frames: [{ seq: 2, moveX: 0, moveY: 0 }] } });
+  scout.send({ case: "input", value: { frames: [{ inputSeq: 2, moveX: 0, moveY: 0 }] } });
   await sleep(200);
   const seen = new Set(all(scout, "snapshot").flatMap((s) => s.revealed));
   const behind = new Set(all(scout, "snapshot").flatMap((s) => s.hidden));

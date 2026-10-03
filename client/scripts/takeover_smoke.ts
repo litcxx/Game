@@ -36,8 +36,8 @@ let bReady = false;
 let bStarted = false;
 let sawGradient = false; // owner_faction_id == fA while B's progress is between 0 and 100
 let finalOwner = 0;
-let aSeq = 0;
-let bSeq = 0;
+let aInputSeq = 0;
+let bInputSeq = 0;
 
 function send(ws: WebSocket, msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
@@ -45,18 +45,18 @@ function send(ws: WebSocket, msg: ClientMessage): void {
 const hello = (name: string) =>
   create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
 const spawn = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
-const walk = (seq: number, moveX: number) =>
-  create(ClientMessageSchema, { payload: { case: "input", value: { frames: [{ seq, moveX, moveY: 0 }] } } });
-const capture = (seq: number, on: boolean) =>
+const walk = (inputSeq: number, moveX: number) =>
+  create(ClientMessageSchema, { payload: { case: "input", value: { frames: [{ inputSeq, moveX, moveY: 0 }] } } });
+const capture = (inputSeq: number, on: boolean) =>
   create(ClientMessageSchema, {
-    payload: { case: "input", value: { frames: [{ seq, moveX: 0, moveY: 0, capturing: on, attack: false }] } },
+    payload: { case: "input", value: { frames: [{ inputSeq, moveX: 0, moveY: 0, capturing: on, attack: false }] } },
   });
 
 function startB(): void {
   if (!aOwned || !bReady || bStarted) return;
   bStarted = true;
   send(b, spawn(fB));
-  send(b, walk(++bSeq, -1)); // left, onto CELL
+  send(b, walk(++bInputSeq, -1)); // left, onto CELL
 }
 
 a.onopen = () => send(a, hello("A"));
@@ -67,18 +67,18 @@ a.onmessage = (ev: MessageEvent) => {
   if (m.payload.case === "welcome") {
     aId = m.payload.value.playerId;
     send(a, spawn(fA));
-    send(a, walk(++aSeq, 1)); // right, onto CELL
+    send(a, walk(++aInputSeq, 1)); // right, onto CELL
   } else if (m.payload.case === "snapshot") {
     const me = m.payload.value.players.find((p) => p.id === aId);
     if (me && !aHolding && me.x >= A_HOME.x + 70) {
       aHolding = true; // on CELL: stop and hold E
-      send(a, capture(++aSeq, true));
+      send(a, capture(++aInputSeq, true));
     }
     for (const c of m.payload.value.cells) {
       if (c.index !== CELL) continue;
       if (!aOwned && c.ownerFactionId === fA) {
         aOwned = true;
-        send(a, capture(++aSeq, false)); // A stops so B isn't contested
+        send(a, capture(++aInputSeq, false)); // A stops so B isn't contested
         startB();
       }
     }
@@ -95,7 +95,7 @@ b.onmessage = (ev: MessageEvent) => {
     const me = m.payload.value.players.find((p) => p.id === bId);
     if (me && bStarted && !bHolding && me.x <= B_HOME.x - 70) {
       bHolding = true; // on CELL: stop and hold E
-      send(b, capture(++bSeq, true));
+      send(b, capture(++bInputSeq, true));
     }
     for (const c of m.payload.value.cells) {
       if (c.index !== CELL) continue;

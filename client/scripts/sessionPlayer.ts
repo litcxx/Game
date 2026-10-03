@@ -10,6 +10,7 @@ export class SessionPlayer {
   readonly statuses: SessionStatus[] = [];
   readonly session: Session<GameClient>;
   private readonly waiters: (() => void)[] = [];
+  private inputSeq = 0; // the last input frame's number
 
   // Players sharing a store are tabs of one browser.
   constructor(
@@ -36,6 +37,14 @@ export class SessionPlayer {
 
   get client(): GameClient {
     return this.session.client;
+  }
+
+  // One input frame walking along x (moveX -1, 0 or 1; nothing else held). The
+  // player numbers its frames itself, as the game's Predictor does.
+  walk(moveX: number): void {
+    this.client.sendInputFrames([
+      { inputSeq: ++this.inputSeq, moveX, moveY: 0, capturing: false, attack: false, abilityId: 0, aimX: 0, aimY: 0 },
+    ]);
   }
 
   // The first value `pick` finds, now or as messages and statuses come, or

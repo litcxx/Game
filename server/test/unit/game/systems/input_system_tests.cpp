@@ -10,22 +10,22 @@
 
 namespace {
 
-// An Input carrying frames with the sequence numbers first..last.
+// An Input carrying frames with the input seqs first..last.
 ::game::v1::Input frames(std::uint32_t first, std::uint32_t last) {
     ::game::v1::Input input;
-    for (std::uint32_t seq = first; seq <= last; ++seq) input.add_frames()->set_seq(seq);
+    for (std::uint32_t n = first; n <= last; ++n) input.add_frames()->set_input_seq(n);
     return input;
 }
 
 std::vector<std::uint32_t> queued(const lit::game::InputQueue& q) {
     std::vector<std::uint32_t> out;
-    for (const auto& cmd : q.commands) out.push_back(cmd.seq);
+    for (const auto& intent : q.intents) out.push_back(intent.input_seq);
     return out;
 }
 
-std::vector<std::uint32_t> seqs(std::uint32_t first, std::uint32_t last) {
+std::vector<std::uint32_t> input_seqs(std::uint32_t first, std::uint32_t last) {
     std::vector<std::uint32_t> out;
-    for (std::uint32_t seq = first; seq <= last; ++seq) out.push_back(seq);
+    for (std::uint32_t n = first; n <= last; ++n) out.push_back(n);
     return out;
 }
 
@@ -38,7 +38,7 @@ TEST(InputLimits, TakesAtMostEightFramesFromOneInput) {
 
     lit::game::enqueue_frames(p, frames(1, 10), kLimits);
 
-    EXPECT_EQ(queued(p), seqs(1, 8));  // 9 and 10 are dropped
+    EXPECT_EQ(queued(p), input_seqs(1, 8));  // 9 and 10 are dropped
 }
 
 TEST(InputLimits, TheQueueStopsAtItsLimit) {
@@ -48,11 +48,11 @@ TEST(InputLimits, TheQueueStopsAtItsLimit) {
         lit::game::enqueue_frames(p, frames(first, first + 7), kLimits);  // 5 x 8 = 40
     }
 
-    EXPECT_EQ(queued(p), seqs(1, 32));  // the newer 8 are dropped
-    p.commands.pop_front();
+    EXPECT_EQ(queued(p), input_seqs(1, 32));  // the newer 8 are dropped
+    p.intents.pop_front();
     lit::game::enqueue_frames(p, frames(41, 42), kLimits);
-    EXPECT_EQ(p.commands.back().seq, 41u);  // room for one again
-    EXPECT_EQ(p.commands.size(), 32u);
+    EXPECT_EQ(p.intents.back().input_seq, 41u);  // room for one again
+    EXPECT_EQ(p.intents.size(), 32u);
 }
 
 TEST(InputLimits, OldOrRepeatedFramesAreIgnored) {
@@ -61,5 +61,5 @@ TEST(InputLimits, OldOrRepeatedFramesAreIgnored) {
 
     lit::game::enqueue_frames(p, frames(2, 5), kLimits);
 
-    EXPECT_EQ(queued(p), seqs(1, 5));  // 2 and 3 were already in
+    EXPECT_EQ(queued(p), input_seqs(1, 5));  // 2 and 3 were already in
 }

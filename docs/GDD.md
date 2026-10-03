@@ -145,7 +145,7 @@
 | WebSocket-транспорт, 1 кадр = 1 protobuf-сообщение | `server/src/net/session`, `server/src/net/server` | Корутины Asio, супервизор сессии (`do_read ‖ do_send`), безопасный teardown, graceful shutdown |
 | Протокол v1 | `protocol/game/v1/protocol.proto` | Единый источник правды, генерация для C++ (CMake) и TS (buf) |
 | Фиксированный шаг 60 Гц, снапшоты 20 Гц | `game/world/world.cpp`, `fixed_step.hpp` | Аккумулятор с защитой от spiral of death |
-| Ввод: одна команда за тик, seq/ack | `systems/input_system` | Детерминированный replay — основа клиентского предсказания |
+| Ввод: одна команда за тик, `input_seq`/ack | `systems/input_system` | Детерминированный replay — основа клиентского предсказания |
 | Движение + предсказание | `systems/movement_system`, `client/src/net/prediction.ts` | Формула продублирована на клиенте и совпадает побайтно по смыслу |
 | Интерполяция чужих игроков и снарядов | `client/src/net/interpolation.ts` | Задержка 100 мс |
 | Presence и roster | `World::on_hello` / `on_disconnect` | |

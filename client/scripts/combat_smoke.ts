@@ -44,7 +44,7 @@ const attackMsg = () =>
   create(ClientMessageSchema, {
     payload: {
       case: "input",
-      value: { frames: [{ seq: 1, moveX: 0, moveY: 0, capturing: false, attack: true }] },
+      value: { frames: [{ inputSeq: 1, moveX: 0, moveY: 0, capturing: false, attack: true }] },
     },
   });
 

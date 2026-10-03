@@ -73,10 +73,10 @@ struct Encounter {
     lit::game::Unit& stub() { return state.units.at(kStub); }
 
     // The player's client sends one input frame.
-    void player_input(std::uint32_t seq, const lit::game::Intent& intent) {
+    void player_input(std::uint32_t input_seq, const lit::game::Intent& intent) {
         ::game::v1::Input input;
         auto* f = input.add_frames();
-        f->set_seq(seq);
+        f->set_input_seq(input_seq);
         f->set_move_x(intent.move_x);
         f->set_move_y(intent.move_y);
         f->set_attack(intent.attack);

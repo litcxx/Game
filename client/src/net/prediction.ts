@@ -16,7 +16,7 @@ export interface InputSample {
   aimY: number;
 }
 export interface PendingInput extends InputSample {
-  seq: number;
+  inputSeq: number;
 }
 
 // MUST match the server's World::update integration exactly.
@@ -53,7 +53,7 @@ export class Predictor {
   private predicted: Vec2 = { x: 0, y: 0 };
   private error: Vec2 = { x: 0, y: 0 };
   private pending: PendingInput[] = [];
-  private nextSeq = 1;
+  private nextInputSeq = 1;
   private corrections: Corrections = { count: 0, max: 0 };
 
   constructor(
@@ -80,7 +80,7 @@ export class Predictor {
 
   // Apply one fixed-step input locally; returns the frame to send.
   step(sample: InputSample): PendingInput {
-    const frame: PendingInput = { seq: this.nextSeq++, ...sample };
+    const frame: PendingInput = { inputSeq: this.nextInputSeq++, ...sample };
     this.predicted = integrate(this.predicted, sample.moveX, sample.moveY, this.fixedDt, this.speed, this.bounds);
     this.pending.push(frame);
     return frame;
@@ -91,7 +91,7 @@ export class Predictor {
   // A prediction off by more than CORRECTION_UNITS counts as a correction.
   reconcile(authoritative: Vec2, lastInputSeq: number): void {
     const displayed = this.renderPosition;
-    this.pending = this.pending.filter((f) => f.seq > lastInputSeq);
+    this.pending = this.pending.filter((f) => f.inputSeq > lastInputSeq);
     let pos: Vec2 = { x: authoritative.x, y: authoritative.y };
     for (const f of this.pending) {
       pos = integrate(pos, f.moveX, f.moveY, this.fixedDt, this.speed, this.bounds);

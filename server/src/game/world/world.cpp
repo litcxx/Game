@@ -319,8 +319,8 @@ void World::on_spawn(std::uint64_t session_id, const ::game::v1::SpawnRequest& s
         send_error(session_id, spawned.error(), request_id, "spawn refused");
         return;
     }
-    // Drop stale pre-spawn commands (last_enqueued_seq stays monotonic).
-    session.input.commands.clear();
+    // Drop stale pre-spawn intents (last_enqueued_input_seq stays monotonic).
+    session.input.intents.clear();
     metrics_.record_spawn();
     if (first) {
         // The faction's map — what it has explored, as it last saw it — before the

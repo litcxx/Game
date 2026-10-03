@@ -47,7 +47,7 @@ function send(ws: WebSocket, msg: ClientMessage): void {
 const helloMsg = (name: string) =>
   create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
 const spawnMsg = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
-const framesMsg = (frames: { seq: number; attack: boolean; abilityId: number }[]) =>
+const framesMsg = (frames: { inputSeq: number; attack: boolean; abilityId: number }[]) =>
   create(ClientMessageSchema, {
     payload: {
       case: "input",
@@ -59,9 +59,9 @@ function maybeStart(): void {
   if (started || !atkAlive || !defAlive || meleeId === 0 || blockId === 0) return;
   started = true;
   // Block for one tick's worth of input (it then lasts its duration)...
-  send(defender, framesMsg([{ seq: 1, attack: true, abilityId: blockId }, { seq: 2, attack: false, abilityId: blockId }]));
+  send(defender, framesMsg([{ inputSeq: 1, attack: true, abilityId: blockId }, { inputSeq: 2, attack: false, abilityId: blockId }]));
   // ...and 10 ms later the attacker starts holding melee (swings each cooldown).
-  setTimeout(() => send(attacker, framesMsg([{ seq: 1, attack: true, abilityId: meleeId }])), 10);
+  setTimeout(() => send(attacker, framesMsg([{ inputSeq: 1, attack: true, abilityId: meleeId }])), 10);
 }
 
 attacker.onopen = () => send(attacker, helloMsg("attacker"));
@@ -92,7 +92,7 @@ attacker.onmessage = (ev: MessageEvent) => {
         else if (landedDamage < 0) {
           landedDamage = e.kind.value.damage;
           defHpAfterLanded = s.players.find((p) => p.id === defId)?.hp ?? -1;
-          send(attacker, framesMsg([{ seq: 2, attack: false, abilityId: meleeId }])); // done
+          send(attacker, framesMsg([{ inputSeq: 2, attack: false, abilityId: meleeId }])); // done
           setTimeout(finish, 200);
         }
       }

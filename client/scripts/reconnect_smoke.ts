@@ -40,9 +40,9 @@ const token = welcome.sessionToken;
 check("Welcome carries a 32-hex-digit session token, not resumed", /^[0-9a-f]{32}$/.test(token) && !welcome.resumed);
 check("the name and the token are saved", tab.store.getItem(NAME_KEY) === NAME && tab.store.getItem(TOKEN_KEY) === token);
 tab.client.sendSpawn(HOME.factionId);
-tab.client.sendInput(1, 0, false);
+tab.walk(1);
 await sleep(300);
-tab.client.sendInput(0, 0, false);
+tab.walk(0);
 const before = await tab.standing(id);
 check("the body walked and stands", before !== undefined && before.x > HOME.x, `x=${before?.x}`);
 

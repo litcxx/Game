@@ -33,7 +33,7 @@ ws.onmessage = (ev: MessageEvent) => {
     if (me) {
       xs.push(me.x);
       if (!sentInput) {
-        send({ case: "input", value: { frames: [{ seq: 1, moveX: 1, moveY: 0 }] } });
+        send({ case: "input", value: { frames: [{ inputSeq: 1, moveX: 1, moveY: 0 }] } });
         sentInput = true;
       }
     }

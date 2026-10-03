@@ -47,13 +47,13 @@ function send(ws: WebSocket, msg: ClientMessage): void {
 const helloMsg = (name: string) =>
   create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
 const spawnMsg = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
-const fireMsg = (seq: number, attack: boolean) =>
+const fireMsg = (inputSeq: number, attack: boolean) =>
   create(ClientMessageSchema, {
     payload: {
       case: "input",
       value: {
         frames: [
-          { seq, moveX: 0, moveY: 0, capturing: false, attack, abilityId: shotAbility, aimX: 1000, aimY: 0 },
+          { inputSeq, moveX: 0, moveY: 0, capturing: false, attack, abilityId: shotAbility, aimX: 1000, aimY: 0 },
         ],
       },
     },

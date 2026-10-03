@@ -22,7 +22,7 @@ let moveSpeed = 300;
 let tickRate = 60;
 const startX = HOME.x;
 let lastX = -1;
-let lastSeq = 0;
+let lastInputSeq = 0;
 
 function send(msg: ClientMessage): void {
   ws.send(toBinary(ClientMessageSchema, msg));
@@ -40,11 +40,11 @@ ws.onmessage = (ev: MessageEvent) => {
     send(create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId: HOME.factionId } } }));
     // one Input message, 7 frames (<=8): 6 move-right then stop
     const frames = [];
-    for (let i = 1; i <= 6; i++) frames.push({ seq: i, moveX: 1, moveY: 0, capturing: false, attack: false });
-    frames.push({ seq: 7, moveX: 0, moveY: 0, capturing: false, attack: false });
+    for (let i = 1; i <= 6; i++) frames.push({ inputSeq: i, moveX: 1, moveY: 0, capturing: false, attack: false });
+    frames.push({ inputSeq: 7, moveX: 0, moveY: 0, capturing: false, attack: false });
     send(create(ClientMessageSchema, { payload: { case: "input", value: { frames } } }));
   } else if (m.payload.case === "snapshot") {
-    lastSeq = m.payload.value.you?.lastInputSeq ?? lastSeq;
+    lastInputSeq = m.payload.value.you?.lastInputSeq ?? lastInputSeq;
     const me = m.payload.value.players.find((p) => p.id === myId);
     if (me) lastX = me.x;
   }
@@ -54,8 +54,8 @@ ws.onerror = () => console.error("[pred] socket error");
 setTimeout(() => {
   const expectedDx = 6 * moveSpeed * (1 / tickRate); // 6 ticks moved before the stop
   const dx = lastX - startX;
-  console.log(`[pred] lastSeq=${lastSeq} startX=${startX} lastX=${lastX} dx=${dx} expected≈${expectedDx}`);
-  const pass = lastSeq === 7 && Math.abs(dx - expectedDx) <= moveSpeed * (1 / tickRate) + 1;
+  console.log(`[pred] lastInputSeq=${lastInputSeq} startX=${startX} lastX=${lastX} dx=${dx} expected≈${expectedDx}`);
+  const pass = lastInputSeq === 7 && Math.abs(dx - expectedDx) <= moveSpeed * (1 / tickRate) + 1;
   console.log("VERDICT:", pass ? "PASS" : "FAIL");
   ws.close();
   process.exit(pass ? 0 : 1);

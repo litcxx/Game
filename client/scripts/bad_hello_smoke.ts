@@ -23,7 +23,7 @@ const URL = process.env.SERVER_URL ?? "ws://127.0.0.1:27998/";
 const hello = (name: string, protocolVersion: number = ProtocolVersion.CURRENT): ClientMessage =>
   create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion, name } } });
 const input = (): ClientMessage =>
-  create(ClientMessageSchema, { payload: { case: "input", value: { frames: [{ seq: 1 }] } } });
+  create(ClientMessageSchema, { payload: { case: "input", value: { frames: [{ inputSeq: 1 }] } } });
 const spawnNowhere = (requestId: number): ClientMessage =>
   create(ClientMessageSchema, { requestId, payload: { case: "spawn", value: { factionId: 999 } } }); // no such faction
 
