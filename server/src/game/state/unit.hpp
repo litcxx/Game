@@ -30,11 +30,12 @@ struct Unit {
     double y{0.0};
     std::uint32_t hp{0};
     Intent intent;
-    std::uint32_t attack_ready_tick{0};     // next tick it may attack (shared cooldown)
-    std::uint32_t cooldown_ticks{0};        // length of the current cooldown (last ability used)
-    std::uint32_t block_until_tick{0};      // blocking (no damage) while tick < this
-    std::uint32_t block_ready_tick{0};      // next tick a block may start (its own cooldown)
-    std::uint32_t block_cooldown_ticks{0};  // length of the current block cooldown
-    std::uint32_t respawn_tick{0};          // when DEAD: tick from which respawn is allowed
+    std::uint32_t attack_ready_tick{0};      // next tick it may attack (shared cooldown)
+    std::uint32_t cooldown_ticks{0};         // length of the current cooldown (last ability used)
+    std::uint32_t last_attack_input_seq{0};  // InputFrame of the last melee / shot used (0 = none)
+    std::uint32_t block_until_tick{0};       // blocking (no damage) while tick < this
+    std::uint32_t block_ready_tick{0};       // next tick a block may start (its own cooldown)
+    std::uint32_t block_cooldown_ticks{0};   // length of the current block cooldown
+    std::uint32_t respawn_tick{0};           // when DEAD: tick from which respawn is allowed
 };
 }  // namespace lit::game

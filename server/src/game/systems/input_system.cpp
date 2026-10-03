@@ -21,7 +21,10 @@ void consume_inputs(WorldState& state) {
     for (auto& [session_id, session] : state.sessions) {
         InputQueue& queue = session.input;
         if (queue.intents.empty()) {
-            continue;  // no fresh intent this tick -> the last one repeats
+            // No new frame this tick: the last intent repeats, the same intent under
+            // its input_seq — but its attack was used on its own tick, and not again.
+            if (Unit* body = find_unit(state, session.character_id)) body->intent.attack = false;
+            continue;
         }
         const Intent intent = queue.intents.front();
         queue.intents.pop_front();

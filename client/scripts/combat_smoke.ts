@@ -1,5 +1,6 @@
 // M3 e2e: two clients spawn one cell apart (within attack_range). The attacker
-// holds the attack key; the server swings an area hit each cooldown. Verify
+// holds the attack key — a frame a tick, as a client sends them: an attack
+// comes from a frame — and the server swings an area hit each cooldown. Verify
 // HitEvents flow back, the victim's hp drops, and a DeathEvent lands.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
 
@@ -40,18 +41,19 @@ function send(ws: WebSocket, msg: ClientMessage): void {
 const helloMsg = (name: string) =>
   create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
 const spawnMsg = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
+let inputSeq = 0;
 const attackMsg = () =>
   create(ClientMessageSchema, {
     payload: {
       case: "input",
-      value: { frames: [{ inputSeq: 1, moveX: 0, moveY: 0, capturing: false, attack: true }] },
+      value: { frames: [{ inputSeq: ++inputSeq, moveX: 0, moveY: 0, capturing: false, attack: true }] },
     },
   });
 
 function maybeAttack(): void {
   if (!attacking && atkSpawned && vicSpawned && vicId >= 1) {
     attacking = true;
-    send(attacker, attackMsg()); // held: the server swings each cooldown
+    setInterval(() => send(attacker, attackMsg()), 1000 / 60); // held: the server swings each cooldown
   }
 }
 

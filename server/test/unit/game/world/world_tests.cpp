@@ -431,6 +431,17 @@ void run_ticks(lit::game::World& world, int n, double dt) {
     for (int i = 0; i < n; ++i) world.tick(dt);
 }
 
+// `n` ticks with `send(i)` (i = 0, 1, …) pushing tick i's frames first — as a
+// client sends a frame a tick while a key is held. An attack comes from a frame:
+// one frame attacks once, however long the ticks run after it.
+template <typename Send>
+void run_ticks_sending(lit::game::World& world, int n, double dt, Send send) {
+    for (int i = 0; i < n; ++i) {
+        send(static_cast<std::uint32_t>(i));
+        world.tick(dt);
+    }
+}
+
 }  // namespace
 
 TEST(WorldSnapshot, SendsSnapshotWithSelfStateToConnectedPlayer) {
@@ -504,10 +515,11 @@ TEST(WorldSpawn, BackAtTheCapitalAfterADeathElsewhere) {
     incoming.push(input_event(1, /*move_x=*/1, 0, /*input_seq=*/1));  // Red walks toward Blue
     run_ticks(world, 20, dt);                                         // 100 units: x = 250
     incoming.push(input_event(1, 0, 0, /*input_seq=*/2));
-    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
-    run_ticks(world, 6, dt);
+    run_ticks_sending(world, 6, dt, [&](std::uint32_t i) {  // the killer holds melee
+        incoming.push(attack_event(2, /*input_seq=*/1 + i, /*ability=*/1));
+    });
     ASSERT_EQ(last_snapshot_to(gw, 1)->you().life(), ::game::v1::LIFE_STATE_DEAD);
-    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));  // the killer stops
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/7));  // the killer stops
 
     incoming.push(spawn_event(1, /*faction=*/1));
     run_ticks(world, 3, dt);
@@ -799,9 +811,9 @@ TEST(WorldCombat, CooldownLimitsSwings) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(
-        input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
-    run_ticks(world, 3, 0.016);
+    run_ticks_sending(world, 3, 0.016, [&](std::uint32_t i) {  // held: a frame a tick
+        incoming.push(attack_event(1, /*input_seq=*/1 + i, /*ability=*/1));
+    });
 
     auto victim = player_state_in(gw, /*session=*/2, /*id=*/2);
     ASSERT_TRUE(victim.has_value());
@@ -820,9 +832,9 @@ TEST(WorldCombat, KillsAndSetsDead) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(
-        input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
-    run_ticks(world, 6, 0.016);
+    run_ticks_sending(world, 6, 0.016, [&](std::uint32_t i) {  // a holds melee
+        incoming.push(attack_event(1, /*input_seq=*/1 + i, /*ability=*/1));
+    });
 
     auto snap = last_snapshot_to(gw, 2);
     ASSERT_TRUE(snap.has_value());
@@ -846,13 +858,12 @@ TEST(WorldCombat, RespawnAfterDelay) {
     incoming.push(hello_event(2, "b"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(
-        input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/false, /*attack=*/true));  // held
-    run_ticks(world, 3, 0.016);  // b dies (~tick 3), respawn_tick = 3 + 5
-    incoming.push(
-        input_event(1, 0, 0, /*input_seq=*/2, /*capturing=*/false, /*attack=*/false));  // a stops
-    run_ticks(world, 6, 0.016);                    // wait past respawn_tick
-    incoming.push(spawn_event(2, /*faction=*/2));  // respawn far from a
+    run_ticks_sending(world, 3, 0.016, [&](std::uint32_t i) {  // a holds melee: b dies on tick 3
+        incoming.push(attack_event(1, /*input_seq=*/1 + i, /*ability=*/1));
+    });
+    incoming.push(input_event(1, 0, 0, /*input_seq=*/4));  // a stops
+    run_ticks(world, 6, 0.016);                            // wait past respawn_tick
+    incoming.push(spawn_event(2, /*faction=*/2));          // respawn far from a
     run_ticks(world, 3, 0.016);
 
     auto snap = last_snapshot_to(gw, 2);
@@ -1055,6 +1066,33 @@ TEST(WorldRanged, OnlyTheShooterSeesItsShotAsMine) {
     EXPECT_FALSE(other->projectiles(0).mine());
 }
 
+// The shooter also learns which of its input frames fired the shot, and that
+// the server used that frame's attack; the other learns nothing new.
+TEST(WorldRanged, TheShooterLearnsWhichFrameFiredItsShot) {
+    lit::TSQueue<lit::ClientEvent> incoming;
+    lit::test::MockClientGateway gw;
+    auto config = test_config();
+    lit::game::World world(incoming, gw, config, placed({{"a", {4}}, {"b", {8}}}));
+
+    incoming.push(hello_event(1, "a"));
+    incoming.push(hello_event(2, "b"));
+    incoming.push(spawn_event(1, /*faction=*/1));  // (50,150)
+    incoming.push(spawn_event(2, /*faction=*/2));  // (50,250): off the shot's path
+    incoming.push(attack_event(1, /*input_seq=*/4, /*ability=*/2, /*aim_x=*/1000, /*aim_y=*/0));
+    run_ticks(world, 3, 0.016);
+
+    auto shooter = last_snapshot_to(gw, 1);
+    auto other = last_snapshot_to(gw, 2);
+    ASSERT_TRUE(shooter.has_value());
+    ASSERT_TRUE(other.has_value());
+    ASSERT_EQ(shooter->projectiles_size(), 1);
+    ASSERT_EQ(other->projectiles_size(), 1);
+    EXPECT_EQ(shooter->projectiles(0).input_seq(), 4u);
+    EXPECT_EQ(other->projectiles(0).input_seq(), 0u);
+    EXPECT_EQ(shooter->you().last_attack_input_seq(), 4u);
+    EXPECT_EQ(other->you().last_attack_input_seq(), 0u);
+}
+
 TEST(WorldRanged, HitsAnEnemyForTheRangedDamage) {
     lit::TSQueue<lit::ClientEvent> incoming;
     lit::test::MockClientGateway gw;
@@ -1125,8 +1163,11 @@ TEST(WorldRanged, SharedCooldownBlocksOtherAbilities) {
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));  // within melee range
     incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/2, /*aim_x=*/0, /*aim_y=*/-1000));
-    incoming.push(attack_event(1, /*input_seq=*/2, /*ability=*/1));  // then hold melee
-    run_ticks(world, 12, 0.016);
+    world.tick(0.016);
+    const auto hold_melee = [&](std::uint32_t i) {  // then hold melee: frames 2, 3, …
+        incoming.push(attack_event(1, /*input_seq=*/2 + i, /*ability=*/1));
+    };
+    run_ticks_sending(world, 11, 0.016, hold_melee);
 
     auto snap = last_snapshot_to(gw, 1);
     ASSERT_TRUE(snap.has_value());
@@ -1136,7 +1177,7 @@ TEST(WorldRanged, SharedCooldownBlocksOtherAbilities) {
     ASSERT_TRUE(victim.has_value());
     EXPECT_EQ(victim->hp(), 100u);  // melee is held but must wait for the shared cooldown
 
-    run_ticks(world, 21, 0.016);  // through tick 33: melee swings on tick 31
+    run_ticks_sending(world, 21, 0.016, [&](std::uint32_t i) { hold_melee(11 + i); });  // tick 31
     victim = player_state_in(gw, 2, 2);
     ASSERT_TRUE(victim.has_value());
     EXPECT_EQ(victim->hp(), 60u);
@@ -1178,8 +1219,9 @@ TEST(WorldBlock, BlockExpires) {
     incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/3));  // block once: ticks 1..9
     incoming.push(input_event(2, 0, 0, /*input_seq=*/2));            // then let go
-    incoming.push(attack_event(1, /*input_seq=*/1, /*ability=*/1));  // swings on ticks 1 and 11
-    run_ticks(world, 12, 0.016);
+    run_ticks_sending(world, 12, 0.016, [&](std::uint32_t i) {       // swings on ticks 1 and 11
+        incoming.push(attack_event(1, /*input_seq=*/1 + i, /*ability=*/1));
+    });
 
     auto def = player_state_in(gw, 2, 2);
     ASSERT_TRUE(def.has_value());
@@ -1406,9 +1448,10 @@ TEST(WorldFog, ADeadPlayerGivesNoSightButSeesItsBody) {
     incoming.push(hello_event(1, "victim"));
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
-    incoming.push(spawn_event(2, /*faction=*/2));  // right next to it
-    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
-    run_ticks(world, 6, 0.016);
+    incoming.push(spawn_event(2, /*faction=*/2));              // right next to it
+    run_ticks_sending(world, 6, 0.016, [&](std::uint32_t i) {  // the killer holds melee
+        incoming.push(attack_event(2, /*input_seq=*/1 + i, /*ability=*/1));
+    });
 
     // Tick 3: the snapshot reporting the death still sees — who struck it, too.
     EXPECT_EQ(count_deaths(gw, 1), 1);
@@ -1526,9 +1569,11 @@ TEST(WorldFog, RespawningRevealsTheNewSpot) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));  // a dies on tick 3
-    run_ticks(world, 3, 0.016);
-    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));
+    run_ticks_sending(world, 3, 0.016, [&](std::uint32_t i) {  // a dies on tick 3
+        incoming.push(attack_event(2, /*input_seq=*/1 + i, /*ability=*/1));
+    });
+    ASSERT_EQ(last_snapshot_to(gw, 1)->you().life(), ::game::v1::LIFE_STATE_DEAD);
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/4));
     run_ticks(world, 6, 0.016);
     incoming.push(spawn_event(1, /*faction=*/1));  // the far corner
     run_ticks(world, 3, 0.016);
@@ -2075,8 +2120,9 @@ TEST(WorldErrors, RespawningTooEarlyIsRefused) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
-    run_ticks(world, 4, 0.016);
+    run_ticks_sending(world, 4, 0.016, [&](std::uint32_t i) {  // the victim dies on tick 3
+        incoming.push(attack_event(2, /*input_seq=*/1 + i, /*ability=*/1));
+    });
     incoming.push(with_request(spawn_event(1, /*faction=*/1), 14));
     world.tick(0.016);
 
@@ -2706,8 +2752,10 @@ TEST(WorldMetrics, CountsSpawnsDeathsAndCaptures) {
     incoming.push(spawn_event(2, /*faction=*/2));
     incoming.push(spawn_event(2, /*faction=*/2));  // refused: already alive
     // a holds both: kills b next door and takes its own cell (once: then it is a's).
-    incoming.push(input_event(1, 0, 0, /*input_seq=*/1, /*capturing=*/true, /*attack=*/true));
-    run_ticks(world, 60, kTick);
+    run_ticks_sending(world, 60, kTick, [&](std::uint32_t i) {
+        incoming.push(
+            input_event(1, 0, 0, /*input_seq=*/1 + i, /*capturing=*/true, /*attack=*/true));
+    });
 
     const auto lines = log.metrics();
     ASSERT_EQ(lines.size(), 1u);
@@ -2735,9 +2783,10 @@ TEST(WorldFaction, ChangingFactionAfterDeathIsRefused) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));
-    run_ticks(world, 4, kTick);
-    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));  // the killer stops
+    run_ticks_sending(world, 4, kTick, [&](std::uint32_t i) {  // the victim dies on tick 3
+        incoming.push(attack_event(2, /*input_seq=*/1 + i, /*ability=*/1));
+    });
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/5));  // the killer stops
     run_ticks(world, 2, kTick);                            // past the respawn delay
     const std::uint32_t victim = welcome_to(gw, 1)->player_id();
     const int upserts = roster_news_about(gw, 2, victim).first;
@@ -3135,9 +3184,11 @@ TEST(WorldMemory, ARespawnSendsNoMoreMapState) {
     incoming.push(hello_event(2, "killer"));
     incoming.push(spawn_event(1, /*faction=*/1));
     incoming.push(spawn_event(2, /*faction=*/2));
-    incoming.push(attack_event(2, /*input_seq=*/1, /*ability=*/1));  // a dies on tick 3
-    run_ticks(world, 3, 0.016);
-    incoming.push(input_event(2, 0, 0, /*input_seq=*/2));
+    run_ticks_sending(world, 3, 0.016, [&](std::uint32_t i) {  // a dies on tick 3
+        incoming.push(attack_event(2, /*input_seq=*/1 + i, /*ability=*/1));
+    });
+    ASSERT_EQ(last_snapshot_to(gw, 1)->you().life(), ::game::v1::LIFE_STATE_DEAD);
+    incoming.push(input_event(2, 0, 0, /*input_seq=*/4));
     run_ticks(world, 6, 0.016);
     incoming.push(spawn_event(1, /*faction=*/1));
     run_ticks(world, 3, 0.016);

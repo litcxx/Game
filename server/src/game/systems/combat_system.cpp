@@ -53,7 +53,7 @@ bool launch_projectile(WorldState& state, const Unit& self, const AbilityConfig&
     state.projectiles.push_back(
         Projectile{state.next_projectile_id++, self.id, self.faction_id, ability.damage,
                    static_cast<double>(ability.projectile_radius), self.x, self.y, ax / len * speed,
-                   ay / len * speed, static_cast<double>(ability.range)});
+                   ay / len * speed, static_cast<double>(ability.range), self.intent.input_seq});
     return true;
 }
 }  // namespace
@@ -79,6 +79,7 @@ void resolve_attacks(WorldState& state, const GameConfig& config, const SpatialI
         // Used: the shared cooldown starts, with this ability's length.
         attacker.attack_ready_tick = state.tick + ability->cooldown_ticks;
         attacker.cooldown_ticks = ability->cooldown_ticks;
+        attacker.last_attack_input_seq = attacker.intent.input_seq;
         announce_use(state, attacker, *ability);
     }
 }

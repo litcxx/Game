@@ -21,6 +21,12 @@ std::optional<std::uint64_t> attach_session(WorldState& state, std::uint64_t ses
     }
     if (replaced) state.sessions.erase(*replaced);
     state.sessions[session_id] = ClientSession{character_id, {}, {}};
+    // The new connection numbers its input frames from 1 again: nothing of the
+    // character's refers to the old connection's frames any more.
+    if (Unit* body = find_unit(state, character_id)) body->last_attack_input_seq = 0;
+    for (Projectile& p : state.projectiles) {
+        if (p.owner_id == character_id) p.input_seq = 0;
+    }
     Character& character = state.characters.at(character_id);
     character.in_world = true;
     character.away_until.reset();

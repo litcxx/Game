@@ -19,7 +19,9 @@ std::expected<void, ::game::v1::ErrorCode> try_spawn(WorldState& state, const Ga
                                                      std::uint32_t character_id,
                                                      std::uint32_t faction_id,
                                                      const SpawnPoint& spawn_point) {
+    std::uint32_t last_attack_input_seq = 0;  // the connection's frames go on counting
     if (const Unit* body = find_unit(state, character_id)) {
+        last_attack_input_seq = body->last_attack_input_seq;
         if (body->life == ::game::v1::LIFE_STATE_ALIVE) {
             return std::unexpected(::game::v1::ERROR_CODE_ALREADY_SPAWNED);
         }
@@ -48,6 +50,7 @@ std::expected<void, ::game::v1::ErrorCode> try_spawn(WorldState& state, const Ga
     body.x = col * kUnitsPerCell + kUnitsPerCell / 2.0;
     body.y = row * kUnitsPerCell + kUnitsPerCell / 2.0;
     body.hp = config.max_hp;
+    body.last_attack_input_seq = last_attack_input_seq;
     state.units[character_id] = body;  // a dead body is replaced
     return {};
 }

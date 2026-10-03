@@ -17,5 +17,8 @@ struct Projectile {
     double vx{0.0};  // velocity, units per second
     double vy{0.0};
     double remaining{0.0};  // flight distance left, units
+    // The shooter's InputFrame whose attack launched it, on its connection; 0 =
+    // none (a monster's, or one from an earlier connection).
+    std::uint32_t input_seq{0};
 };
 }  // namespace lit::game

@@ -20,7 +20,9 @@ namespace lit::game {
 Character& create_character(WorldState& state, std::string name, const TokenHash& token_hash);
 
 // `session_id` drives `character_id` from now on, with a fresh input queue and
-// nothing told yet: its first snapshot reveals everything it sees. The
+// nothing told yet: its first snapshot reveals everything it sees. Its input
+// frames are numbered afresh, so the character's shots in flight and last attack
+// lose their input_seq. The
 // character is in the world again, no longer away. Returns the session that
 // drove it until now, if any — it drives nothing any more.
 std::optional<std::uint64_t> attach_session(WorldState& state, std::uint64_t session_id,

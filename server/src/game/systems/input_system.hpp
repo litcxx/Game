@@ -14,7 +14,9 @@ namespace lit::game {
 void enqueue_frames(InputQueue& queue, const ::game::v1::Input& input, const LimitsConfig& limits);
 
 // Pop one queued intent per session and make it the intent of the body of the
-// character it drives (if spawned); with an empty queue the last intent repeats.
+// character it drives (if spawned). With an empty queue the last intent repeats
+// under its input_seq — moving, capturing — but not its attack: an attack (or a
+// block) comes from exactly one frame, on that frame's tick.
 // Sets last_input_seq (the ack for reconciliation). Units without a session —
 // a monster's — keep whatever intent they were given.
 void consume_inputs(WorldState& state);

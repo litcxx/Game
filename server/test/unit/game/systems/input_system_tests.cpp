@@ -6,6 +6,7 @@
 #include "config/config.hpp"
 #include "game/v1/protocol.pb.h"
 #include "state/input_queue.hpp"
+#include "state/world_state.hpp"
 #include "systems/input_system.hpp"
 
 namespace {
@@ -30,6 +31,16 @@ std::vector<std::uint32_t> input_seqs(std::uint32_t first, std::uint32_t last) {
 }
 
 const lit::LimitsConfig kLimits;  // 8 frames an Input, 32 queued
+
+// Session 1 driving the body of character 1.
+lit::game::WorldState driven() {
+    lit::game::WorldState state;
+    state.sessions[1] = lit::game::ClientSession{1, {}, {}};
+    lit::game::Unit body;
+    body.id = 1;
+    state.units[1] = body;
+    return state;
+}
 
 }  // namespace
 
@@ -62,4 +73,30 @@ TEST(InputLimits, OldOrRepeatedFramesAreIgnored) {
     lit::game::enqueue_frames(p, frames(2, 5), kLimits);
 
     EXPECT_EQ(queued(p), input_seqs(1, 5));  // 2 and 3 were already in
+}
+
+// A tick with no new frame repeats the last intent: the same intent, so under the
+// same input_seq. Movement and capture go on; the attack was used on the frame's
+// own tick and is not used again, so each attack comes from exactly one frame.
+TEST(InputRepeat, AnEmptyQueueRepeatsTheIntentUnderItsInputSeqButNotItsAttack) {
+    auto state = driven();
+    ::game::v1::Input input;
+    auto* frame = input.add_frames();
+    frame->set_input_seq(5);
+    frame->set_move_x(1);
+    frame->set_capturing(true);
+    frame->set_attack(true);
+    lit::game::enqueue_frames(state.sessions.at(1).input, input, kLimits);
+    const lit::game::Intent& intent = state.units.at(1).intent;
+
+    lit::game::consume_inputs(state);  // the frame's tick
+    EXPECT_EQ(intent.input_seq, 5u);
+    EXPECT_TRUE(intent.attack);
+
+    lit::game::consume_inputs(state);  // no new frame
+    EXPECT_EQ(intent.input_seq, 5u);
+    EXPECT_EQ(intent.move_x, 1);
+    EXPECT_TRUE(intent.capturing);
+    EXPECT_FALSE(intent.attack);
+    EXPECT_EQ(state.sessions.at(1).input.last_input_seq, 5u);
 }

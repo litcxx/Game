@@ -190,3 +190,86 @@ TEST(UnitWithoutCharacter, BlocksAndMovesByItsOwnIntent) {
     EXPECT_EQ(e.stub().hp, 100u);           // the Strike was blocked
     EXPECT_EQ(e.stub().block_until_tick, e.state.tick + 9);
 }
+
+// --- Which input frame an attack came from (LTC-89) ------------------------------
+
+TEST(AttackInputSeq, AShotCarriesTheFrameThatLaunchedIt) {
+    Encounter e;
+    e.player_input(7, {.attack = true, .ability_id = 2, .aim_y = -1});  // up, away from the stub
+
+    e.tick();
+
+    ASSERT_EQ(e.state.projectiles.size(), 1u);
+    EXPECT_EQ(e.state.projectiles[0].input_seq, 7u);
+    EXPECT_EQ(e.player().last_attack_input_seq, 7u);
+}
+
+TEST(AttackInputSeq, AStrikeIsAnAttackTooABlockIsNot) {
+    Encounter e;
+    e.config.abilities.push_back({3, lit::AbilityKind::Block, "Guard", 10, 0, 0, 0, 0, 9});
+
+    e.player_input(3, {.attack = true, .ability_id = 1});
+    e.tick();
+    EXPECT_EQ(e.player().last_attack_input_seq, 3u);
+
+    e.player_input(4, {.attack = true, .ability_id = 3});
+    e.tick();
+    EXPECT_EQ(e.player().block_until_tick, e.state.tick + 9);  // guarding
+    EXPECT_EQ(e.player().last_attack_input_seq, 3u);           // still the strike
+}
+
+TEST(AttackInputSeq, NoAimNoShotAndNoAttack) {
+    Encounter e;
+
+    e.player_input(2, {.attack = true, .ability_id = 2});  // aim (0, 0)
+    e.tick();
+
+    EXPECT_TRUE(e.state.projectiles.empty());
+    EXPECT_EQ(e.player().last_attack_input_seq, 0u);
+    EXPECT_EQ(e.player().attack_ready_tick, 0u);
+}
+
+// Held attack, then the frames stop: frame 2 found the attack on cooldown, and
+// its repeats do not shoot once the cooldown is over — no shot without its frame.
+TEST(AttackInputSeq, ARepeatedIntentDoesNotAttack) {
+    Encounter e;
+    const lit::game::Intent shoot{.attack = true, .ability_id = 2, .aim_y = -1};
+    e.player_input(1, shoot);
+    e.tick();
+    e.player_input(2, shoot);
+    e.tick();
+
+    for (int i = 0; i < 40; ++i) e.tick();  // past the 30-tick cooldown, no frames
+
+    ASSERT_EQ(e.state.projectiles.size(), 1u);  // the first, still flying (50 ticks)
+    EXPECT_EQ(e.player().last_attack_input_seq, 1u);
+}
+
+// A new connection numbers its frames from 1 again: its shots in flight and its
+// last attack no longer refer to its frames.
+TEST(AttackInputSeq, ANewConnectionForgetsTheOldFrames) {
+    Encounter e;
+    e.player_input(9, {.attack = true, .ability_id = 2, .aim_y = -1});
+    e.tick();
+    ASSERT_EQ(e.state.projectiles.size(), 1u);
+
+    lit::game::attach_session(e.state, Encounter::kSession + 1, Encounter::kPlayer);
+
+    EXPECT_EQ(e.state.projectiles[0].input_seq, 0u);
+    EXPECT_EQ(e.player().last_attack_input_seq, 0u);
+}
+
+// A respawn on the same connection keeps counting its frames: so does the body.
+TEST(AttackInputSeq, ARespawnKeepsTheLastAttack) {
+    Encounter e;
+    e.player_input(5, {.attack = true, .ability_id = 1});
+    e.tick();
+    e.player().life = ::game::v1::LIFE_STATE_DEAD;
+    e.player().respawn_tick = e.state.tick;
+
+    ASSERT_TRUE(
+        lit::game::try_spawn(e.state, e.config, Encounter::kPlayer, 1, lit::test::spawn_at(44)));
+
+    EXPECT_EQ(e.player().life, kAlive);
+    EXPECT_EQ(e.player().last_attack_input_seq, 5u);
+}
