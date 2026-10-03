@@ -6,27 +6,27 @@
 #include "state/map_scale.hpp"
 
 namespace lit::game {
+Position step_position(Position from, std::int32_t move_x, std::int32_t move_y, double speed,
+                       double dt, double max_x, double max_y) {
+    if (move_x == 0 && move_y == 0) return from;  // standing still
+    const double mx = static_cast<double>(move_x);
+    const double my = static_cast<double>(move_y);
+    const double len = std::sqrt(mx * mx + my * my);
+    return {std::clamp(from.x + (mx / len) * speed * dt, 0.0, max_x),
+            std::clamp(from.y + (my / len) * speed * dt, 0.0, max_y)};
+}
+
 void integrate_movement(WorldState& state, const GameConfig& config, double dt) {
-    const double bound_x = static_cast<double>(config.map_width) * kUnitsPerCell;
-    const double bound_y = static_cast<double>(config.map_height) * kUnitsPerCell;
+    const double max_x = static_cast<double>(config.map_width) * kUnitsPerCell - 1.0;
+    const double max_y = static_cast<double>(config.map_height) * kUnitsPerCell - 1.0;
+    const double speed = static_cast<double>(config.move_speed);
 
     for (auto& [id, u] : state.units) {
-        if (u.life != ::game::v1::LIFE_STATE_ALIVE) {
-            continue;
-        }
-        if (u.intent.move_x == 0 && u.intent.move_y == 0) {
-            continue;  // standing still
-        }
-        const double mx = static_cast<double>(u.intent.move_x);
-        const double my = static_cast<double>(u.intent.move_y);
-        const double len = std::sqrt(mx * mx + my * my);
-        if (len <= 0.0) {
-            continue;
-        }
-        u.x += (mx / len) * config.move_speed * dt;
-        u.y += (my / len) * config.move_speed * dt;
-        u.x = std::clamp(u.x, 0.0, bound_x - 1.0);
-        u.y = std::clamp(u.y, 0.0, bound_y - 1.0);
+        if (u.life != ::game::v1::LIFE_STATE_ALIVE) continue;
+        const Position to =
+            step_position({u.x, u.y}, u.intent.move_x, u.intent.move_y, speed, dt, max_x, max_y);
+        u.x = to.x;
+        u.y = to.y;
     }
 }
 }  // namespace lit::game

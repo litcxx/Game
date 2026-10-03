@@ -1,9 +1,10 @@
 #include "systems/combat_system.hpp"
 
-#include <cmath>
 #include <cstdint>
+#include <optional>
 
 #include "systems/damage.hpp"
+#include "systems/projectile_system.hpp"
 
 namespace lit::game {
 namespace {
@@ -45,15 +46,13 @@ void announce_use(WorldState& state, const Unit& unit, const AbilityConfig& abil
 // Launch a projectile from the unit's centre along its aim. Returns false (and
 // launches nothing) when there is no aim.
 bool launch_projectile(WorldState& state, const Unit& self, const AbilityConfig& ability) {
-    const double ax = static_cast<double>(self.intent.aim_x);
-    const double ay = static_cast<double>(self.intent.aim_y);
-    const double len = std::sqrt(ax * ax + ay * ay);
-    if (len <= 0.0) return false;
-    const double speed = static_cast<double>(ability.projectile_speed);
+    const std::optional<Velocity> v = aim_velocity(self.intent.aim_x, self.intent.aim_y,
+                                                   static_cast<double>(ability.projectile_speed));
+    if (!v) return false;
     state.projectiles.push_back(
         Projectile{state.next_projectile_id++, self.id, self.faction_id, ability.damage,
-                   static_cast<double>(ability.projectile_radius), self.x, self.y, ax / len * speed,
-                   ay / len * speed, static_cast<double>(ability.range), self.intent.input_seq});
+                   static_cast<double>(ability.projectile_radius), self.x, self.y, v->vx, v->vy,
+                   static_cast<double>(ability.range), self.intent.input_seq});
     return true;
 }
 }  // namespace

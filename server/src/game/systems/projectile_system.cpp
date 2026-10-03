@@ -10,6 +10,25 @@
 #include "systems/damage.hpp"
 
 namespace lit::game {
+std::optional<Velocity> aim_velocity(std::int32_t aim_x, std::int32_t aim_y, double speed) {
+    const double ax = static_cast<double>(aim_x);
+    const double ay = static_cast<double>(aim_y);
+    const double len = std::sqrt(ax * ax + ay * ay);
+    if (len <= 0.0) return std::nullopt;
+    return Velocity{ax / len * speed, ay / len * speed};
+}
+
+FlightStep flight_step(const Projectile& p, double dt) {
+    const double speed = std::sqrt(p.vx * p.vx + p.vy * p.vy);
+    const double length = std::min(speed * dt, p.remaining);
+    const double scale = speed > 0.0 ? length / speed : 0.0;
+    return {p.x + p.vx * scale, p.y + p.vy * scale, length};
+}
+
+bool off_map(double x, double y, double width, double height) {
+    return x < 0.0 || y < 0.0 || x >= width || y >= height;
+}
+
 void update_projectiles(WorldState& state, const GameConfig& config, const SpatialIndex& index,
                         double dt) {
     const double width = static_cast<double>(config.map_width) * kUnitsPerCell;
@@ -18,11 +37,7 @@ void update_projectiles(WorldState& state, const GameConfig& config, const Spati
 
     for (Projectile& p : state.projectiles) {
         // This tick's step, cut short at the end of the range.
-        const double speed = std::hypot(p.vx, p.vy);
-        const double step = std::min(speed * dt, p.remaining);
-        const double scale = speed > 0.0 ? step / speed : 0.0;
-        const double x1 = p.x + p.vx * scale;
-        const double y1 = p.y + p.vy * scale;
+        const auto [x1, y1, step] = flight_step(p, dt);
 
         // The first enemy the step touches: candidates within reach of the segment.
         const double reach = body + p.radius;
@@ -51,7 +66,7 @@ void update_projectiles(WorldState& state, const GameConfig& config, const Spati
         p.x = x1;
         p.y = y1;
         p.remaining -= step;
-        if (x1 < 0.0 || y1 < 0.0 || x1 >= width || y1 >= height) p.remaining = 0.0;  // left the map
+        if (off_map(x1, y1, width, height)) p.remaining = 0.0;  // left the map
     }
     std::erase_if(state.projectiles, [](const Projectile& p) { return p.remaining <= 0.0; });
 }

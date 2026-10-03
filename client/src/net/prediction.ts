@@ -19,7 +19,9 @@ export interface PendingInput extends InputSample {
   inputSeq: number;
 }
 
-// MUST match the server's World::update integration exactly.
+// The server's step_position, to the bit: the same operations in the same order
+// (Math.hypot may differ from the server's sqrt of the squares in the last bit).
+// protocol/sim/movement.json pins both sides (sim_vectors_check).
 export function integrate(
   pos: Vec2,
   moveX: number,
@@ -29,7 +31,7 @@ export function integrate(
   bounds: Bounds,
 ): Vec2 {
   if (moveX === 0 && moveY === 0) return pos;
-  const len = Math.hypot(moveX, moveY);
+  const len = Math.sqrt(moveX * moveX + moveY * moveY);
   return {
     x: Math.max(0, Math.min(pos.x + (moveX / len) * speed * dt, bounds.maxX)),
     y: Math.max(0, Math.min(pos.y + (moveY / len) * speed * dt, bounds.maxY)),
