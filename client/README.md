@@ -87,7 +87,7 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   for 6 s — counted from `connect()`, so one that never opens too — is closed and
   reported as lost (`STALE_CLOSE_CODE`, 4900, sent with the reason «no word from
   the server» for the server's log): a dropped network often closes nothing. `sendInputFrames` ships a batch of per-tick input
-  frames (each with its `seq`); `sendSpawn(faction)` requests spawn/respawn — the
+  frames (each with its `inputSeq`, given out by the `Predictor` alone); `sendSpawn(faction)` requests spawn/respawn — the
   server puts the body at the faction's capital. A `Ping`
   goes out right after `Hello` and then every 2 s while the socket is open: its
   `Pong` gives the round trip (`roundTripMs`, shown as the HUD's ping), and it
@@ -99,8 +99,11 @@ is redrawn from predicted (self) and interpolated (remote) positions.
   build sets it, else the page's own origin at `/ws` (`wss` for an https page),
   where the reverse proxy in front of the server takes it (see
   [Server address](#server-address)).
-- **`src/net/prediction.ts`** — `integrate()` (the server's movement maths,
-  mirrored exactly) + `Predictor`: applies each fixed-step input locally, and on
+- **`src/net/prediction.ts`** — `integrate()` (the server's `step_position`, to
+  the bit — `../protocol/sim/movement.json`, `sim_vectors_check`) + `Predictor`,
+  which alone numbers the input frames (`inputSeq`, 1, 2, … per connection; a
+  field naming a frame is `<role>InputSeq`, as `SelfState.last_input_seq`):
+  applies each fixed-step input locally, and on
   each snapshot **reconciles** — drop acked inputs (`SelfState.last_input_seq`),
   snap to the authoritative position, replay the rest — easing any correction so
   it never pops. A prediction off by more than 4 units (`CORRECTION_UNITS`)
@@ -350,6 +353,7 @@ npx tsx scripts/ui_check.ts             # overlay: modal, toasts, nickname scree
 npx tsx scripts/status_check.ts         # what the HUD, bar, picker and respawn button get from GameState (network line, territory and picker from FactionScores, hp, fatal)
 npx tsx scripts/onboarding_check.ts     # the capture hint goes after your own first capture, and stays gone
 npx tsx scripts/server_url_check.ts     # the server address: VITE_SERVER_URL, else the page's origin at /ws
+npx tsx scripts/sim_vectors_check.ts    # integrate() to the bit, against the server's cases (../protocol/sim)
 ```
 
 **End-to-end (start the server first):**
@@ -365,7 +369,7 @@ npx tsx scripts/persistence_smoke.ts # its own server: SIGTERM saves; restarted,
 npx tsx scripts/combat_smoke.ts     # area attack -> hit -> death
 npx tsx scripts/prediction_smoke.ts # per-tick input -> movement + acks
 npx tsx scripts/attack_click_smoke.ts # a quick click still lands a hit (fails on no damage)
-npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit
+npx tsx scripts/ranged_smoke.ts    # projectile ability -> projectile -> hit; one frame, one shot, named by its input_seq
 npx tsx scripts/block_smoke.ts     # block -> the swing is blocked, the next lands
 npx tsx scripts/bad_hello_smoke.ts # bad Hello -> fatal ServerError + close 4000+code; refused spawn
 npx tsx scripts/idle_smoke.ts      # timeouts (23 s): no Hello -> 4004, silence -> 4005, keepalive ok

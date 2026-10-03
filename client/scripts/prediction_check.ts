@@ -21,15 +21,15 @@ check("integrate advances 6 steps", approx(p.x, 5050 + 6 * speed * dt) && approx
 check("integrate clamps hi", integrate({ x: 9999, y: 0 }, 1, 0, dt, speed, bounds).x === 9999);
 check("integrate clamps lo", integrate({ x: 0, y: 0 }, -1, 0, dt, speed, bounds).x === 0);
 
-// predictor.step advances predicted and buffers with increasing seq
+// predictor.step advances predicted and buffers frames with increasing input seqs
 const pred = new Predictor(speed, dt, bounds);
 pred.reset({ x: 100, y: 100 });
 const f1 = pred.step({ moveX: 1, moveY: 0, capturing: false, attack: false });
 const f2 = pred.step({ moveX: 1, moveY: 0, capturing: false, attack: false });
-check("step seq increments", f1.seq === 1 && f2.seq === 2);
+check("step numbers its frames 1, 2, …", f1.inputSeq === 1 && f2.inputSeq === 2);
 check("step advances predicted", approx(pred.position.x, 100 + 2 * speed * dt));
 
-// reconcile: server acked seq 1, authoritative reflects 1 step -> replay f2 only
+// reconcile: server acked input seq 1, authoritative reflects 1 step -> replay f2 only
 pred.reconcile({ x: 100 + speed * dt, y: 100 }, 1);
 check("reconcile replays unacked", approx(pred.position.x, 100 + 2 * speed * dt));
 

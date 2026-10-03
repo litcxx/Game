@@ -1,0 +1,3 @@
+# Written by the server's SimVectors tests (UPDATE_SIM_VECTORS=1), not by hand:
+# collapsed in review.
+protocol/sim/*.json linguist-generated=true

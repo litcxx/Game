@@ -1,0 +1,181 @@
+{
+  "about": "One step of movement (server: step_position, client: integrate), repeated `steps` times. Written by the server's unit tests (SimVectors); the client's sim_vectors_check reads it.",
+  "cases": [
+    {
+      "name": "right, one step",
+      "x": 5000.0,
+      "y": 5000.0,
+      "move_x": 1,
+      "move_y": 0,
+      "speed": 300.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 1,
+      "after": {
+        "x": 5005.0,
+        "y": 5000.0
+      }
+    },
+    {
+      "name": "diagonal, one step",
+      "x": 5000.0,
+      "y": 5000.0,
+      "move_x": 1,
+      "move_y": 1,
+      "speed": 300.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 1,
+      "after": {
+        "x": 5003.535533905932,
+        "y": 5003.535533905932
+      }
+    },
+    {
+      "name": "diagonal for a second",
+      "x": 5000.0,
+      "y": 5000.0,
+      "move_x": -1,
+      "move_y": 1,
+      "speed": 300.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 60,
+      "after": {
+        "x": 4787.8679656440545,
+        "y": 5212.1320343559455
+      }
+    },
+    {
+      "name": "any length is normalized",
+      "x": 5000.0,
+      "y": 5000.0,
+      "move_x": 3,
+      "move_y": -4,
+      "speed": 300.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 30,
+      "after": {
+        "x": 5090.0,
+        "y": 4880.0
+      }
+    },
+    {
+      "name": "standing still",
+      "x": 1234.5,
+      "y": 678.25,
+      "move_x": 0,
+      "move_y": 0,
+      "speed": 300.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 10,
+      "after": {
+        "x": 1234.5,
+        "y": 678.25
+      }
+    },
+    {
+      "name": "stopped at the left edge",
+      "x": 3.0,
+      "y": 5000.0,
+      "move_x": -1,
+      "move_y": 0,
+      "speed": 300.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 5,
+      "after": {
+        "x": 0.0,
+        "y": 5000.0
+      }
+    },
+    {
+      "name": "stopped in the bottom-right corner",
+      "x": 9995.0,
+      "y": 9998.0,
+      "move_x": 1,
+      "move_y": 1,
+      "speed": 300.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 10,
+      "after": {
+        "x": 9999.0,
+        "y": 9999.0
+      }
+    },
+    {
+      "name": "along the top edge",
+      "x": 100.0,
+      "y": 2.0,
+      "move_x": 1,
+      "move_y": -1,
+      "speed": 300.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 20,
+      "after": {
+        "x": 170.71067811865476,
+        "y": 0.0
+      }
+    },
+    {
+      "name": "from the corner, diagonal at another speed",
+      "x": 0.0,
+      "y": 0.0,
+      "move_x": 1,
+      "move_y": 1,
+      "speed": 250.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 1,
+      "after": {
+        "x": 2.9462782549439477,
+        "y": 2.9462782549439477
+      }
+    },
+    {
+      "name": "from the corner, a slanted direction",
+      "x": 0.0,
+      "y": 0.0,
+      "move_x": 2,
+      "move_y": 7,
+      "speed": 250.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 1,
+      "after": {
+        "x": 1.1446713662390753,
+        "y": 4.0063497818367635
+      }
+    },
+    {
+      "name": "from the corner, another slanted direction",
+      "x": 0.0,
+      "y": 0.0,
+      "move_x": 5,
+      "move_y": 3,
+      "speed": 251.0,
+      "dt": 0.016666666666666666,
+      "max_x": 9999.0,
+      "max_y": 9999.0,
+      "steps": 1,
+      "after": {
+        "x": 3.587178739230809,
+        "y": 2.152307243538486
+      }
+    }
+  ]
+}

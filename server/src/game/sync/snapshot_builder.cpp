@@ -50,6 +50,7 @@ bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::u
         you->set_respawn_tick(body->respawn_tick);
         you->set_attack_ready_tick(body->attack_ready_tick);
         you->set_attack_cooldown_ticks(body->cooldown_ticks);
+        you->set_last_attack_input_seq(body->last_attack_input_seq);
         you->set_block_ready_tick(body->block_ready_tick);
         you->set_block_cooldown_ticks(body->block_cooldown_ticks);
     } else {
@@ -101,7 +102,8 @@ bool names_only(const ::game::v1::GameEvent& ev, const std::unordered_set<std::u
         ps->set_faction_id(p.faction_id);
         ps->set_vx(static_cast<std::int32_t>(std::lround(p.vx)));
         ps->set_vy(static_cast<std::int32_t>(std::lround(p.vy)));
-        ps->set_mine(p.owner_id == self);  // whether it is yours, never whose
+        ps->set_mine(p.owner_id == self);                        // whether it is yours, never whose
+        if (p.owner_id == self) ps->set_input_seq(p.input_seq);  // which of your frames
     }
     return msg;
 }

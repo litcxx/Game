@@ -64,9 +64,9 @@ const welcome = await tab.until(() => tab.welcomes()[0]);
 if (!welcome) throw new Error("FAIL no Welcome"); // exits non-zero
 const id = welcome.playerId;
 tab.client.sendSpawn(HOME.factionId);
-tab.client.sendInput(1, 0, false);
+tab.walk(1);
 await sleep(300);
-tab.client.sendInput(0, 0, false);
+tab.walk(0);
 const before = await tab.standing(id);
 check("the body walked and stands", before !== undefined && before.x > HOME.x, `x=${before?.x}`);
 

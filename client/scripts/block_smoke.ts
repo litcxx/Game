@@ -1,6 +1,7 @@
 // Block e2e: a defender and an attacker of another faction stand 1 cell apart.
 // The defender blocks once (its block ability from Welcome) just before the
-// attacker starts holding melee: the first swing must be a blocked hit (no
+// attacker starts holding melee (a frame a tick, as a client sends them: an
+// attack comes from a frame): the first swing must be a blocked hit (no
 // damage), the next one (after the 0.75 s cooldown) lands. Both uses are
 // announced with AbilityEvents.
 import { create, fromBinary, toBinary } from "@bufbuild/protobuf";
@@ -47,7 +48,7 @@ function send(ws: WebSocket, msg: ClientMessage): void {
 const helloMsg = (name: string) =>
   create(ClientMessageSchema, { payload: { case: "hello", value: { protocolVersion: ProtocolVersion.CURRENT, name: uniqueName(name) } } });
 const spawnMsg = (factionId: number) => create(ClientMessageSchema, { payload: { case: "spawn", value: { factionId } } });
-const framesMsg = (frames: { seq: number; attack: boolean; abilityId: number }[]) =>
+const framesMsg = (frames: { inputSeq: number; attack: boolean; abilityId: number }[]) =>
   create(ClientMessageSchema, {
     payload: {
       case: "input",
@@ -55,13 +56,17 @@ const framesMsg = (frames: { seq: number; attack: boolean; abilityId: number }[]
     },
   });
 
+let holding: ReturnType<typeof setInterval> | undefined; // the attacker's held melee
+let atkInputSeq = 0;
 function maybeStart(): void {
   if (started || !atkAlive || !defAlive || meleeId === 0 || blockId === 0) return;
   started = true;
   // Block for one tick's worth of input (it then lasts its duration)...
-  send(defender, framesMsg([{ seq: 1, attack: true, abilityId: blockId }, { seq: 2, attack: false, abilityId: blockId }]));
+  send(defender, framesMsg([{ inputSeq: 1, attack: true, abilityId: blockId }, { inputSeq: 2, attack: false, abilityId: blockId }]));
   // ...and 10 ms later the attacker starts holding melee (swings each cooldown).
-  setTimeout(() => send(attacker, framesMsg([{ seq: 1, attack: true, abilityId: meleeId }])), 10);
+  setTimeout(() => {
+    holding = setInterval(() => send(attacker, framesMsg([{ inputSeq: ++atkInputSeq, attack: true, abilityId: meleeId }])), 1000 / 60);
+  }, 10);
 }
 
 attacker.onopen = () => send(attacker, helloMsg("attacker"));
@@ -92,7 +97,8 @@ attacker.onmessage = (ev: MessageEvent) => {
         else if (landedDamage < 0) {
           landedDamage = e.kind.value.damage;
           defHpAfterLanded = s.players.find((p) => p.id === defId)?.hp ?? -1;
-          send(attacker, framesMsg([{ seq: 2, attack: false, abilityId: meleeId }])); // done
+          clearInterval(holding);
+          send(attacker, framesMsg([{ inputSeq: ++atkInputSeq, attack: false, abilityId: meleeId }])); // done
           setTimeout(finish, 200);
         }
       }

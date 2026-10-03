@@ -36,11 +36,11 @@ ws.onmessage = (ev: MessageEvent) => {
     const me = m.payload.value.players.find((p) => p.id === myId);
     if (me && !stepping) {
       stepping = true;
-      send({ case: "input", value: { frames: [{ seq: 1, moveX: 1, moveY: 0 }] } }); // toward TARGET
+      send({ case: "input", value: { frames: [{ inputSeq: 1, moveX: 1, moveY: 0 }] } }); // toward TARGET
     }
     if (me && stepping && !holding && me.x >= HOME.x + 70) {
       holding = true; // on TARGET (its centre is 100 right of home): stop and hold E
-      send({ case: "input", value: { frames: [{ seq: 2, moveX: 0, moveY: 0, capturing: true }] } });
+      send({ case: "input", value: { frames: [{ inputSeq: 2, moveX: 0, moveY: 0, capturing: true }] } });
     }
     for (const c of m.payload.value.cells) {
       if (c.index !== TARGET) continue;

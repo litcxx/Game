@@ -8,7 +8,8 @@ namespace lit::game {
 // What a unit is trying to do. A player's comes from its input, one command per
 // tick (consume_inputs); a monster's will come from its AI.
 struct Intent {
-    std::int32_t move_x{0};  // movement direction (any length; normalized when moving)
+    std::uint32_t input_seq{0};  // the InputFrame it came from (a player's); 0 = none
+    std::int32_t move_x{0};      // movement direction (any length; normalized when moving)
     std::int32_t move_y{0};
     bool capturing{false};        // holding capture: captures the cell under the centre
     bool attack{false};           // holding attack: use the selected ability when ready
@@ -29,11 +30,12 @@ struct Unit {
     double y{0.0};
     std::uint32_t hp{0};
     Intent intent;
-    std::uint32_t attack_ready_tick{0};     // next tick it may attack (shared cooldown)
-    std::uint32_t cooldown_ticks{0};        // length of the current cooldown (last ability used)
-    std::uint32_t block_until_tick{0};      // blocking (no damage) while tick < this
-    std::uint32_t block_ready_tick{0};      // next tick a block may start (its own cooldown)
-    std::uint32_t block_cooldown_ticks{0};  // length of the current block cooldown
-    std::uint32_t respawn_tick{0};          // when DEAD: tick from which respawn is allowed
+    std::uint32_t attack_ready_tick{0};      // next tick it may attack (shared cooldown)
+    std::uint32_t cooldown_ticks{0};         // length of the current cooldown (last ability used)
+    std::uint32_t last_attack_input_seq{0};  // InputFrame of the last melee / shot used (0 = none)
+    std::uint32_t block_until_tick{0};       // blocking (no damage) while tick < this
+    std::uint32_t block_ready_tick{0};       // next tick a block may start (its own cooldown)
+    std::uint32_t block_cooldown_ticks{0};   // length of the current block cooldown
+    std::uint32_t respawn_tick{0};           // when DEAD: tick from which respawn is allowed
 };
 }  // namespace lit::game

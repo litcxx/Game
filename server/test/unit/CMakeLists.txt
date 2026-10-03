@@ -20,6 +20,7 @@ set(SOURCES
   game/persist/save_store_tests.cpp
   game/persist/save_writer_tests.cpp
   game/persist/world_save_tests.cpp
+  game/sim/sim_vectors_tests.cpp
   game/spatial/geometry_tests.cpp
   game/spatial/spatial_index_tests.cpp
   game/systems/capital_system_tests.cpp
@@ -61,6 +62,8 @@ target_link_libraries(unit_tests PRIVATE
 target_compile_definitions(unit_tests PRIVATE
   LIT_SHIPPED_CONFIG="${CMAKE_SOURCE_DIR}/config/config.json"
   LIT_SMOKE_MAP="${CMAKE_SOURCE_DIR}/config/smoke-map.json"
+  # The formulas the client's prediction repeats, as cases both sides check.
+  LIT_SIM_VECTORS_DIR="${CMAKE_SOURCE_DIR}/../protocol/sim"
 )
 
 # net/game/shared expose their headers via PUBLIC usage requirements, so only

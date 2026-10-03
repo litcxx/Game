@@ -46,10 +46,10 @@ struct Lobby {
     }();
 
     // The session's client sends one frame moving right; the tick applies it.
-    void walk_right(std::uint64_t session_id, std::uint32_t seq) {
+    void walk_right(std::uint64_t session_id, std::uint32_t input_seq) {
         ::game::v1::Input input;
         auto* frame = input.add_frames();
-        frame->set_seq(seq);
+        frame->set_input_seq(input_seq);
         frame->set_move_x(1);
         lit::game::enqueue_frames(state.sessions.at(session_id).input, input, config.limits);
         tick();
@@ -204,11 +204,11 @@ TEST(Presence, TwoSessionsInARowDriveOneCharacter) {
     const std::uint32_t ann = lit::game::create_character(l.state, "Ann", token(1)).id;
 
     // The first connection spawns the character, walks it right for three ticks
-    // (its seqs 1..3), is told what it sees — and drops.
+    // (its input seqs 1..3), is told what it sees — and drops.
     lit::game::attach_session(l.state, 1, ann);
     ASSERT_TRUE(
         lit::game::try_spawn(l.state, l.config, ann, 1, lit::test::spawn_at(5)));  // x = 150
-    for (std::uint32_t seq = 1; seq <= 3; ++seq) l.walk_right(1, seq);
+    for (std::uint32_t input_seq = 1; input_seq <= 3; ++input_seq) l.walk_right(1, input_seq);
     l.state.sessions.at(1).sync.vision = lit::game::compute_vision(l.state, l.config, 1);
     l.state.units.at(ann).hp = 60;  // hurt on the way
     const double x = l.state.units.at(ann).x;
@@ -223,11 +223,11 @@ TEST(Presence, TwoSessionsInARowDriveOneCharacter) {
     EXPECT_EQ(l.state.units.at(ann).faction_id, 1u);
 
     // A second connection drives the same character, starting afresh: nothing
-    // queued, nothing told, and its own seqs from 1 are taken.
+    // queued, nothing told, and its own input seqs from 1 are taken.
     lit::game::attach_session(l.state, 2, ann);
     const lit::game::ClientSession& second = l.state.sessions.at(2);
     EXPECT_EQ(second.character_id, ann);
-    EXPECT_TRUE(second.input.commands.empty());
+    EXPECT_TRUE(second.input.intents.empty());
     EXPECT_EQ(second.input.last_input_seq, 0u);
     EXPECT_TRUE(second.sync.vision.cells.empty());
 

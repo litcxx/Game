@@ -52,7 +52,6 @@ export function roundTripMs(echoedMs: number, nowMs: number): number {
 // open is dropped.
 export class GameClient {
   private ws?: WebSocket;
-  private inputSeq = 0;
   private keepalive: ReturnType<typeof setInterval> | undefined;
   private lastHeardMs = 0;
 
@@ -122,21 +121,11 @@ export class GameClient {
     );
   }
 
-  sendInput(moveX: number, moveY: number, capturing: boolean, attack = false): void {
-    this.dispatch(
-      create(ClientMessageSchema, {
-        payload: {
-          case: "input",
-          value: { frames: [{ seq: ++this.inputSeq, moveX, moveY, capturing, attack }] },
-        },
-      }),
-    );
-  }
-
-  // Send a batch of already-sequenced input frames (the predictor owns the seqs).
+  // Send a batch of input frames, numbered by their sender (in the game, the
+  // Predictor: it alone gives out input seqs).
   sendInputFrames(
     frames: {
-      seq: number;
+      inputSeq: number;
       moveX: number;
       moveY: number;
       capturing: boolean;

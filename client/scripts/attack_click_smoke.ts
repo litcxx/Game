@@ -30,7 +30,7 @@ let vicSpawned = false;
 let clicked = false;
 let hitSeen = false;
 let victimHp = -1;
-let seq = 0;
+let inputSeq = 0;
 
 // Its own cells: a player stays in the world for the reconnect grace (30 s)
 // after its socket closes, so other smokes' bodies may still stand elsewhere.
@@ -48,7 +48,7 @@ const inputMsg = (attack: boolean) =>
   create(ClientMessageSchema, {
     payload: {
       case: "input",
-      value: { frames: [{ seq: ++seq, moveX: 0, moveY: 0, capturing: false, attack }] },
+      value: { frames: [{ inputSeq: ++inputSeq, moveX: 0, moveY: 0, capturing: false, attack }] },
     },
   });
 

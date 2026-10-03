@@ -61,7 +61,14 @@ lives on the server; the browser client predicts, interpolates, and renders.
   projectile launches), fly projectiles (swept hits), advance territory
   capture — and sends a per-recipient snapshot, filtered by fog of war.
   `SelfState.last_input_seq` acks the consumed command so the client can
-  reconcile its prediction.
+  reconcile its prediction. A tick with no new frame repeats the last intent —
+  the same intent under its `input_seq`, still moving and capturing — but not its
+  attack: a melee, a shot or a block comes from exactly one input frame, on that
+  frame's tick. A shot carries that frame's `input_seq`, and the body the frame
+  of its last melee or shot (`last_attack_input_seq`); the snapshot gives both to
+  the player whose they are only (`ProjectileState.input_seq`,
+  `SelfState.last_attack_input_seq`). A new connection numbers its frames from 1,
+  so attaching a session clears them.
 - **Systems over plain data.** All simulation state is one plain struct,
   `WorldState` (`src/game/state`: characters, units, sessions, territory grid,
   projectiles, pending events). The
@@ -74,7 +81,7 @@ lives on the server; the browser client predicts, interpolates, and renders.
 - **Characters, sessions and units.** A *character* is a player's identity: its
   `id` is the public `player_id` (never reused) and it has a name. A *session*
   (`ClientSession`, one per connection) drives one character; the input it sends
-  (queue, seqs, ack) and what it has been told (`ClientSync`) belong to the
+  (queue, input seqs, ack) and what it has been told (`ClientSync`) belong to the
   connection, so another session taking the character over starts both afresh.
   The character's *body* is a `Unit` with the same id — position, hp, life,
   faction, cooldowns and the current `Intent` — from its spawn on (a dead body
@@ -442,6 +449,21 @@ that just drops (no close frame) logs a `do_read error` instead.
 ctest --preset debug-asan      # or run the binary directly:
 ./build/bin/unit_tests
 ```
+
+**The formulas the client repeats** — a step of movement (`step_position`), a
+shot's velocity along an aim and its flight (`aim_velocity`, `flight_step`,
+`off_map`) — are pinned as cases in
+[`../protocol/sim`](../protocol/sim) (`movement.json`, `projectile.json`),
+which the client's checks read too. The `SimVectors` tests check the files still
+hold, to the bit; after a change to a formula or a case, write them anew and
+change the client to match:
+
+```bash
+UPDATE_SIM_VECTORS=1 ./build/bin/unit_tests --gtest_filter='SimVectors.*'
+```
+
+Only `+ - * /` and `sqrt` go into them — the same in C++ and JavaScript;
+`hypot` is not (`Math.hypot` may differ in the last bit).
 
 CI ([`../.github/workflows/ci.yml`](../.github/workflows/ci.yml)) builds
 `debug-asan` on every PR and push to `main`, runs the unit tests, then starts the

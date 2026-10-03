@@ -126,11 +126,11 @@ async function main(): Promise<void> {
   const welcome = await until(() => last(first, "welcome"));
   check("joined", welcome !== undefined);
   first.send({ case: "spawn", value: { factionId: HOME.factionId } });
-  let seq = 0;
+  let inputSeq = 0;
   await until(() => last(first, "snapshot")?.you?.life === LifeState.ALIVE || undefined);
-  first.send({ case: "input", value: { frames: [{ seq: ++seq, moveX: 1, moveY: 0 }] } });
+  first.send({ case: "input", value: { frames: [{ inputSeq: ++inputSeq, moveX: 1, moveY: 0 }] } });
   await until(() => ((last(first, "snapshot")?.players.find((p) => p.id === welcome?.playerId)?.x ?? 0) >= HOME.x + 70 || undefined));
-  first.send({ case: "input", value: { frames: [{ seq: ++seq, moveX: 0, moveY: 0, capturing: true }] } });
+  first.send({ case: "input", value: { frames: [{ inputSeq: ++inputSeq, moveX: 0, moveY: 0, capturing: true }] } });
   const taken = await until(() => last(first, "snapshot")?.cells.some((c) => c.index === NEAR && c.ownerFactionId === HOME.factionId) || undefined);
   check("the cell next to the capital is taken", taken === true);
   const seen = new Set(all(first, "snapshot").flatMap((s) => s.revealed)); // the faction's map
